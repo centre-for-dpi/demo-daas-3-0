@@ -1,0 +1,2394 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VC Infrastructure — Portal Shell</title>
+<link href="https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ========================================
+   CSS CUSTOM PROPERTIES — WHITE-LABEL ENGINE
+   ======================================== */
+:root {
+  --font-display: 'Josefin Sans', sans-serif;
+  --font-body: 'Geist', -apple-system, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'Geist Mono', 'SF Mono', 'Consolas', monospace;
+  --bg: #FAFAF8;
+  --bg-surface: #FFFFFF;
+  --bg-surface-alt: #F3F3F0;
+  --bg-overlay: rgba(250, 250, 248, 0.92);
+  --text: #1A1A18;
+  --text-secondary: #6B6B66;
+  --text-tertiary: #9C9C96;
+  --border: #E4E4E0;
+  --border-strong: #CCCCC6;
+  --accent: #2D5A3D;
+  --accent-hover: #1E3D29;
+  --accent-surface: #E8F0EB;
+  --accent-text: #FFFFFF;
+  --tag-bg: #EEEEE9;
+  --tag-text: #4A4A46;
+  --success: #2D5A3D;
+  --warning: #8B6914;
+  --warning-surface: #FEF6E0;
+  --error: #8B2C2C;
+  --error-surface: #FDECEC;
+  --info: #2D4A5A;
+  --info-surface: #E8EFF3;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.06);
+  --shadow-lg: 0 8px 30px rgba(0,0,0,0.08);
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+  --sidebar-width: 240px;
+  --topbar-height: 52px;
+}
+
+[data-theme="dark"] {
+  --bg: #111110;
+  --bg-surface: #1A1A18;
+  --bg-surface-alt: #222220;
+  --bg-overlay: rgba(17, 17, 16, 0.92);
+  --text: #EAEAE6;
+  --text-secondary: #9C9C96;
+  --text-tertiary: #6B6B66;
+  --border: #2E2E2C;
+  --border-strong: #444440;
+  --accent: #5BA97A;
+  --accent-hover: #7BC49A;
+  --accent-surface: #1A2E22;
+  --accent-text: #111110;
+  --tag-bg: #2A2A28;
+  --tag-text: #B0B0AA;
+  --warning-surface: #2A2414;
+  --error-surface: #2A1A1A;
+  --info-surface: #1A2228;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.2);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.3);
+  --shadow-lg: 0 8px 30px rgba(0,0,0,0.4);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; -webkit-font-smoothing: antialiased; }
+
+body {
+  font-family: var(--font-body);
+  color: var(--text);
+  background: var(--bg);
+  line-height: 1.6;
+  overflow: hidden;
+  height: 100vh;
+}
+
+h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 400; line-height: 1.2; letter-spacing: -0.01em; }
+h1 { font-size: 1.6rem; font-weight: 300; }
+h2 { font-size: 1.25rem; }
+h3 { font-size: 1rem; font-weight: 500; }
+h4 { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
+
+code { font-family: var(--font-mono); font-size: 0.82em; background: var(--bg-surface-alt); padding: 0.1em 0.35em; border-radius: var(--radius-sm); }
+
+/* ========================================
+   AUTH SCREENS (1, 2) — shown before portal
+   ======================================== */
+.auth-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: var(--bg);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow-y: auto;
+  transition: opacity 0.35s ease, visibility 0.35s ease;
+}
+
+.auth-overlay.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  padding: 3rem 1.5rem;
+}
+
+.auth-brand {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.1rem;
+  letter-spacing: 0.02em;
+  margin-bottom: 2.5rem;
+  text-align: center;
+}
+
+.auth-brand span { color: var(--accent); }
+
+.auth-title {
+  font-size: 1.5rem;
+  font-weight: 300;
+  margin-bottom: 0.35rem;
+  text-align: center;
+}
+
+.auth-subtitle {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+/* Form elements */
+.form-group { margin-bottom: 1.25rem; }
+
+.form-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: 0.4rem;
+  font-family: var(--font-display);
+}
+
+.form-input {
+  width: 100%;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.88rem;
+  font-family: var(--font-body);
+  color: var(--text);
+  background: var(--bg-surface);
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.form-input:focus { border-color: var(--accent); }
+.form-input::placeholder { color: var(--text-tertiary); }
+
+.form-select {
+  width: 100%;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.88rem;
+  font-family: var(--font-body);
+  color: var(--text);
+  background: var(--bg-surface);
+  outline: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' stroke='%236B6B66' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  cursor: pointer;
+}
+
+.form-select:focus { border-color: var(--accent); }
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.form-help {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  margin-top: 0.3rem;
+}
+
+.form-divider {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 1.5rem 0;
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+}
+
+.form-divider::before, .form-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* Auth modality buttons */
+.auth-modalities {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.auth-modality {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.85rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: var(--font-body);
+}
+
+.auth-modality:hover { border-color: var(--border-strong); background: var(--bg-surface-alt); }
+
+.auth-modality.selected { border-color: var(--accent); background: var(--accent-surface); }
+
+.auth-modality-icon { font-size: 1.3rem; }
+.auth-modality-label { font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); }
+.auth-modality.selected .auth-modality-label { color: var(--accent); }
+
+/* SSO provider selector */
+.sso-providers {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.sso-provider {
+  flex: 1;
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  font-weight: 500;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: var(--font-display);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+}
+
+.sso-provider:hover { border-color: var(--border-strong); }
+.sso-provider.selected { border-color: var(--accent); color: var(--accent); background: var(--accent-surface); }
+
+/* Guardian access toggle */
+.guardian-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 1rem;
+  background: var(--info-surface);
+  border-radius: var(--radius-md);
+  margin-bottom: 1.5rem;
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--info);
+  border: 1px solid transparent;
+  transition: border-color 0.2s ease;
+}
+
+.guardian-toggle:hover { border-color: var(--info); }
+
+.guardian-toggle .toggle-switch {
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--border-strong);
+  position: relative;
+  flex-shrink: 0;
+  transition: background 0.2s ease;
+}
+
+.guardian-toggle .toggle-switch::after {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: white;
+  top: 2px;
+  left: 2px;
+  transition: transform 0.2s ease;
+}
+
+.guardian-toggle.active .toggle-switch { background: var(--accent); }
+.guardian-toggle.active .toggle-switch::after { transform: translateX(16px); }
+
+/* Auth tabs */
+.auth-tabs {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-bottom: 1.5rem;
+}
+
+.auth-tab {
+  flex: 1;
+  padding: 0.55rem;
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  font-weight: 500;
+  text-align: center;
+  border: none;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.auth-tab:first-child { border-right: 1px solid var(--border); }
+.auth-tab:hover { background: var(--bg-surface-alt); }
+.auth-tab.active { background: var(--accent); color: var(--accent-text); }
+
+.auth-view { display: none; }
+.auth-view.active { display: block; }
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 0.85rem;
+  padding: 0.6rem 1.4rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+}
+
+.btn-primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn-secondary { background: transparent; color: var(--text); border-color: var(--border-strong); }
+.btn-secondary:hover { background: var(--bg-surface-alt); }
+.btn-ghost { background: transparent; color: var(--text-secondary); border-color: transparent; }
+.btn-ghost:hover { color: var(--text); background: var(--bg-surface-alt); }
+.btn-danger { background: var(--error); color: #fff; border-color: var(--error); }
+.btn-block { width: 100%; }
+.btn-sm { padding: 0.35rem 0.85rem; font-size: 0.78rem; }
+.btn-icon { width: 32px; height: 32px; padding: 0; border-radius: var(--radius-sm); }
+
+/* Tags */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.68rem;
+  font-weight: 500;
+  padding: 0.15rem 0.55rem;
+  border-radius: 100px;
+  background: var(--tag-bg);
+  color: var(--tag-text);
+  letter-spacing: 0.03em;
+  font-family: var(--font-display);
+}
+
+.tag-accent { background: var(--accent-surface); color: var(--accent); }
+.tag-warning { background: var(--warning-surface); color: var(--warning); }
+.tag-error { background: var(--error-surface); color: var(--error); }
+.tag-info { background: var(--info-surface); color: var(--info); }
+
+/* ========================================
+   PORTAL LAYOUT
+   ======================================== */
+.portal {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) 1fr;
+  grid-template-rows: var(--topbar-height) 1fr;
+  height: 100vh;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+.portal.visible { opacity: 1; }
+
+/* Topbar */
+.topbar {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.5rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  z-index: 50;
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.topbar-breadcrumb {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.topbar-breadcrumb strong { color: var(--text); font-weight: 500; }
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.topbar-notif {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  transition: all 0.15s ease;
+}
+
+.topbar-notif:hover { border-color: var(--border-strong); background: var(--bg-surface-alt); }
+
+.notif-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--error);
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
+
+.topbar-user {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  background: none;
+  font-family: var(--font-body);
+  color: var(--text);
+}
+
+.topbar-user:hover { border-color: var(--border-strong); background: var(--bg-surface-alt); }
+
+.user-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-weight: 700;
+  font-family: var(--font-display);
+}
+
+.user-name { font-size: 0.8rem; font-weight: 500; }
+.user-role { font-size: 0.68rem; color: var(--text-tertiary); }
+
+.theme-toggle {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  transition: all 0.15s ease;
+}
+
+.theme-toggle:hover { border-color: var(--border-strong); background: var(--bg-surface-alt); }
+
+/* Sidebar */
+.sidebar {
+  grid-column: 1;
+  grid-row: 1 / -1;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  height: var(--topbar-height);
+  padding: 0 1.25rem;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.sidebar-brand span { color: var(--accent); }
+
+.sidebar-nav {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.75rem 0;
+}
+
+.sidebar-section {
+  padding: 0 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.sidebar-section-label {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  padding: 0.5rem 0.75rem;
+  font-family: var(--font-display);
+}
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  font-family: var(--font-body);
+}
+
+.sidebar-item:hover { color: var(--text); background: var(--bg-surface-alt); }
+
+.sidebar-item.active {
+  color: var(--accent);
+  background: var(--accent-surface);
+  font-weight: 500;
+}
+
+.sidebar-item-icon { font-size: 1rem; flex-shrink: 0; width: 20px; text-align: center; }
+
+.sidebar-item-badge {
+  margin-left: auto;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--error);
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+}
+
+.sidebar-footer {
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.sidebar-env {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+}
+
+.env-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+/* ========================================
+   MAIN CONTENT AREA
+   ======================================== */
+.main {
+  grid-column: 2;
+  grid-row: 2;
+  overflow-y: auto;
+  background: var(--bg);
+}
+
+.page {
+  display: none;
+  padding: 2rem 2rem 4rem;
+  max-width: 1100px;
+  animation: pageIn 0.3s ease-out;
+}
+
+.page.active { display: block; }
+
+@keyframes pageIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.page-header {
+  margin-bottom: 2rem;
+}
+
+.page-header h1 { margin-bottom: 0.3rem; }
+
+.page-header p {
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  max-width: 60ch;
+}
+
+/* Cards */
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+  transition: all 0.2s ease;
+}
+
+.card:hover { border-color: var(--border-strong); }
+
+/* Tables */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.83rem;
+}
+
+.data-table th {
+  text-align: left;
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  padding: 0.6rem 0.75rem;
+  border-bottom: 2px solid var(--border);
+}
+
+.data-table td {
+  padding: 0.65rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.data-table tbody tr { transition: background 0.1s ease; }
+.data-table tbody tr:hover td { background: var(--bg-surface-alt); }
+
+/* Stat cards */
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.stat-card { text-align: center; padding: 1.25rem; }
+
+.stat-number {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 300;
+  color: var(--accent);
+  letter-spacing: -0.02em;
+}
+
+.stat-label {
+  font-size: 0.68rem;
+  color: var(--text-tertiary);
+  margin-top: 0.2rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Permission matrix */
+.perm-matrix {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.perm-matrix th {
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  padding: 0.5rem 0.6rem;
+  border-bottom: 2px solid var(--border);
+  text-align: center;
+}
+
+.perm-matrix th:first-child { text-align: left; }
+
+.perm-matrix td {
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  text-align: center;
+}
+
+.perm-matrix td:first-child {
+  text-align: left;
+  font-weight: 500;
+  font-size: 0.82rem;
+}
+
+.perm-check { color: var(--accent); font-weight: 700; }
+.perm-deny { color: var(--text-tertiary); }
+
+/* Notification items */
+.notif-list { display: flex; flex-direction: column; }
+
+.notif-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.notif-item:hover { background: var(--bg-surface-alt); margin: 0 -0.5rem; padding-left: 0.5rem; padding-right: 0.5rem; border-radius: var(--radius-sm); }
+
+.notif-item.unread { position: relative; }
+
+.notif-item.unread::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: translateY(-50%);
+}
+
+.notif-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.notif-icon.issuance { background: var(--accent-surface); }
+.notif-icon.verification { background: var(--info-surface); }
+.notif-icon.revocation { background: var(--error-surface); }
+.notif-icon.system { background: var(--tag-bg); }
+
+.notif-content { flex: 1; min-width: 0; }
+.notif-content p { font-size: 0.83rem; margin: 0; }
+.notif-content strong { font-weight: 600; }
+.notif-time { font-size: 0.72rem; color: var(--text-tertiary); margin-top: 0.2rem; }
+
+.notif-actions { flex-shrink: 0; display: flex; gap: 0.25rem; }
+
+/* Notification config grid */
+.config-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.config-card { padding: 1.25rem; }
+.config-card h3 { font-size: 0.9rem; margin-bottom: 0.75rem; }
+
+.channel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.82rem;
+}
+
+.channel-row:last-child { border-bottom: none; }
+
+.channel-name { color: var(--text-secondary); }
+
+.toggle-small {
+  width: 32px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--border-strong);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  border: none;
+}
+
+.toggle-small::after {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: white;
+  top: 2px;
+  left: 2px;
+  transition: transform 0.2s ease;
+}
+
+.toggle-small.on { background: var(--accent); }
+.toggle-small.on::after { transform: translateX(14px); }
+
+/* Audit log entries */
+.audit-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.82rem;
+}
+
+.audit-time {
+  font-family: var(--font-mono);
+  font-size: 0.73rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  flex-shrink: 0;
+  width: 130px;
+}
+
+.audit-module {
+  flex-shrink: 0;
+  width: 80px;
+}
+
+.audit-event { flex: 1; }
+.audit-actor { color: var(--accent); font-weight: 500; }
+
+.audit-outcome {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  font-family: var(--font-display);
+  letter-spacing: 0.04em;
+}
+
+.audit-outcome.success { color: var(--success); }
+.audit-outcome.error { color: var(--error); }
+.audit-outcome.warning { color: var(--warning); }
+
+/* Activity chart placeholder */
+.chart-placeholder {
+  height: 200px;
+  background: var(--bg-surface-alt);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  font-size: 0.82rem;
+  gap: 0.5rem;
+}
+
+.chart-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 100px;
+  padding: 0 2rem;
+  width: 100%;
+}
+
+.chart-bar {
+  flex: 1;
+  background: var(--accent);
+  border-radius: 2px 2px 0 0;
+  opacity: 0.6;
+  transition: opacity 0.15s ease;
+  min-width: 0;
+}
+
+.chart-bar:hover { opacity: 1; }
+
+/* Filter bar */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.filter-pill {
+  font-size: 0.75rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  background: var(--bg-surface);
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-weight: 500;
+  color: var(--text-tertiary);
+  transition: all 0.15s ease;
+}
+
+.filter-pill:hover { border-color: var(--border-strong); color: var(--text-secondary); }
+.filter-pill.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+
+.filter-search {
+  margin-left: auto;
+  width: 220px;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  font-family: var(--font-body);
+  background: var(--bg-surface);
+  color: var(--text);
+  outline: none;
+}
+
+.filter-search:focus { border-color: var(--accent); }
+
+/* Modals */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.3);
+  z-index: 150;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-backdrop.open { display: flex; }
+
+.modal {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  width: 100%;
+  max-width: 520px;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-lg);
+  animation: pageIn 0.25s ease-out;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-header h2 { font-size: 1.1rem; }
+.modal-body { padding: 1.5rem; }
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--border);
+}
+
+/* Toast notifications */
+.toast-container {
+  position: fixed;
+  top: calc(var(--topbar-height) + 12px);
+  right: 1.5rem;
+  z-index: 160;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  font-size: 0.83rem;
+  animation: toastIn 0.35s ease-out;
+  max-width: 380px;
+}
+
+.toast-icon { font-size: 1.1rem; flex-shrink: 0; }
+.toast-text { flex: 1; }
+.toast-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  font-size: 0.9rem;
+  padding: 0;
+}
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* User dropdown menu */
+.user-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 180px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: 0.35rem;
+  display: none;
+  z-index: 60;
+}
+
+.user-menu.open { display: block; }
+
+.user-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8rem;
+  font-family: var(--font-body);
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.user-menu-item:hover { background: var(--bg-surface-alt); color: var(--text); }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .portal { grid-template-columns: 1fr; }
+  .sidebar { display: none; }
+  .topbar { grid-column: 1; }
+  .main { grid-column: 1; }
+  .config-grid { grid-template-columns: 1fr; }
+  .form-row { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- ====================================
+     AUTH SHELL - Sign in / Get started / Onboarding
+     ==================================== -->
+<div class="auth-overlay" id="auth-screen">
+  <div class="auth-card">
+    <button class="btn btn-ghost btn-sm" onclick="goBackToRoles()" style="margin-bottom:1rem">← Back</button>
+    <div class="auth-brand">vc<span>.</span>infra</div>
+    <p style="font-size:0.75rem;color:var(--text-tertiary);text-align:center;margin-bottom:1.5rem;padding:0.5rem 0.75rem;background:var(--bg-surface-alt);border-radius:var(--radius-sm)">This UI adapts to your deployed SSO provider. No auth logic runs client-side.</p>
+
+    <!-- Auth tab switcher -->
+    <div class="auth-tabs" id="auth-tabs">
+      <button class="auth-tab active" onclick="showAuthView('login')">Sign in</button>
+      <button class="auth-tab" onclick="showAuthView('signup')">Get started</button>
+    </div>
+
+    <!-- ===== SIGN IN VIEW ===== -->
+    <div class="auth-view active" id="auth-view-login">
+      <h2 class="auth-title">Welcome back</h2>
+      <p class="auth-subtitle" id="login-subtitle">Sign in to your account</p>
+      <div class="form-group"><label class="form-label">SSO Provider</label>
+        <div class="sso-providers">
+          <button class="sso-provider selected" onclick="selectSSO(this)">eSignet</button>
+          <button class="sso-provider" onclick="selectSSO(this)">Keycloak</button>
+          <button class="sso-provider" onclick="selectSSO(this)">WSO2</button>
+          <button class="sso-provider" onclick="selectSSO(this)">Custom</button>
+        </div>
+      </div>
+      <div class="form-group"><label class="form-label">Authentication Method</label>
+        <div class="auth-modalities">
+          <button class="auth-modality selected" onclick="selectModality(this)"><span class="auth-modality-icon">🔑</span><span class="auth-modality-label">Knowledge</span></button>
+          <button class="auth-modality" onclick="selectModality(this)"><span class="auth-modality-icon">📱</span><span class="auth-modality-label">OTP</span></button>
+          <button class="auth-modality" onclick="selectModality(this)"><span class="auth-modality-icon">👆</span><span class="auth-modality-label">Biometric</span></button>
+          <button class="auth-modality" onclick="selectModality(this)"><span class="auth-modality-icon">🤳</span><span class="auth-modality-label">Face Auth</span></button>
+        </div>
+      </div>
+      <div class="form-group"><label class="form-label">Email or Identifier</label><input class="form-input" id="auth-email" type="text" placeholder="user@organization.gov"></div>
+      <div class="form-group"><label class="form-label">Password</label><input class="form-input" type="password" placeholder="••••••••" value="••••••••"></div>
+
+      <!-- Guardian access — holder only -->
+      <div class="guardian-toggle" id="guardian-toggle" onclick="toggleGuardian()" style="display:none">
+        <div class="toggle-switch"></div>
+        <div><strong style="font-size:0.83rem">Signing in as guardian?</strong><div style="font-size:0.72rem;color:var(--text-tertiary);margin-top:0.1rem">Access credentials on behalf of a minor or dependent</div></div>
+      </div>
+      <div id="guardian-fields" style="display:none;margin-bottom:1.25rem">
+        <div class="form-row" style="margin-bottom:0.75rem">
+          <div class="form-group" style="margin-bottom:0"><label class="form-label">Minor's ID</label><input class="form-input" type="text" placeholder="National ID or registry number"></div>
+          <div class="form-group" style="margin-bottom:0"><label class="form-label">Relationship</label><select class="form-select"><option>Parent</option><option>Legal Guardian</option><option>Authorized Representative</option></select></div>
+        </div>
+        <div class="form-help">Linkage will be validated against the authoritative registry before access is granted.</div>
+      </div>
+
+      <button class="btn btn-primary btn-block" onclick="doLogin(false)">Sign in</button>
+      <p style="font-size:0.78rem;color:var(--text-tertiary);text-align:center;margin-top:0.75rem">New here? <a href="#" onclick="showAuthView('signup');return false" style="color:var(--accent)">Get started</a></p>
+    </div>
+
+    <!-- ===== SIGN UP VIEW ===== -->
+    <div class="auth-view" id="auth-view-signup">
+      <h2 class="auth-title" id="signup-title">Get started</h2>
+      <p class="auth-subtitle" id="signup-subtitle">Create your account</p>
+
+      <!-- Invite-only (auditor, admin) -->
+      <div id="signup-invite-only" style="display:none">
+        <div style="padding:1.5rem;background:var(--info-surface);border-radius:var(--radius-md);text-align:center;margin-bottom:1rem">
+          <div style="font-size:1.5rem;margin-bottom:0.5rem">🔒</div>
+          <p style="font-size:0.88rem;font-weight:500;margin-bottom:0.35rem">Invite only</p>
+          <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:1rem" id="invite-only-text">This role requires an invitation from a platform administrator.</p>
+          <button class="btn btn-secondary btn-sm">Request Access</button>
+        </div>
+      </div>
+
+      <!-- Issuer signup -->
+      <div id="signup-issuer" style="display:none">
+        <div style="padding:1rem;background:var(--accent-surface);border-radius:var(--radius-md);margin-bottom:1.25rem;font-size:0.82rem;color:var(--accent)">Register your institution to issue verifiable credentials. A DPI administrator will review your application.</div>
+        <div class="form-group"><label class="form-label">Institution Name</label><input class="form-input" placeholder="University of the West Indies"></div>
+        <div class="form-row"><div class="form-group"><label class="form-label">Registration Number</label><input class="form-input" placeholder="REG-2024-00142"></div><div class="form-group"><label class="form-label">Jurisdiction</label><select class="form-select"><option>Trinidad and Tobago</option><option>Jamaica</option><option>Other</option></select></div></div>
+        <div class="form-group"><label class="form-label">Authorized Contact Email</label><input class="form-input" placeholder="admin@institution.edu"></div>
+        <div class="form-group"><label class="form-label">Contact Name</label><input class="form-input" placeholder="Full name of authorized signatory"></div>
+        <button class="btn btn-primary btn-block" onclick="showAuthView('submitted')">Submit Registration</button>
+      </div>
+
+      <!-- Holder signup -->
+      <div id="signup-holder" style="display:none">
+        <div style="padding:1rem;background:var(--accent-surface);border-radius:var(--radius-md);margin-bottom:1.25rem;font-size:0.82rem;color:var(--accent)">Set up your credential wallet. Receive, store, and share verifiable credentials from trusted issuers.</div>
+        <div class="form-group"><label class="form-label">Your Name</label><input class="form-input" placeholder="Full name"></div>
+        <div class="form-group"><label class="form-label">Email or Phone</label><input class="form-input" placeholder="email@example.com or +1 868 555 0000"></div>
+        <div class="form-group"><label class="form-label">Create Password</label><input class="form-input" type="password" placeholder="Choose a secure password"></div>
+        <button class="btn btn-primary btn-block" onclick="doLogin(true)">Create Wallet</button>
+      </div>
+
+      <!-- Verifier signup -->
+      <div id="signup-verifier" style="display:none">
+        <div style="padding:1rem;background:var(--accent-surface);border-radius:var(--radius-md);margin-bottom:1.25rem;font-size:0.82rem;color:var(--accent)">Register your organization to verify credentials from holders.</div>
+        <div class="form-group"><label class="form-label">Organization Name</label><input class="form-input" placeholder="EmployTT"></div>
+        <div class="form-row"><div class="form-group"><label class="form-label">Sector</label><select class="form-select"><option>Employment</option><option>Banking</option><option>Education</option><option>Government</option><option>Healthcare</option></select></div><div class="form-group"><label class="form-label">Contact Email</label><input class="form-input" placeholder="verify@org.gov"></div></div>
+        <button class="btn btn-primary btn-block" onclick="showAuthView('submitted')">Register as Verifier</button>
+      </div>
+
+      <!-- Submitted confirmation -->
+      <div id="auth-view-submitted" style="display:none">
+        <div style="text-align:center;padding:1rem 0">
+          <div style="font-size:2.5rem;margin-bottom:1rem">✓</div>
+          <h2 class="auth-title" style="margin-bottom:0.5rem">Application submitted</h2>
+          <p style="font-size:0.88rem;color:var(--text-secondary);margin-bottom:1.5rem;max-width:38ch;margin-left:auto;margin-right:auto">A DPI administrator will review your registration. You'll receive an email when approved.</p>
+          <button class="btn btn-secondary btn-sm" onclick="showAuthView('login')">Back to sign in</button>
+        </div>
+      </div>
+
+      <p style="font-size:0.78rem;color:var(--text-tertiary);text-align:center;margin-top:0.75rem" id="signup-footer">Already have an account? <a href="#" onclick="showAuthView('login');return false" style="color:var(--accent)">Sign in</a></p>
+    </div>
+
+    <!-- ===== FIRST-LOGIN ONBOARDING ===== -->
+    <div class="auth-view" id="auth-view-onboarding" style="display:none">
+      <div id="onboarding-content"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ====================================
+     PORTAL SHELL
+     ==================================== -->
+<div class="portal" id="portal">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-brand" onclick="goToExploration()" title="Back to exploration">vc<span>.</span>infra</div>
+    <nav class="sidebar-nav">
+
+      <div class="sidebar-section" style="padding-bottom:0.5rem;border-bottom:1px solid var(--border);margin-bottom:0.25rem">
+        <button class="sidebar-item" onclick="goToExploration()" style="color:var(--text-tertiary)">
+          <span class="sidebar-item-icon">←</span> Back to Exploration
+        </button>
+      </div>
+
+      <div class="sidebar-section" data-roles="admin issuer-admin officer auditor holder verifier">
+        <div class="sidebar-section-label">Platform</div>
+        <button class="sidebar-item active" data-page="dashboard" onclick="showPage('dashboard')">
+          <span class="sidebar-item-icon">◫</span> Dashboard
+        </button>
+        <button class="sidebar-item" data-page="notifications" onclick="showPage('notifications')" data-roles="admin issuer-admin officer auditor holder verifier">
+          <span class="sidebar-item-icon">🔔</span> Notifications
+          <span class="sidebar-item-badge">4</span>
+        </button>
+        <button class="sidebar-item" data-page="notif-config" onclick="showPage('notif-config')" data-roles="admin">
+          <span class="sidebar-item-icon">⚙</span> Notification Config
+        </button>
+      </div>
+
+      <div class="sidebar-section" data-roles="admin">
+        <div class="sidebar-section-label">Administration</div>
+        <button class="sidebar-item" data-page="rbac" onclick="showPage('rbac')">
+          <span class="sidebar-item-icon">🛡</span> Roles &amp; Access
+        </button>
+        <button class="sidebar-item" data-page="users" onclick="showPage('users')">
+          <span class="sidebar-item-icon">👥</span> User Directory
+        </button>
+      </div>
+
+      <div class="sidebar-section" data-roles="admin auditor">
+        <div class="sidebar-section-label">Audit</div>
+        <button class="sidebar-item" data-page="audit-log" onclick="showPage('audit-log')">
+          <span class="sidebar-item-icon">📋</span> Audit Log
+        </button>
+        <button class="sidebar-item" data-page="activity" onclick="showPage('activity')">
+          <span class="sidebar-item-icon">📈</span> Activity Dashboard
+        </button>
+      </div>
+
+      <div class="sidebar-section" data-roles="admin issuer-admin officer holder verifier">
+        <div class="sidebar-section-label">Workspaces</div>
+        <button class="sidebar-item" onclick="window.location.href='phase2.html?from=' + (window._currentRole || 'admin')" data-roles="admin issuer-admin officer">
+          <span class="sidebar-item-icon">🏛</span> Issuer
+          <span class="tag tag-accent" style="margin-left:auto;font-size:0.6rem">Open</span>
+        </button>
+        <button class="sidebar-item" onclick="window.location.href='phase3.html?from=' + (window._currentRole || 'admin')" data-roles="admin holder">
+          <span class="sidebar-item-icon">🔐</span> Holder
+          <span class="sidebar-item-badge" id="holder-ws-badge" style="display:none">0</span>
+          <span class="tag tag-accent" style="margin-left:auto;font-size:0.6rem">Open</span>
+        </button>
+        <button class="sidebar-item" onclick="window.location.href='phase4.html?from=' + (window._currentRole || 'admin')" data-roles="admin verifier">
+          <span class="sidebar-item-icon">✓</span> Verifier
+          <span class="sidebar-item-badge" id="verifier-ws-badge" style="display:none">0</span>
+          <span class="tag tag-accent" style="margin-left:auto;font-size:0.6rem">Open</span>
+        </button>
+        <button class="sidebar-item" onclick="window.location.href='phase5.html?from=' + (window._currentRole || 'admin')" data-roles="admin">
+          <span class="sidebar-item-icon">🌐</span> Trust & Interop
+          <span class="tag tag-accent" style="margin-left:auto;font-size:0.6rem">Open</span>
+        </button>
+      </div>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="sidebar-env">
+        <span class="env-dot"></span>
+        Production · v1.0.0
+      </div>
+    </div>
+  </aside>
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="topbar-breadcrumb" id="breadcrumb">Platform / <strong>Dashboard</strong></div>
+    </div>
+    <div class="topbar-right">
+      <button class="topbar-notif" onclick="showPage('notifications')" title="Notifications">
+        🔔
+        <span class="notif-badge">4</span>
+      </button>
+      <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">◐</button>
+      <div style="position:relative">
+        <button class="topbar-user" onclick="toggleUserMenu()">
+          <div class="user-avatar">MG</div>
+          <div>
+            <div class="user-name">María González</div>
+            <div class="user-role">Super Admin</div>
+          </div>
+        </button>
+        <div class="user-menu" id="user-menu">
+          <button class="user-menu-item" onclick="showPage('profile');closeUserMenu()">👤 My Profile</button>
+          <button class="user-menu-item" onclick="showPage('notif-config');closeUserMenu()">⚙ Settings</button>
+          <div style="border-top:1px solid var(--border);margin:0.25rem 0"></div>
+          <button class="user-menu-item" onclick="doLogout()" style="color:var(--error)">↩ Sign out</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main content -->
+  <main class="main">
+
+    <!-- ====================================
+         DASHBOARD (Activity overview - Screen 8)
+         ==================================== -->
+    <div class="page active" id="page-dashboard">
+      <!-- Admin/Issuer dashboard -->
+      <div id="dashboard-admin" class="dashboard-view">
+        <div class="page-header">
+          <h1>Dashboard</h1>
+          <p>Ecosystem overview — credentials issued, verified, and stored across all workspaces.</p>
+        </div>
+        <div class="stats-row">
+          <div class="card stat-card"><div class="stat-number">24,831</div><div class="stat-label">Credentials Issued</div></div>
+          <div class="card stat-card"><div class="stat-number">12,456</div><div class="stat-label">Verifications</div></div>
+          <div class="card stat-card"><div class="stat-number">18,204</div><div class="stat-label">Active Holders</div></div>
+          <div class="card stat-card"><div class="stat-number">7</div><div class="stat-label">Active Issuers</div></div>
+          <div class="card stat-card"><div class="stat-number">99.97%</div><div class="stat-label">Uptime (30d)</div></div>
+        </div>
+        <div style="display:grid; grid-template-columns:2fr 1fr; gap:1rem">
+          <div class="card">
+            <h3 style="margin-bottom:1rem; font-size:0.9rem">Credential Activity (30 days)</h3>
+            <div class="chart-bars" id="activity-chart"></div>
+            <div style="display:flex; justify-content:space-between; margin-top:0.5rem; font-size:0.68rem; color:var(--text-tertiary)"><span>Mar 8</span><span>Mar 15</span><span>Mar 22</span><span>Mar 29</span><span>Apr 5</span></div>
+          </div>
+          <div class="card">
+            <h3 style="margin-bottom:1rem; font-size:0.9rem">Recent Events</h3>
+            <div style="display:flex; flex-direction:column; gap:0.6rem; font-size:0.8rem">
+              <div style="display:flex; align-items:center; gap:0.5rem"><span class="tag tag-accent" style="font-size:0.6rem">ISSUED</span><span>UWI batch (342 creds)</span><span style="margin-left:auto;font-size:0.72rem;color:var(--text-tertiary)">2m ago</span></div>
+              <div style="display:flex; align-items:center; gap:0.5rem"><span class="tag tag-info" style="font-size:0.6rem">VERIFIED</span><span>EmployTT verified BSc</span><span style="margin-left:auto;font-size:0.72rem;color:var(--text-tertiary)">14m ago</span></div>
+              <div style="display:flex; align-items:center; gap:0.5rem"><span class="tag tag-error" style="font-size:0.6rem">REVOKED</span><span>UTT revoked cert #4421</span><span style="margin-left:auto;font-size:0.72rem;color:var(--text-tertiary)">1h ago</span></div>
+              <div style="display:flex; align-items:center; gap:0.5rem"><span class="tag" style="font-size:0.6rem">ONBOARD</span><span>Min. of Agriculture joined</span><span style="margin-left:auto;font-size:0.72rem;color:var(--text-tertiary)">3h ago</span></div>
+              <div style="display:flex; align-items:center; gap:0.5rem"><span class="tag tag-warning" style="font-size:0.6rem">EXPIRED</span><span>47 credentials expiring</span><span style="margin-left:auto;font-size:0.72rem;color:var(--text-tertiary)">today</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Issuer dashboard -->
+      <div id="dashboard-issuer" class="dashboard-view" style="display:none">
+        <div class="page-header">
+          <h1>Issuer Dashboard</h1>
+          <p>Your credential issuance activity, schemas, and status management.</p>
+        </div>
+        <div class="stats-row">
+          <div class="card stat-card"><div class="stat-number">4,218</div><div class="stat-label">Credentials Issued</div></div>
+          <div class="card stat-card"><div class="stat-number">342</div><div class="stat-label">Issued This Week</div></div>
+          <div class="card stat-card"><div class="stat-number">3</div><div class="stat-label">Active Schemas</div></div>
+          <div class="card stat-card"><div class="stat-number">5</div><div class="stat-label">Revocations</div></div>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem">
+          <div class="card">
+            <h3 style="margin-bottom:1rem; font-size:0.9rem">Recent Issuance</h3>
+            <div style="display:flex; flex-direction:column; gap:0.6rem; font-size:0.8rem">
+              <div style="display:flex; align-items:center; gap:0.5rem"><span class="tag tag-accent" style="font-size:0.6rem">BATCH</span><span>342 BSc degrees issued</span><span style="margin-left:auto;font-size:0.72rem;color:var(--text-tertiary)">2m ago</span></div>
+              <div style="display:flex; align-items:center; gap:0.5rem"><span class="tag tag-accent" style="font-size:0.6rem">SINGLE</span><span>MSc credential to holder:819***</span><span style="margin-left:auto;font-size:0.72rem;color:var(--text-tertiary)">1h ago</span></div>
+              <div style="display:flex; align-items:center; gap:0.5rem"><span class="tag tag-error" style="font-size:0.6rem">REVOKED</span><span>Cert #4421 — data correction</span><span style="margin-left:auto;font-size:0.72rem;color:var(--text-tertiary)">3h ago</span></div>
+            </div>
+          </div>
+          <div class="card">
+            <h3 style="margin-bottom:1rem; font-size:0.9rem">Your Schemas</h3>
+            <div style="display:flex; flex-direction:column; gap:0.6rem; font-size:0.8rem">
+              <div style="display:flex; align-items:center; gap:0.5rem; padding:0.5rem 0; border-bottom:1px solid var(--border)"><code style="font-size:0.75rem">bsc-degree-v2</code><span style="margin-left:auto" class="tag tag-accent">Active</span></div>
+              <div style="display:flex; align-items:center; gap:0.5rem; padding:0.5rem 0; border-bottom:1px solid var(--border)"><code style="font-size:0.75rem">msc-degree-v1</code><span style="margin-left:auto" class="tag tag-accent">Active</span></div>
+              <div style="display:flex; align-items:center; gap:0.5rem; padding:0.5rem 0"><code style="font-size:0.75rem">professional-cert-v2</code><span style="margin-left:auto" class="tag tag-accent">Active</span></div>
+            </div>
+          </div>
+        </div>
+        <div style="text-align:center;padding:1.5rem 0"><button class="btn btn-primary btn-sm" onclick="window.location.href='phase2.html?from=' + (window._currentRole || 'admin')">Open Issuer Workspace →</button></div>
+      </div>
+
+      <!-- Holder dashboard -->
+      <div id="dashboard-holder" class="dashboard-view" style="display:none">
+        <div class="page-header">
+          <h1>My Wallet</h1>
+          <p>Your credentials, verification history, and sharing activity.</p>
+        </div>
+        <div class="stats-row">
+          <div class="card stat-card"><div class="stat-number">3</div><div class="stat-label">Credentials Held</div></div>
+          <div class="card stat-card"><div class="stat-number">7</div><div class="stat-label">Times Verified</div></div>
+          <div class="card stat-card"><div class="stat-number">2</div><div class="stat-label">Shared This Month</div></div>
+          <div class="card stat-card"><div class="stat-number">1</div><div class="stat-label">Expiring Soon</div></div>
+        </div>
+        <div class="card" style="margin-bottom:1rem">
+          <h3 style="margin-bottom:1rem; font-size:0.9rem">Your Credentials</h3>
+          <div style="display:flex; flex-direction:column; gap:0.75rem">
+            <div style="display:flex; align-items:center; gap:1rem; padding:0.85rem; background:var(--bg-surface-alt); border-radius:var(--radius-md)">
+              <span style="font-size:1.4rem">🎓</span>
+              <div style="flex:1"><div style="font-weight:500; font-size:0.88rem">BSc Computer Science</div><div style="font-size:0.75rem; color:var(--text-secondary)">University of the West Indies · Issued Mar 2025</div></div>
+              <span class="tag tag-accent">Active</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:1rem; padding:0.85rem; background:var(--bg-surface-alt); border-radius:var(--radius-md)">
+              <span style="font-size:1.4rem">📜</span>
+              <div style="flex:1"><div style="font-weight:500; font-size:0.88rem">Professional Certificate — Data Analytics</div><div style="font-size:0.75rem; color:var(--text-secondary)">WeLearnTT · Issued Jan 2026</div></div>
+              <span class="tag tag-warning">Expiring</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:1rem; padding:0.85rem; background:var(--bg-surface-alt); border-radius:var(--radius-md)">
+              <span style="font-size:1.4rem">🪪</span>
+              <div style="flex:1"><div style="font-weight:500; font-size:0.88rem">National Identity Card</div><div style="font-size:0.75rem; color:var(--text-secondary)">Ministry of Digital Transformation · Issued Nov 2025</div></div>
+              <span class="tag tag-accent">Active</span>
+            </div>
+          </div>
+        </div>
+        <div style="text-align:center;padding:1.5rem 0"><button class="btn btn-primary btn-sm" onclick="window.location.href='phase3.html?from=' + (window._currentRole || 'admin')">Open Holder Wallet →</button></div>
+      </div>
+
+      <!-- Verifier dashboard -->
+      <div id="dashboard-verifier" class="dashboard-view" style="display:none">
+        <div class="page-header">
+          <h1>Verification Dashboard</h1>
+          <p>Incoming presentations, verification results, and trust policy status.</p>
+        </div>
+        <div class="stats-row">
+          <div class="card stat-card"><div class="stat-number">1,247</div><div class="stat-label">Verifications (30d)</div></div>
+          <div class="card stat-card"><div class="stat-number">98.2%</div><div class="stat-label">Pass Rate</div></div>
+          <div class="card stat-card"><div class="stat-number">0.3s</div><div class="stat-label">Avg Latency</div></div>
+          <div class="card stat-card"><div class="stat-number">3</div><div class="stat-label">Trusted Issuers</div></div>
+        </div>
+        <div class="card">
+          <h3 style="margin-bottom:1rem; font-size:0.9rem">Recent Verifications</h3>
+          <div style="display:flex; flex-direction:column; gap:0.6rem; font-size:0.8rem">
+            <div style="display:flex; align-items:center; gap:0.5rem"><span class="tag tag-accent" style="font-size:0.6rem">VALID</span><span>BSc degree — holder <code>816***245</code></span><span style="margin-left:auto;font-size:0.72rem;color:var(--text-tertiary)">14m ago</span></div>
+            <div style="display:flex; align-items:center; gap:0.5rem"><span class="tag tag-error" style="font-size:0.6rem">EXPIRED</span><span>Professional cert — holder <code>702***118</code></span><span style="margin-left:auto;font-size:0.72rem;color:var(--text-tertiary)">8h ago</span></div>
+            <div style="display:flex; align-items:center; gap:0.5rem"><span class="tag tag-accent" style="font-size:0.6rem">VALID</span><span>National ID — holder <code>903***221</code></span><span style="margin-left:auto;font-size:0.72rem;color:var(--text-tertiary)">1d ago</span></div>
+            <div style="display:flex; align-items:center; gap:0.5rem"><span class="tag tag-accent" style="font-size:0.6rem">VALID</span><span>MSc degree — holder <code>816***891</code></span><span style="margin-left:auto;font-size:0.72rem;color:var(--text-tertiary)">1d ago</span></div>
+          </div>
+        </div>
+        <div style="text-align:center;padding:1.5rem 0"><button class="btn btn-primary btn-sm" onclick="window.location.href='phase4.html?from=' + (window._currentRole || 'admin')">Open Verifier Workspace →</button></div>
+      </div>
+
+      <!-- Auditor dashboard -->
+      <div id="dashboard-auditor" class="dashboard-view" style="display:none">
+        <div class="page-header">
+          <h1>Audit Overview</h1>
+          <p>Read-only summary of ecosystem activity, compliance, and anomalies.</p>
+        </div>
+        <div class="stats-row">
+          <div class="card stat-card"><div class="stat-number">24,831</div><div class="stat-label">Total Credentials</div></div>
+          <div class="card stat-card"><div class="stat-number">12,456</div><div class="stat-label">Total Verifications</div></div>
+          <div class="card stat-card"><div class="stat-number">23</div><div class="stat-label">Revocations</div></div>
+          <div class="card stat-card"><div class="stat-number">3</div><div class="stat-label">Failed Verifications (7d)</div></div>
+        </div>
+        <div class="card">
+          <h3 style="margin-bottom:0.5rem; font-size:0.9rem">Compliance Notes</h3>
+          <p style="font-size:0.83rem; color:var(--text-secondary)">All issuer trust registries synced. No unresolved security alerts. 47 credentials expiring within 30 days — issuers notified. Last penetration test: 2026-03-15.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====================================
+         SCREEN 5: NOTIFICATION CENTER
+         ==================================== -->
+    <div class="page" id="page-notifications">
+      <div class="page-header">
+        <h1>Notifications</h1>
+        <p>All events across issuance, verification, and storage modules.</p>
+      </div>
+
+      <div class="filter-bar" id="notif-filter-bar">
+        <!-- Filters populated by JS per role -->
+      </div>
+
+      <div class="card">
+        <div class="notif-list" id="notif-list">
+          <!-- Notifications populated by JS per role -->
+        </div>
+      </div>
+    </div>
+
+    <!-- ====================================
+         SCREEN 6: NOTIFICATION CONFIG
+         ==================================== -->
+    <div class="page" id="page-notif-config">
+      <div class="page-header">
+        <h1>Notification Configuration</h1>
+        <p>Configure which events trigger notifications on each channel, per module.</p>
+      </div>
+
+      <div class="config-grid">
+        <div class="card config-card">
+          <h3>🏛 Issuance Events</h3>
+          <div class="channel-row"><span class="channel-name">Credential issued</span><div style="display:flex;gap:0.5rem"><span class="tag" style="font-size:0.6rem">In-app</span><button class="toggle-small on" onclick="this.classList.toggle('on')"></button><span class="tag" style="font-size:0.6rem">Email</span><button class="toggle-small on" onclick="this.classList.toggle('on')"></button><span class="tag" style="font-size:0.6rem">SMS</span><button class="toggle-small" onclick="this.classList.toggle('on')"></button></div></div>
+          <div class="channel-row"><span class="channel-name">Batch complete</span><div style="display:flex;gap:0.5rem"><span class="tag" style="font-size:0.6rem">In-app</span><button class="toggle-small on" onclick="this.classList.toggle('on')"></button><span class="tag" style="font-size:0.6rem">Email</span><button class="toggle-small on" onclick="this.classList.toggle('on')"></button><span class="tag" style="font-size:0.6rem">SMS</span><button class="toggle-small" onclick="this.classList.toggle('on')"></button></div></div>
+          <div class="channel-row"><span class="channel-name">Credential revoked</span><div style="display:flex;gap:0.5rem"><span class="tag" style="font-size:0.6rem">In-app</span><button class="toggle-small on" onclick="this.classList.toggle('on')"></button><span class="tag" style="font-size:0.6rem">Email</span><button class="toggle-small on" onclick="this.classList.toggle('on')"></button><span class="tag" style="font-size:0.6rem">SMS</span><button class="toggle-small on" onclick="this.classList.toggle('on')"></button></div></div>
+          <div class="channel-row"><span class="channel-name">Schema published</span><div style="display:flex;gap:0.5rem"><span class="tag" style="font-size:0.6rem">In-app</span><button class="toggle-small on" onclick="this.classList.toggle('on')"></button><span class="tag" style="font-size:0.6rem">Email</span><button class="toggle-small" onclick="this.classList.toggle('on')"></button><span class="tag" style="font-size:0.6rem">SMS</span><button class="toggle-small" onclick="this.classList.toggle('on')"></button></div></div>
+        </div>
+
+        <div class="card config-card">
+          <h3>✓ Verification Events</h3>
+          <div class="channel-row"><span class="channel-name">Verification success</span><div style="display:flex;gap:0.5rem"><span class="tag" style="font-size:0.6rem">In-app</span><button class="toggle-small on" onclick="this.classList.toggle('on')"></button><span class="tag" style="font-size:0.6rem">Email</span><button class="toggle-small" onclick="this.classList.toggle('on')"></button><span class="tag" style="font-size:0.6rem">SMS</span><button class="toggle-small" onclick="this.classList.toggle('on')"></button></div></div>
+          <div class="channel-row"><span class="channel-name">Verification failed</span><div style="display:flex;gap:0.5rem"><span class="tag" style="font-size:0.6rem">In-app</span><button class="toggle-small on" onclick="this.classList.toggle('on')"></button><span class="tag" style="font-size:0.6rem">Email</span><button class="toggle-small on" onclick="this.classList.toggle('on')"></button><span class="tag" style="font-size:0.6rem">SMS</span><button class="toggle-small" onclick="this.classList.toggle('on')"></button></div></div>
+          <div class="channel-row"><span class="channel-name">VP request received</span><div style="display:flex;gap:0.5rem"><span class="tag" style="font-size:0.6rem">In-app</span><button class="toggle-small on" onclick="this.classList.toggle('on')"></button><span class="tag" style="font-size:0.6rem">Email</span><button class="toggle-small" onclick="this.classList.toggle('on')"></button><span class="tag" style="font-size:0.6rem">Push</span><button class="toggle-small on" onclick="this.classList.toggle('on')"></button></div></div>
+        </div>
+
+        <div class="card config-card">
+          <h3>🔐 Store Events</h3>
+          <div class="channel-row"><span class="channel-name">Credential received</span><div style="display:flex;gap:0.5rem"><span class="tag" style="font-size:0.6rem">In-app</span><button class="toggle-small on" onclick="this.classList.toggle('on')"></button><span class="tag" style="font-size:0.6rem">Email</span><button class="toggle-small on" onclick="this.classList.toggle('on')"></button><span class="tag" style="font-size:0.6rem">Push</span><button class="toggle-small on" onclick="this.classList.toggle('on')"></button></div></div>
+          <div class="channel-row"><span class="channel-name">Credential expiring</span><div style="display:flex;gap:0.5rem"><span class="tag" style="font-size:0.6rem">In-app</span><button class="toggle-small on" onclick="this.classList.toggle('on')"></button><span class="tag" style="font-size:0.6rem">Email</span><button class="toggle-small on" onclick="this.classList.toggle('on')"></button><span class="tag" style="font-size:0.6rem">Push</span><button class="toggle-small on" onclick="this.classList.toggle('on')"></button></div></div>
+        </div>
+
+        <div class="card config-card">
+          <h3>⚙ System Events</h3>
+          <div class="channel-row"><span class="channel-name">Issuer onboarded</span><div style="display:flex;gap:0.5rem"><span class="tag" style="font-size:0.6rem">In-app</span><button class="toggle-small on" onclick="this.classList.toggle('on')"></button><span class="tag" style="font-size:0.6rem">Email</span><button class="toggle-small on" onclick="this.classList.toggle('on')"></button></div></div>
+          <div class="channel-row"><span class="channel-name">Security alert</span><div style="display:flex;gap:0.5rem"><span class="tag" style="font-size:0.6rem">In-app</span><button class="toggle-small on" onclick="this.classList.toggle('on')"></button><span class="tag" style="font-size:0.6rem">Email</span><button class="toggle-small on" onclick="this.classList.toggle('on')"></button><span class="tag" style="font-size:0.6rem">SMS</span><button class="toggle-small on" onclick="this.classList.toggle('on')"></button></div></div>
+          <div class="channel-row"><span class="channel-name">Uptime incident</span><div style="display:flex;gap:0.5rem"><span class="tag" style="font-size:0.6rem">In-app</span><button class="toggle-small on" onclick="this.classList.toggle('on')"></button><span class="tag" style="font-size:0.6rem">Email</span><button class="toggle-small on" onclick="this.classList.toggle('on')"></button><span class="tag" style="font-size:0.6rem">SMS</span><button class="toggle-small on" onclick="this.classList.toggle('on')"></button></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====================================
+         SCREEN 3: RBAC MANAGER
+         ==================================== -->
+    <div class="page" id="page-rbac">
+      <div class="page-header">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <h1>Roles &amp; Access Control</h1>
+            <p>Four minimum roles, extensible per deployment. Assign permissions by module.</p>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="openModal('modal-add-role')">+ Add Role</button>
+        </div>
+      </div>
+
+      <div class="card" style="overflow-x:auto">
+        <table class="perm-matrix">
+          <thead>
+            <tr>
+              <th style="width:200px">Permission</th>
+              <th>Super Admin</th>
+              <th>Issuer Admin</th>
+              <th>Credential Officer</th>
+              <th>Auditor</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Platform settings</td><td class="perm-check">✓</td><td class="perm-deny">—</td><td class="perm-deny">—</td><td class="perm-deny">—</td></tr>
+            <tr><td>Manage RBAC</td><td class="perm-check">✓</td><td class="perm-deny">—</td><td class="perm-deny">—</td><td class="perm-deny">—</td></tr>
+            <tr><td>Manage users</td><td class="perm-check">✓</td><td class="perm-check">✓</td><td class="perm-deny">—</td><td class="perm-deny">—</td></tr>
+            <tr><td>Schema management</td><td class="perm-check">✓</td><td class="perm-check">✓</td><td class="perm-deny">—</td><td class="perm-deny">—</td></tr>
+            <tr><td>Template management</td><td class="perm-check">✓</td><td class="perm-check">✓</td><td class="perm-deny">—</td><td class="perm-deny">—</td></tr>
+            <tr><td>Issue credentials</td><td class="perm-check">✓</td><td class="perm-check">✓</td><td class="perm-check">✓</td><td class="perm-deny">—</td></tr>
+            <tr><td>Revoke credentials</td><td class="perm-check">✓</td><td class="perm-check">✓</td><td class="perm-deny">—</td><td class="perm-deny">—</td></tr>
+            <tr><td>View audit logs</td><td class="perm-check">✓</td><td class="perm-check">✓</td><td class="perm-deny">—</td><td class="perm-check">✓</td></tr>
+            <tr><td>Export data</td><td class="perm-check">✓</td><td class="perm-deny">—</td><td class="perm-deny">—</td><td class="perm-check">✓</td></tr>
+            <tr><td>Trust registry config</td><td class="perm-check">✓</td><td class="perm-deny">—</td><td class="perm-deny">—</td><td class="perm-deny">—</td></tr>
+            <tr><td>Deployment config</td><td class="perm-check">✓</td><td class="perm-deny">—</td><td class="perm-deny">—</td><td class="perm-deny">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ====================================
+         SCREEN 4: USER DIRECTORY
+         ==================================== -->
+    <div class="page" id="page-users">
+      <div class="page-header">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <h1>User Directory</h1>
+            <p>All users across organizations. Search, filter, and manage access.</p>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="openModal('modal-add-user')">+ Add User</button>
+        </div>
+      </div>
+
+      <div class="filter-bar">
+        <button class="filter-pill active" onclick="filterUsers(this,'all')">All</button>
+        <button class="filter-pill" onclick="filterUsers(this,'admin')">Super Admin</button>
+        <button class="filter-pill" onclick="filterUsers(this,'issuer-admin')">Issuer Admin</button>
+        <button class="filter-pill" onclick="filterUsers(this,'officer')">Credential Officer</button>
+        <button class="filter-pill" onclick="filterUsers(this,'auditor')">Auditor</button>
+        <input class="filter-search" type="text" placeholder="Search users...">
+      </div>
+
+      <div class="card" style="overflow-x:auto">
+        <table class="data-table">
+          <thead>
+            <tr><th>Name</th><th>Email</th><th>Organization</th><th>Role</th><th>Status</th><th>Last Active</th><th></th></tr>
+          </thead>
+          <tbody>
+            <tr><td style="font-weight:500">María González</td><td><code style="font-size:0.78rem">maria.gonzalez@mdt.gov</code></td><td>Min. Digital Transformation</td><td><span class="tag tag-accent">Super Admin</span></td><td><span class="tag tag-accent">Active</span></td><td style="font-size:0.78rem;color:var(--text-tertiary)">Just now</td><td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem">Edit</button></td></tr>
+            <tr><td style="font-weight:500">Pablo Herrera</td><td><code style="font-size:0.78rem">p.herrera@egov.gov</code></td><td>eGov LTD</td><td><span class="tag tag-accent">Super Admin</span></td><td><span class="tag tag-accent">Active</span></td><td style="font-size:0.78rem;color:var(--text-tertiary)">2h ago</td><td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem">Edit</button></td></tr>
+            <tr><td style="font-weight:500">Dr. Keisha Williams</td><td><code style="font-size:0.78rem">k.williams@uwi.edu</code></td><td>University of the West Indies</td><td><span class="tag tag-info">Issuer Admin</span></td><td><span class="tag tag-accent">Active</span></td><td style="font-size:0.78rem;color:var(--text-tertiary)">1d ago</td><td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem">Edit</button></td></tr>
+            <tr><td style="font-weight:500">Ravi Sharma</td><td><code style="font-size:0.78rem">r.sharma@utt.edu</code></td><td>University of Trinidad & Tobago</td><td><span class="tag tag-info">Issuer Admin</span></td><td><span class="tag tag-accent">Active</span></td><td style="font-size:0.78rem;color:var(--text-tertiary)">3d ago</td><td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem">Edit</button></td></tr>
+            <tr><td style="font-weight:500">Anika Baptiste</td><td><code style="font-size:0.78rem">a.baptiste@uwi.edu</code></td><td>University of the West Indies</td><td><span class="tag">Credential Officer</span></td><td><span class="tag tag-accent">Active</span></td><td style="font-size:0.78rem;color:var(--text-tertiary)">5h ago</td><td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem">Edit</button></td></tr>
+            <tr><td style="font-weight:500">Juana Mendez</td><td><code style="font-size:0.78rem">j.mendez@mg.gov</code></td><td>Ministry of Agriculture</td><td><span class="tag">Credential Officer</span></td><td><span class="tag tag-warning">Pending</span></td><td style="font-size:0.78rem;color:var(--text-tertiary)">Never</td><td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem">Edit</button></td></tr>
+            <tr><td style="font-weight:500">External Auditor</td><td><code style="font-size:0.78rem">audit@oversight.gov</code></td><td>National Audit Office</td><td><span class="tag tag-warning">Auditor</span></td><td><span class="tag tag-accent">Active</span></td><td style="font-size:0.78rem;color:var(--text-tertiary)">1w ago</td><td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem">Edit</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ====================================
+         SCREEN 7: AUDIT LOG
+         ==================================== -->
+    <div class="page" id="page-audit-log">
+      <div class="page-header">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <h1>Audit Log</h1>
+            <p>Immutable event stream across all modules. Privacy-preserving — minimal holder PII.</p>
+          </div>
+          <div style="display:flex;gap:0.35rem">
+            <button class="btn btn-secondary btn-sm">Export CSV</button>
+            <button class="btn btn-secondary btn-sm">Export JSON</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="filter-bar">
+        <button class="filter-pill active" onclick="filterAudit(this,'all')">All</button>
+        <button class="filter-pill" onclick="filterAudit(this,'issuance')">Issuance</button>
+        <button class="filter-pill" onclick="filterAudit(this,'verification')">Verification</button>
+        <button class="filter-pill" onclick="filterAudit(this,'store')">Store</button>
+        <button class="filter-pill" onclick="filterAudit(this,'system')">System</button>
+        <input class="filter-search" type="text" placeholder="Search events...">
+      </div>
+
+      <div class="card">
+        <div class="audit-entry"><span class="audit-time">2026-04-07 14:32:18</span><span class="audit-module"><span class="tag tag-accent" style="font-size:0.6rem">Issuance</span></span><span class="audit-event"><span class="audit-actor">UWI</span> issued batch — 342 credentials, schema <code>bsc-degree-v2</code></span><span class="audit-outcome success">OK</span></div>
+        <div class="audit-entry"><span class="audit-time">2026-04-07 14:28:05</span><span class="audit-module"><span class="tag tag-info" style="font-size:0.6rem">Verification</span></span><span class="audit-event"><span class="audit-actor">EmployTT</span> verified credential for <code>holder:816***245</code> — 6-point check passed</span><span class="audit-outcome success">VALID</span></div>
+        <div class="audit-entry"><span class="audit-time">2026-04-07 13:55:41</span><span class="audit-module"><span class="tag tag-error" style="font-size:0.6rem">Issuance</span></span><span class="audit-event"><span class="audit-actor">UTT</span> revoked <code>cred:tt-utt-2024-4421</code> — reason: data correction</span><span class="audit-outcome warning">REVOKED</span></div>
+        <div class="audit-entry"><span class="audit-time">2026-04-07 13:41:12</span><span class="audit-module"><span class="tag tag-accent" style="font-size:0.6rem">Issuance</span></span><span class="audit-event"><span class="audit-actor">WeLearnTT</span> batch issued 89 credentials, schema <code>professional-cert-v2</code></span><span class="audit-outcome success">OK</span></div>
+        <div class="audit-entry"><span class="audit-time">2026-04-07 12:18:33</span><span class="audit-module"><span class="tag" style="font-size:0.6rem">System</span></span><span class="audit-event"><span class="audit-actor">System</span> issuer onboarded: <strong>Ministry of Agriculture</strong> — DID provisioned, trust registry updated</span><span class="audit-outcome success">OK</span></div>
+        <div class="audit-entry"><span class="audit-time">2026-04-07 11:02:07</span><span class="audit-module"><span class="tag tag-info" style="font-size:0.6rem">Verification</span></span><span class="audit-event"><span class="audit-actor">Bank of TT</span> verification failed for <code>holder:702***118</code> — credential expired</span><span class="audit-outcome error">EXPIRED</span></div>
+        <div class="audit-entry"><span class="audit-time">2026-04-07 10:45:22</span><span class="audit-module"><span class="tag" style="font-size:0.6rem">System</span></span><span class="audit-event"><span class="audit-actor">María González</span> updated RBAC — added permission <code>schema:publish</code> to role <code>Issuer Admin</code></span><span class="audit-outcome success">OK</span></div>
+        <div class="audit-entry"><span class="audit-time">2026-04-07 09:30:00</span><span class="audit-module"><span class="tag" style="font-size:0.6rem">System</span></span><span class="audit-event"><span class="audit-actor">System</span> daily status list refresh — all 7 issuer registries synced, 0 errors</span><span class="audit-outcome success">OK</span></div>
+        <div class="audit-entry"><span class="audit-time">2026-04-06 17:12:44</span><span class="audit-module"><span class="tag tag-accent" style="font-size:0.6rem">Issuance</span></span><span class="audit-event"><span class="audit-actor">UWI</span> published new schema <code>msc-degree-v1</code> — 12 fields, JSON-LD context registered</span><span class="audit-outcome success">OK</span></div>
+        <div class="audit-entry"><span class="audit-time">2026-04-06 15:08:19</span><span class="audit-module"><span class="tag tag-info" style="font-size:0.6rem">Store</span></span><span class="audit-event"><span class="audit-actor">System</span> guardian access granted — guardian <code>parent:441***092</code> linked to minor <code>minor:441***093</code></span><span class="audit-outcome success">OK</span></div>
+      </div>
+    </div>
+
+    <!-- ====================================
+         SCREEN 8: ACTIVITY DASHBOARD
+         ==================================== -->
+    <div class="page" id="page-activity">
+      <div class="page-header">
+        <h1>Activity Dashboard</h1>
+        <p>Visual summary of platform events, errors, and latency.</p>
+      </div>
+
+      <div class="stats-row">
+        <div class="card stat-card">
+          <div class="stat-number">1,247</div>
+          <div class="stat-label">Events Today</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-number">3</div>
+          <div class="stat-label">Errors (24h)</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-number">0.28s</div>
+          <div class="stat-label">Avg Verification Latency</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-number">1.4s</div>
+          <div class="stat-label">Avg Issuance Latency</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+        <div class="card">
+          <h3 style="margin-bottom:1rem;font-size:0.9rem">Events per Day (30d)</h3>
+          <div class="chart-bars" id="events-chart"></div>
+        </div>
+        <div class="card">
+          <h3 style="margin-bottom:1rem;font-size:0.9rem">Errors per Day (30d)</h3>
+          <div class="chart-bars" id="errors-chart"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:1rem">
+        <h3 style="margin-bottom:1rem;font-size:0.9rem">Latency Distribution</h3>
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:1rem;text-align:center">
+          <div><div style="font-family:var(--font-display);font-size:1.3rem;color:var(--accent)">68%</div><div style="font-size:0.72rem;color:var(--text-tertiary)">&lt; 0.5s</div></div>
+          <div><div style="font-family:var(--font-display);font-size:1.3rem;color:var(--accent)">22%</div><div style="font-size:0.72rem;color:var(--text-tertiary)">0.5–1s</div></div>
+          <div><div style="font-family:var(--font-display);font-size:1.3rem;color:var(--text-secondary)">7%</div><div style="font-size:0.72rem;color:var(--text-tertiary)">1–2s</div></div>
+          <div><div style="font-family:var(--font-display);font-size:1.3rem;color:var(--warning)">2%</div><div style="font-size:0.72rem;color:var(--text-tertiary)">2–5s</div></div>
+          <div><div style="font-family:var(--font-display);font-size:1.3rem;color:var(--error)">1%</div><div style="font-size:0.72rem;color:var(--text-tertiary)">&gt; 5s</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====================================
+         MY PROFILE
+         ==================================== -->
+    <div class="page" id="page-profile">
+      <div class="page-header">
+        <h1>My Profile</h1>
+        <p>Your account details and session information.</p>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem">
+        <div class="card">
+          <h3 style="margin-bottom:1.25rem; font-size:0.9rem">Account Details</h3>
+          <div class="form-group">
+            <label class="form-label">Full Name</label>
+            <input class="form-input" type="text" id="profile-name" value="" readonly style="background:var(--bg-surface-alt)">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Email</label>
+            <input class="form-input" type="email" id="profile-email" value="" readonly style="background:var(--bg-surface-alt)">
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Role</label>
+              <input class="form-input" type="text" id="profile-role" value="" readonly style="background:var(--bg-surface-alt)">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Organization</label>
+              <input class="form-input" type="text" id="profile-org" value="" readonly style="background:var(--bg-surface-alt)">
+            </div>
+          </div>
+          <div class="form-help" style="margin-top:0.5rem">Profile details are managed by your SSO provider. Contact your administrator to make changes.</div>
+        </div>
+
+        <div class="card">
+          <h3 style="margin-bottom:1.25rem; font-size:0.9rem">Session &amp; Security</h3>
+          <div style="display:flex; flex-direction:column; gap:0.85rem">
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:0.6rem 0; border-bottom:1px solid var(--border)">
+              <div><div style="font-size:0.83rem; font-weight:500">SSO Provider</div><div style="font-size:0.75rem; color:var(--text-tertiary)">Identity federation source</div></div>
+              <span class="tag tag-accent">eSignet</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:0.6rem 0; border-bottom:1px solid var(--border)">
+              <div><div style="font-size:0.83rem; font-weight:500">Auth Method</div><div style="font-size:0.75rem; color:var(--text-tertiary)">How you authenticated this session</div></div>
+              <span class="tag">Knowledge-based</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:0.6rem 0; border-bottom:1px solid var(--border)">
+              <div><div style="font-size:0.83rem; font-weight:500">Session Started</div><div style="font-size:0.75rem; color:var(--text-tertiary)">Current active session</div></div>
+              <span style="font-family:var(--font-mono); font-size:0.78rem; color:var(--text-secondary)" id="profile-session-time">—</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:0.6rem 0">
+              <div><div style="font-size:0.83rem; font-weight:500">Last Activity</div><div style="font-size:0.75rem; color:var(--text-tertiary)">Most recent action in this session</div></div>
+              <span style="font-size:0.78rem; color:var(--text-secondary)">Just now</span>
+            </div>
+          </div>
+          <button class="btn btn-secondary btn-sm" style="margin-top:1.25rem; width:100%" onclick="doLogout()">Sign out</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ====================================
+     MODALS
+     ==================================== -->
+<div class="modal-backdrop" id="modal-add-role" onclick="if(event.target===this)closeModal(this.id)">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Add Custom Role</h2>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-add-role')" style="font-size:1rem;padding:0.2rem 0.5rem">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Role Name</label>
+        <input class="form-input" type="text" placeholder="e.g. Verifier Admin">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <input class="form-input" type="text" placeholder="Brief description of this role's responsibilities">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Base Permissions From</label>
+        <select class="form-select">
+          <option>Start from scratch</option>
+          <option>Clone from Auditor</option>
+          <option>Clone from Credential Officer</option>
+          <option>Clone from Issuer Admin</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('modal-add-role')">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="closeModal('modal-add-role');showToast('Role created','New role added to permission matrix.')">Create Role</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-add-user" onclick="if(event.target===this)closeModal(this.id)">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Add User</h2>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-add-user')" style="font-size:1rem;padding:0.2rem 0.5rem">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">First Name</label>
+          <input class="form-input" type="text" placeholder="María">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Last Name</label>
+          <input class="form-input" type="text" placeholder="González">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input class="form-input" type="email" placeholder="user@organization.gov">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Organization</label>
+        <select class="form-select">
+          <option>Min. Digital Transformation</option>
+          <option>eGov LTD</option>
+          <option>University of the West Indies</option>
+          <option>University of Trinidad & Tobago</option>
+          <option>Ministry of Agriculture</option>
+          <option>WeLearnTT</option>
+          <option>Other (enter below)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Role</label>
+        <select class="form-select">
+          <option>Credential Officer</option>
+          <option>Issuer Admin</option>
+          <option>Auditor</option>
+          <option>Super Admin</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('modal-add-user')">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="closeModal('modal-add-user');showToast('User invited','Invitation sent. User will appear as Pending until they complete setup.')">Send Invite</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div class="toast-container" id="toast-container"></div>
+
+<script>
+/* ---- Auth flow ---- */
+function selectSSO(btn) {
+  btn.parentElement.querySelectorAll('.sso-provider').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+}
+
+function selectModality(btn) {
+  btn.parentElement.querySelectorAll('.auth-modality').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+}
+
+function toggleGuardian() {
+  const toggle = document.getElementById('guardian-toggle');
+  const fields = document.getElementById('guardian-fields');
+  toggle.classList.toggle('active');
+  fields.style.display = toggle.classList.contains('active') ? 'block' : 'none';
+}
+
+/* ---- Auth view switching ---- */
+function showAuthView(view) {
+  document.querySelectorAll('.auth-view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('#signup-issuer,#signup-holder,#signup-verifier,#signup-invite-only,#auth-view-submitted').forEach(v => v.style.display = 'none');
+
+  const role = new URLSearchParams(window.location.search).get('role') || 'admin';
+
+  if (view === 'login') {
+    document.getElementById('auth-view-login').classList.add('active');
+    document.querySelector('.auth-tab:first-child').classList.add('active');
+  } else if (view === 'signup') {
+    document.getElementById('auth-view-signup').classList.add('active');
+    document.querySelector('.auth-tab:last-child').classList.add('active');
+    const titles = { holder:'Set up your wallet', issuer:'Register your institution', verifier:'Register as verifier', admin:'Admin access', auditor:'Auditor access' };
+    const subs = { holder:'Create a credential wallet in minutes', issuer:'Apply to become a credential issuer', verifier:'Start accepting verifiable credentials', admin:'Requires administrator invitation', auditor:'Requires administrator invitation' };
+    document.getElementById('signup-title').textContent = titles[role] || 'Get started';
+    document.getElementById('signup-subtitle').textContent = subs[role] || '';
+    if (role === 'admin' || role === 'auditor') {
+      document.getElementById('signup-invite-only').style.display = '';
+      document.getElementById('invite-only-text').textContent = role === 'admin' ? 'Super Admin accounts are created by existing administrators.' : 'Auditor accounts require an invitation from a platform administrator.';
+      if (document.getElementById('signup-footer')) document.getElementById('signup-footer').style.display = 'none';
+    } else {
+      var formId = 'signup-' + role;
+      if (document.getElementById(formId)) document.getElementById(formId).style.display = '';
+      if (document.getElementById('signup-footer')) document.getElementById('signup-footer').style.display = '';
+    }
+  } else if (view === 'submitted') {
+    document.getElementById('auth-view-signup').classList.add('active');
+    document.querySelector('.auth-tab:last-child').classList.add('active');
+    document.getElementById('auth-view-submitted').style.display = '';
+    if (document.getElementById('signup-footer')) document.getElementById('signup-footer').style.display = 'none';
+  } else if (view === 'onboarding') {
+    document.getElementById('auth-view-onboarding').style.display = '';
+    document.getElementById('auth-view-onboarding').classList.add('active');
+    document.getElementById('auth-tabs').style.display = 'none';
+  }
+}
+
+function doLogin(isNewUser) {
+  var role = new URLSearchParams(window.location.search).get('role') || 'admin';
+  if (isNewUser) {
+    showAuthView('onboarding');
+    renderOnboarding(role);
+    return;
+  }
+  enterPortal(role);
+}
+
+function enterPortal(role) {
+  var overlay = document.getElementById('auth-screen');
+  var portal = document.getElementById('portal');
+  overlay.classList.add('hidden');
+  portal.classList.add('visible');
+  document.getElementById('auth-tabs').style.display = '';
+  generateCharts();
+  applyRole(role);
+  // Store session so workspaces can return without re-auth
+  try { sessionStorage.setItem('vc_role', role); } catch(e) {}
+}
+
+function renderOnboarding(role) {
+  var container = document.getElementById('onboarding-content');
+  var data = {
+    holder: [
+      { icon:'\uD83D\uDD10', title:'Your credentials, your control', desc:'Your wallet stores credentials issued to you. Only you decide when and with whom to share them.' },
+      { icon:'\uD83D\uDCF2', title:'Receive credentials', desc:'When an issuer sends you a credential, review the claims, then accept it into your wallet.' },
+      { icon:'\uD83D\uDD17', title:'Share securely', desc:'Share via QR code, deep link, or selective disclosure \u2014 reveal only what\u2019s needed.' }
+    ],
+    issuer: [
+      { icon:'\uD83D\uDCD0', title:'Design your schemas', desc:'Define what data your credentials contain. Publish to the trust registry when ready.' },
+      { icon:'\uD83C\uDFA8', title:'Brand your templates', desc:'Customize how credentials look \u2014 logo, colors, layout. Preview in multiple formats.' },
+      { icon:'\uD83D\uDCE4', title:'Issue at scale', desc:'Issue individually or in batches. Upload CSV, review, sign, dispatch.' }
+    ],
+    verifier: [
+      { icon:'\u2713', title:'Define what you accept', desc:'Specify which credential types and issuers you trust.' },
+      { icon:'\uD83D\uDCF1', title:'Verify instantly', desc:'Scan QR, receive presentation, or check uploaded doc. Six-point validation in under a second.' },
+      { icon:'\uD83D\uDEE1', title:'Trust with confidence', desc:'Every check covers signature, issuer, revocation, expiry, and schema compliance.' }
+    ]
+  };
+  var steps = data[role] || data['holder'];
+  container.innerHTML = '<div style="text-align:center;margin-bottom:2rem"><h2 class="auth-title" style="margin-bottom:0.5rem">Welcome to your workspace</h2><p style="font-size:0.85rem;color:var(--text-secondary)">Here\u2019s what you can do</p></div>' +
+    steps.map(function(s) { return '<div style="display:flex;gap:1rem;align-items:flex-start;margin-bottom:1.25rem;padding:1rem;background:var(--bg-surface-alt);border-radius:var(--radius-md)"><span style="font-size:1.5rem;flex-shrink:0">' + s.icon + '</span><div><div style="font-weight:500;font-size:0.9rem;margin-bottom:0.2rem">' + s.title + '</div><div style="font-size:0.82rem;color:var(--text-secondary)">' + s.desc + '</div></div></div>'; }).join('') +
+    '<button class="btn btn-primary btn-block" onclick="enterPortal(\'' + role + '\')" style="margin-top:1rem">Enter workspace</button>';
+}
+
+function applyRole(role) {
+  const roleMap = {
+    'admin': 'admin',
+    'issuer': 'issuer-admin',
+    'holder': 'holder',
+    'verifier': 'verifier',
+    'auditor': 'auditor',
+    'officer': 'officer'
+  };
+  const internalRole = roleMap[role] || 'admin';
+
+  // Store current role globally
+  window._currentRole = role;
+
+  // Filter sidebar
+  document.querySelectorAll('.sidebar-section[data-roles]').forEach(section => {
+    const allowed = section.dataset.roles.split(' ');
+    section.style.display = allowed.includes(internalRole) ? '' : 'none';
+  });
+  document.querySelectorAll('.sidebar-item[data-roles]').forEach(item => {
+    const allowed = item.dataset.roles.split(' ');
+    item.style.display = allowed.includes(internalRole) ? '' : 'none';
+  });
+
+  // Update user display in topbar
+  const userInfo = {
+    'admin':    { name: 'María González', initials: 'MG', label: 'Super Admin' },
+    'issuer':   { name: 'Dr. Keisha Williams', initials: 'KW', label: 'Issuer Admin' },
+    'holder':   { name: 'Credential Holder', initials: 'CH', label: 'Holder' },
+    'verifier': { name: 'EmployTT Verifier', initials: 'EV', label: 'Verifier' },
+    'auditor':  { name: 'External Auditor', initials: 'EA', label: 'Auditor' },
+    'officer':  { name: 'Anika Baptiste', initials: 'AB', label: 'Credential Officer' }
+  };
+  const user = userInfo[role] || userInfo['admin'];
+  document.querySelector('.user-avatar').textContent = user.initials;
+  document.querySelector('.user-name').textContent = user.name;
+  document.querySelector('.user-role').textContent = user.label;
+
+  // Populate profile page
+  const profileData = {
+    'admin':    { email: 'maria.gonzalez@mdt.gov', org: 'Min. Digital Transformation' },
+    'issuer':   { email: 'k.williams@uwi.edu', org: 'University of the West Indies' },
+    'holder':   { email: 'citizen@email.tt', org: '—' },
+    'verifier': { email: 'verify@employtt.gov', org: 'EmployTT' },
+    'auditor':  { email: 'audit@oversight.gov', org: 'National Audit Office' },
+    'officer':  { email: 'a.baptiste@uwi.edu', org: 'University of the West Indies' }
+  };
+  const profile = profileData[role] || profileData['admin'];
+  const pName = document.getElementById('profile-name');
+  const pEmail = document.getElementById('profile-email');
+  const pRole = document.getElementById('profile-role');
+  const pOrg = document.getElementById('profile-org');
+  const pSession = document.getElementById('profile-session-time');
+  if (pName) pName.value = user.name;
+  if (pEmail) pEmail.value = profile.email;
+  if (pRole) pRole.value = user.label;
+  if (pOrg) pOrg.value = profile.org;
+  if (pSession) pSession.textContent = new Date().toLocaleString();
+
+  // Switch dashboard view
+  document.querySelectorAll('.dashboard-view').forEach(v => v.style.display = 'none');
+  const dashboardMap = {
+    'admin':    'dashboard-admin',
+    'issuer':   'dashboard-issuer',
+    'officer':  'dashboard-issuer',
+    'holder':   'dashboard-holder',
+    'verifier': 'dashboard-verifier',
+    'auditor':  'dashboard-auditor'
+  };
+  const dashEl = document.getElementById(dashboardMap[role] || 'dashboard-admin');
+  if (dashEl) dashEl.style.display = '';
+
+  // Render role-specific notifications
+  renderNotifications(role);
+
+  // Set workspace sidebar badges
+  var holderBadge = document.getElementById('holder-ws-badge');
+  var verifierBadge = document.getElementById('verifier-ws-badge');
+  if (holderBadge) {
+    var hCount = (role === 'holder' || role === 'admin') ? 2 : 0;
+    holderBadge.textContent = hCount;
+    holderBadge.style.display = hCount > 0 ? '' : 'none';
+  }
+  if (verifierBadge) {
+    var vCount = (role === 'verifier' || role === 'admin') ? 3 : 0;
+    verifierBadge.textContent = vCount;
+    verifierBadge.style.display = vCount > 0 ? '' : 'none';
+  }
+
+  // Route to starting page
+  const startPage = {
+    'admin':    'dashboard',
+    'issuer':   'dashboard',
+    'holder':   'dashboard',
+    'verifier': 'dashboard',
+    'auditor':  'audit-log',
+    'officer':  'dashboard'
+  };
+  showPage(startPage[role] || 'dashboard');
+}
+
+/* ---- User menu ---- */
+function toggleUserMenu() {
+  const menu = document.getElementById('user-menu');
+  menu.classList.toggle('open');
+}
+
+function closeUserMenu() {
+  document.getElementById('user-menu').classList.remove('open');
+}
+
+// Close user menu when clicking outside
+document.addEventListener('click', function(e) {
+  const menu = document.getElementById('user-menu');
+  const btn = e.target.closest('.topbar-user');
+  if (!btn && menu) menu.classList.remove('open');
+});
+
+/* ---- Logout ---- */
+function doLogout() {
+  closeUserMenu();
+  const portal = document.getElementById('portal');
+  const overlay = document.getElementById('auth-screen');
+
+  // Hide portal, show auth
+  portal.classList.remove('visible');
+  overlay.classList.remove('hidden');
+
+  // Reset all dashboard views
+  document.querySelectorAll('.dashboard-view').forEach(v => v.style.display = 'none');
+
+  // Reset sidebar active states
+  document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+  const dashItem = document.querySelector('.sidebar-item[data-page="dashboard"]');
+  if (dashItem) dashItem.classList.add('active');
+
+  // Reset all pages to dashboard
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-dashboard').classList.add('active');
+
+  // Reset notification unreads
+  document.querySelectorAll('.notif-item').forEach(i => i.style.display = '');
+
+  // Clear role
+  window._currentRole = null;
+  try { sessionStorage.removeItem('vc_role'); } catch(e) {}
+
+  // Scroll auth card to top
+  overlay.scrollTop = 0;
+}
+
+function goToExploration() {
+  window.location.href = 'phase0.html';
+}
+
+function goBackToRoles() {
+  window.location.href = 'phase0.html#roles';
+}
+
+/* ---- Auto-init ---- */
+(function init() {
+  const params = new URLSearchParams(window.location.search);
+  const role = params.get('role');
+  const autologin = params.get('autologin');
+
+  // Returning from a workspace — skip login, go straight to dashboard
+  if (autologin === 'true' && role) {
+    enterPortal(role);
+    return;
+  }
+
+  // Check if user already has an active session
+  // Only auto-login when returning from a workspace (no role param)
+  // If role param is present, user came from role selector and should authenticate
+  try {
+    var sessionRole = sessionStorage.getItem('vc_role');
+    if (sessionRole && !role) {
+      enterPortal(sessionRole);
+      var hash = window.location.hash.replace('#', '');
+      if (hash === 'profile') showPage('profile');
+      else if (hash === 'settings') showPage('notif-config');
+      return;
+    }
+  } catch(e) {}
+
+  if (role) {
+    const subtitle = document.getElementById('login-subtitle');
+    const emailInput = document.getElementById('auth-email');
+    const roleNames = {
+      holder: 'Holder / Wallet',
+      issuer: 'Issuer Admin',
+      verifier: 'Verifier',
+      auditor: 'Auditor',
+      admin: 'Super Admin'
+    };
+    const roleEmails = {
+      admin: 'maria.gonzalez@mdt.gov',
+      issuer: 'k.williams@uwi.edu',
+      holder: '',
+      verifier: 'verify@employtt.gov',
+      auditor: 'audit@oversight.gov'
+    };
+
+    if (subtitle) {
+      subtitle.textContent = 'Signing in as ' + (roleNames[role] || role);
+    }
+    if (emailInput) {
+      emailInput.value = roleEmails[role] || '';
+      emailInput.placeholder = role === 'holder' ? 'National ID, email, or phone number' : 'user@organization.gov';
+    }
+
+    // Guardian toggle only relevant for holders
+    if (role === 'holder') {
+      var gt = document.getElementById('guardian-toggle');
+      if (gt) gt.style.display = '';
+      const modalities = document.querySelectorAll('#auth-view-login .auth-modality');
+      modalities.forEach(m => m.classList.remove('selected'));
+      if (modalities[1]) modalities[1].classList.add('selected');
+    }
+
+    // Hide "Get started" tab for admin/auditor (invite-only)
+    if (role === 'admin' || role === 'auditor') {
+      var tabs = document.querySelectorAll('.auth-tab');
+      if (tabs[1]) tabs[1].style.display = 'none';
+    }
+  }
+})();
+
+/* ---- Page navigation ---- */
+function showPage(pageId) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+
+  const page = document.getElementById('page-' + pageId);
+  const item = document.querySelector(`.sidebar-item[data-page="${pageId}"]`);
+  if (page) page.classList.add('active');
+  if (item) item.classList.add('active');
+
+  // Update breadcrumb
+  const names = {
+    'dashboard': 'Platform / <strong>Dashboard</strong>',
+    'notifications': 'Platform / <strong>Notifications</strong>',
+    'notif-config': 'Platform / <strong>Notification Config</strong>',
+    'rbac': 'Administration / <strong>Roles & Access</strong>',
+    'users': 'Administration / <strong>User Directory</strong>',
+    'audit-log': 'Audit / <strong>Audit Log</strong>',
+    'activity': 'Audit / <strong>Activity Dashboard</strong>',
+    'profile': 'Account / <strong>My Profile</strong>'
+  };
+  document.getElementById('breadcrumb').innerHTML = names[pageId] || pageId;
+}
+
+/* ---- Theme ---- */
+function toggleTheme() {
+  const html = document.documentElement;
+  html.setAttribute('data-theme', html.getAttribute('data-theme') === 'light' ? 'dark' : 'light');
+}
+
+/* ---- Modals ---- */
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+/* ---- Toasts ---- */
+function showToast(title, text) {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.innerHTML = `<span class="toast-icon">✓</span><div class="toast-text"><strong>${title}</strong><br><span style="font-size:0.78rem;color:var(--text-secondary)">${text}</span></div><button class="toast-close" onclick="this.parentElement.remove()">✕</button>`;
+  container.appendChild(toast);
+  setTimeout(() => toast.remove(), 5000);
+}
+
+/* ---- Filters (generic) ---- */
+/* ---- Role-aware notification system ---- */
+const NOTIFICATIONS = {
+  admin: {
+    filters: ['All', 'Issuance', 'Verification', 'System'],
+    items: [
+      { type: 'issuance', icon: '📄', iconClass: 'issuance', unread: true, text: '<strong>UWI</strong> batch issuance completed — 342 credentials issued via schema <code>bsc-degree-v2</code>', time: '2 minutes ago', action: 'View' },
+      { type: 'verification', icon: '✓', iconClass: 'verification', unread: true, text: '<strong>EmployTT</strong> verified credential for holder <code>816***245</code> — result: <strong style="color:var(--success)">VALID</strong>', time: '14 minutes ago', action: 'View' },
+      { type: 'issuance', icon: '⊘', iconClass: 'revocation', unread: true, text: '<strong>UTT</strong> revoked credential <code>tt-utt-2024-4421</code> — reason: data correction', time: '1 hour ago', action: 'View' },
+      { type: 'system', icon: '🏛', iconClass: 'system', unread: true, text: '<strong>Ministry of Agriculture</strong> onboarded as new issuer — pending schema configuration', time: '3 hours ago', action: 'Configure' },
+      { type: 'system', icon: '⚠', iconClass: 'system', unread: false, text: '47 credentials expiring within 30 days across 3 issuers', time: '6 hours ago', action: 'Review' },
+      { type: 'verification', icon: '✗', iconClass: 'verification', unread: false, text: '<strong>Bank of TT</strong> verification failed — credential for <code>702***118</code> expired', time: '8 hours ago', action: 'View' },
+      { type: 'issuance', icon: '📄', iconClass: 'issuance', unread: false, text: '<strong>WeLearnTT</strong> issued 89 professional certificates via <code>professional-cert-v2</code>', time: 'Yesterday', action: 'View' },
+    ]
+  },
+  issuer: {
+    filters: ['All', 'Issuance', 'Revocation', 'System'],
+    items: [
+      { type: 'issuance', icon: '📄', iconClass: 'issuance', unread: true, text: 'Your batch issuance completed — 342 BSc credentials issued via <code>bsc-degree-v2</code>', time: '2 minutes ago', action: 'View batch' },
+      { type: 'revocation', icon: '⊘', iconClass: 'revocation', unread: true, text: 'You revoked credential <code>tt-utt-2024-4421</code> — data correction', time: '1 hour ago', action: 'View' },
+      { type: 'system', icon: '⚠', iconClass: 'system', unread: true, text: '12 of your issued credentials expire within 30 days', time: '6 hours ago', action: 'Review' },
+      { type: 'issuance', icon: '📄', iconClass: 'issuance', unread: false, text: 'Single credential issued — MSc to holder <code>819***</code>', time: 'Yesterday', action: 'View' },
+      { type: 'system', icon: '✓', iconClass: 'system', unread: false, text: 'Schema <code>msc-degree-v1</code> published to trust registry', time: '2 days ago', action: 'View schema' },
+    ]
+  },
+  holder: {
+    filters: ['All', 'Received', 'Shared', 'Alerts'],
+    items: [
+      { type: 'received', icon: '📄', iconClass: 'issuance', unread: true, text: 'You received a new credential: <strong>BSc Computer Science</strong> from University of the West Indies', time: '2 hours ago', action: 'View' },
+      { type: 'shared', icon: '✓', iconClass: 'verification', unread: true, text: '<strong>EmployTT</strong> successfully verified your degree — application updated', time: '14 minutes ago', action: 'View' },
+      { type: 'alerts', icon: '⚠', iconClass: 'system', unread: true, text: 'Your <strong>Professional Certificate</strong> from WeLearnTT expires in 28 days', time: 'Today', action: 'Renew' },
+      { type: 'shared', icon: '✗', iconClass: 'verification', unread: false, text: '<strong>Bank of TT</strong> could not verify your land certificate — it has expired', time: '8 hours ago', action: 'View' },
+      { type: 'received', icon: '📄', iconClass: 'issuance', unread: false, text: 'You received <strong>Professional Certificate — Data Analytics</strong> from WeLearnTT', time: '3 weeks ago', action: 'View' },
+    ]
+  },
+  verifier: {
+    filters: ['All', 'Pending', 'Completed', 'Failed'],
+    items: [
+      { type: 'pending', icon: '📩', iconClass: 'verification', unread: true, text: 'New presentation received from holder <code>816***245</code> — BSc degree, awaiting review', time: '5 minutes ago', action: 'Review' },
+      { type: 'completed', icon: '✓', iconClass: 'verification', unread: true, text: 'Verification passed for holder <code>816***245</code> — all 6 checks valid', time: '14 minutes ago', action: 'View result' },
+      { type: 'failed', icon: '✗', iconClass: 'revocation', unread: false, text: 'Verification failed for holder <code>702***118</code> — credential expired since Jan 2026', time: '8 hours ago', action: 'View result' },
+      { type: 'completed', icon: '✓', iconClass: 'verification', unread: false, text: 'Verification passed for holder <code>904***331</code> — professional certificate valid', time: 'Yesterday', action: 'View result' },
+      { type: 'pending', icon: '📩', iconClass: 'verification', unread: false, text: 'Presentation request sent to holder <code>718***</code> — awaiting response', time: '2 days ago', action: 'Check status' },
+    ]
+  },
+  auditor: {
+    filters: ['All', 'Issuance', 'Verification', 'System'],
+    items: [
+      { type: 'issuance', icon: '📄', iconClass: 'issuance', unread: true, text: '<strong>UWI</strong> batch issuance — 342 credentials, schema <code>bsc-degree-v2</code>', time: '2 minutes ago', action: 'View log' },
+      { type: 'verification', icon: '✓', iconClass: 'verification', unread: true, text: '<strong>EmployTT</strong> verification — holder <code>816***245</code>, result: VALID', time: '14 minutes ago', action: 'View log' },
+      { type: 'issuance', icon: '⊘', iconClass: 'revocation', unread: false, text: '<strong>UTT</strong> revocation — <code>tt-utt-2024-4421</code>, reason: data correction', time: '1 hour ago', action: 'View log' },
+      { type: 'system', icon: '🏛', iconClass: 'system', unread: false, text: 'New issuer onboarded: <strong>Ministry of Agriculture</strong>', time: '3 hours ago', action: 'View log' },
+    ]
+  }
+};
+
+function renderNotifications(role) {
+  const data = NOTIFICATIONS[role] || NOTIFICATIONS['admin'];
+  const filterBar = document.getElementById('notif-filter-bar');
+  const list = document.getElementById('notif-list');
+
+  // Render filters
+  let filterHtml = data.filters.map((f, i) =>
+    `<button class="filter-pill${i === 0 ? ' active' : ''}" onclick="filterNotifs(this,'${f.toLowerCase()}')">${f}</button>`
+  ).join('');
+  filterHtml += `<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="markAllRead()">Mark all read</button>`;
+  filterBar.innerHTML = filterHtml;
+
+  // Render items
+  list.innerHTML = data.items.map(n =>
+    `<div class="notif-item${n.unread ? ' unread' : ''}" data-type="${n.type}">
+      <div class="notif-icon ${n.iconClass}">${n.icon}</div>
+      <div class="notif-content">
+        <p>${n.text}</p>
+        <div class="notif-time">${n.time}</div>
+      </div>
+      <div class="notif-actions"><button class="btn btn-ghost btn-sm" style="font-size:0.72rem">${n.action}</button></div>
+    </div>`
+  ).join('');
+
+  updateNotifBadge();
+}
+
+function filterNotifs(btn, type) {
+  btn.parentElement.querySelectorAll('.filter-pill').forEach(f => f.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('#notif-list .notif-item').forEach(item => {
+    item.style.display = (type === 'all' || item.dataset.type === type) ? '' : 'none';
+  });
+}
+
+function markAllRead() {
+  document.querySelectorAll('#notif-list .notif-item.unread').forEach(i => i.classList.remove('unread'));
+  updateNotifBadge();
+  showToast('Notifications cleared', 'All notifications marked as read.');
+}
+
+function updateNotifBadge() {
+  const count = document.querySelectorAll('#notif-list .notif-item.unread').length;
+  document.querySelectorAll('.notif-badge, .sidebar-item-badge').forEach(badge => {
+    badge.textContent = count;
+    badge.style.display = count > 0 ? '' : 'none';
+  });
+}
+
+function filterUsers(btn) {
+  btn.parentElement.querySelectorAll('.filter-pill').forEach(f => f.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+function filterAudit(btn) {
+  btn.parentElement.querySelectorAll('.filter-pill').forEach(f => f.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+/* ---- Charts (simple bar generation) ---- */
+function generateCharts() {
+  generateBarChart('activity-chart', 30, 20, 100);
+  generateBarChart('events-chart', 30, 30, 120);
+  generateBarChart('errors-chart', 30, 0, 8, true);
+}
+
+function generateBarChart(containerId, count, min, max, isError) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = '';
+  for (let i = 0; i < count; i++) {
+    const bar = document.createElement('div');
+    bar.className = 'chart-bar';
+    const val = min + Math.random() * (max - min);
+    bar.style.height = (val / max * 100) + '%';
+    if (isError) {
+      bar.style.background = val > 3 ? 'var(--error)' : 'var(--accent)';
+      bar.style.opacity = val > 3 ? '0.8' : '0.3';
+    }
+    container.appendChild(bar);
+  }
+}
+</script>
+</body>
+</html>

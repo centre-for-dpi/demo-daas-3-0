@@ -1,0 +1,2361 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Verifiable Credentials Infrastructure</title>
+<link href="https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ========================================
+   CSS CUSTOM PROPERTIES — WHITE-LABEL ENGINE
+   ======================================== */
+:root {
+  /* Typography */
+  --font-display: 'Josefin Sans', sans-serif;
+  --font-body: 'Geist', -apple-system, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'Geist Mono', 'SF Mono', 'Consolas', monospace;
+
+  /* Light theme (default) */
+  --bg: #FAFAF8;
+  --bg-surface: #FFFFFF;
+  --bg-surface-alt: #F3F3F0;
+  --bg-overlay: rgba(250, 250, 248, 0.92);
+  --text: #1A1A18;
+  --text-secondary: #6B6B66;
+  --text-tertiary: #9C9C96;
+  --border: #E4E4E0;
+  --border-strong: #CCCCC6;
+  --accent: #2D5A3D;
+  --accent-hover: #1E3D29;
+  --accent-surface: #E8F0EB;
+  --accent-text: #FFFFFF;
+  --tag-bg: #EEEEE9;
+  --tag-text: #4A4A46;
+  --success: #2D5A3D;
+  --warning: #8B6914;
+  --error: #8B2C2C;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.06);
+  --shadow-lg: 0 8px 30px rgba(0,0,0,0.08);
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+  --grain: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+}
+
+[data-theme="dark"] {
+  --bg: #111110;
+  --bg-surface: #1A1A18;
+  --bg-surface-alt: #222220;
+  --bg-overlay: rgba(17, 17, 16, 0.92);
+  --text: #EAEAE6;
+  --text-secondary: #9C9C96;
+  --text-tertiary: #6B6B66;
+  --border: #2E2E2C;
+  --border-strong: #444440;
+  --accent: #5BA97A;
+  --accent-hover: #7BC49A;
+  --accent-surface: #1A2E22;
+  --accent-text: #111110;
+  --tag-bg: #2A2A28;
+  --tag-text: #B0B0AA;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.2);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.3);
+  --shadow-lg: 0 8px 30px rgba(0,0,0,0.4);
+}
+
+/* ========================================
+   RESET & BASE
+   ======================================== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--text);
+  background: var(--bg);
+  line-height: 1.6;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: var(--grain);
+  background-repeat: repeat;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ========================================
+   TYPOGRAPHY
+   ======================================== */
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+
+h1 { font-size: clamp(2.2rem, 5vw, 3.6rem); font-weight: 300; }
+h2 { font-size: clamp(1.5rem, 3vw, 2.2rem); font-weight: 400; }
+h3 { font-size: clamp(1.1rem, 2vw, 1.4rem); font-weight: 500; }
+h4 { font-size: 1rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.75rem; }
+
+p { max-width: 62ch; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-hover); }
+
+code, .mono {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--bg-surface-alt);
+  padding: 0.15em 0.4em;
+  border-radius: var(--radius-sm);
+}
+
+/* ========================================
+   LAYOUT PRIMITIVES
+   ======================================== */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 clamp(1rem, 4vw, 3rem);
+}
+
+.screen {
+  display: none;
+  min-height: 100vh;
+  animation: screenIn 0.4s ease-out;
+}
+
+.screen.active { display: block; }
+
+@keyframes screenIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ========================================
+   NAVIGATION
+   ======================================== */
+.nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: var(--bg-overlay);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  transition: transform 0.3s ease;
+}
+
+.nav-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+}
+
+.nav-brand {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.nav-brand span { color: var(--accent); }
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.nav-link {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  padding: 0.4rem 0.75rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+  background: none;
+  font-family: var(--font-body);
+}
+
+.nav-link:hover, .nav-link.active {
+  color: var(--text);
+  background: var(--bg-surface-alt);
+}
+
+.nav-link.active { font-weight: 500; }
+
+.theme-toggle {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg-surface);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  transition: all 0.2s ease;
+  margin-left: 0.5rem;
+}
+
+.theme-toggle:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-surface-alt);
+}
+
+/* ========================================
+   BUTTONS
+   ======================================== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 0.85rem;
+  padding: 0.65rem 1.5rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  letter-spacing: 0.02em;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+.btn-primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.btn-secondary:hover {
+  background: var(--bg-surface-alt);
+  border-color: var(--text-secondary);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: transparent;
+  padding: 0.4rem 0.75rem;
+}
+
+.btn-ghost:hover {
+  color: var(--text);
+  background: var(--bg-surface-alt);
+}
+
+.btn-sm { padding: 0.35rem 0.85rem; font-size: 0.78rem; }
+
+/* ========================================
+   CARDS
+   ======================================== */
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 1.5rem;
+  transition: all 0.25s ease;
+}
+
+.card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md);
+}
+
+.card-interactive { cursor: pointer; }
+.card-interactive:hover { transform: translateY(-2px); }
+
+/* ========================================
+   TAGS & BADGES
+   ======================================== */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.7rem;
+  font-weight: 500;
+  padding: 0.2rem 0.6rem;
+  border-radius: 100px;
+  background: var(--tag-bg);
+  color: var(--tag-text);
+  letter-spacing: 0.03em;
+  font-family: var(--font-display);
+}
+
+.tag-accent { background: var(--accent-surface); color: var(--accent); }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+/* ========================================
+   SCREEN 78: LANDING PAGE
+   ======================================== */
+.landing-hero {
+  padding-top: clamp(8rem, 20vh, 14rem);
+  padding-bottom: clamp(4rem, 10vh, 8rem);
+  position: relative;
+}
+
+.landing-hero::before {
+  content: '';
+  position: absolute;
+  top: 60px;
+  right: -10%;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, var(--accent-surface) 0%, transparent 70%);
+  border-radius: 50%;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.landing-eyebrow {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 1.5rem;
+  opacity: 0;
+  animation: fadeUp 0.6s ease forwards 0.1s;
+}
+
+.landing-title {
+  margin-bottom: 1.5rem;
+  opacity: 0;
+  animation: fadeUp 0.6s ease forwards 0.2s;
+}
+
+.landing-subtitle {
+  font-size: clamp(1rem, 2vw, 1.15rem);
+  color: var(--text-secondary);
+  margin-bottom: 3rem;
+  max-width: 52ch;
+  line-height: 1.7;
+  opacity: 0;
+  animation: fadeUp 0.6s ease forwards 0.35s;
+}
+
+.landing-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  opacity: 0;
+  animation: fadeUp 0.6s ease forwards 0.5s;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Audience cards */
+.audience-section {
+  padding: 5rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.section-label {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: 2.5rem;
+}
+
+.audience-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.75rem;
+}
+
+.audience-card {
+  padding: 1.25rem;
+  text-align: center;
+}
+
+.audience-icon {
+  font-size: 1.6rem;
+  margin-bottom: 0.75rem;
+  display: block;
+}
+
+.audience-card h3 {
+  font-size: 0.9rem;
+  margin-bottom: 0.35rem;
+}
+
+.audience-card p {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* Stats ribbon */
+.stats-ribbon {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin: 4rem 0;
+}
+
+.stat-cell {
+  background: var(--bg-surface);
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.stat-number {
+  font-family: var(--font-display);
+  font-size: 1.8rem;
+  font-weight: 300;
+  color: var(--accent);
+  letter-spacing: -0.02em;
+}
+
+.stat-label {
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+  margin-top: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ========================================
+   SCREEN 79: VC EXPLAINER JOURNEY
+   ======================================== */
+.explainer-screen { padding-top: 5rem; }
+
+.journey-progress {
+  position: sticky;
+  top: 56px;
+  background: var(--bg-overlay);
+  backdrop-filter: blur(12px);
+  z-index: 50;
+  border-bottom: 1px solid var(--border);
+  padding: 1rem 0;
+  margin-bottom: 3rem;
+}
+
+.progress-steps {
+  display: flex;
+  gap: 0;
+  overflow-x: auto;
+}
+
+.progress-step {
+  flex-shrink: 0;
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s ease;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  white-space: nowrap;
+}
+
+.progress-step:hover { color: var(--text-secondary); }
+
+.progress-step.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.progress-step .step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--tag-bg);
+  font-size: 0.65rem;
+  margin-right: 0.4rem;
+}
+
+.progress-step.active .step-num {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.journey-content {
+  max-width: 680px;
+  margin: 0 auto;
+  padding-bottom: 5rem;
+}
+
+.journey-section {
+  display: none;
+  animation: screenIn 0.35s ease-out;
+}
+
+.journey-section.active { display: block; }
+
+.journey-section h2 { margin-bottom: 1.5rem; }
+
+.journey-section p {
+  color: var(--text-secondary);
+  margin-bottom: 1.25rem;
+  font-size: 0.95rem;
+}
+
+.journey-section .highlight-box {
+  background: var(--accent-surface);
+  border-left: 3px solid var(--accent);
+  padding: 1.25rem 1.5rem;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  margin: 2rem 0;
+}
+
+.highlight-box p {
+  color: var(--text);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.journey-nav {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 3rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--border);
+}
+
+/* Use case cards in explainer */
+.usecase-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin: 2rem 0;
+}
+
+.usecase-card { padding: 1.25rem; }
+.usecase-card .tag { margin-bottom: 0.5rem; }
+.usecase-card h3 { font-size: 0.9rem; margin-bottom: 0.3rem; }
+.usecase-card p { font-size: 0.8rem; color: var(--text-secondary); }
+
+/* Global adoption map placeholder */
+.adoption-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 2rem 0;
+}
+
+.adoption-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+}
+
+.adoption-item .country-flag { font-size: 1.2rem; }
+.adoption-item .country-name { font-weight: 500; flex: 1; }
+.adoption-item .country-use { color: var(--text-secondary); font-size: 0.78rem; }
+
+/* ========================================
+   SCREEN 80: INTERACTIVE MOCKUP LAUNCHER
+   ======================================== */
+.mockup-screen { padding: 5rem 0; }
+
+.mockup-config {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.config-group label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: 0.5rem;
+  font-family: var(--font-display);
+}
+
+.config-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.config-option {
+  font-size: 0.8rem;
+  padding: 0.4rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: var(--font-body);
+  color: var(--text-secondary);
+}
+
+.config-option:hover { border-color: var(--border-strong); color: var(--text); }
+
+.config-option.selected {
+  border-color: var(--accent);
+  background: var(--accent-surface);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* Mockup viewport */
+.mockup-viewport {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--bg-surface);
+  min-height: 500px;
+  position: relative;
+}
+
+.mockup-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface-alt);
+}
+
+.mockup-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.mockup-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+
+.mockup-toolbar-title {
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-left: 0.75rem;
+}
+
+.mockup-toolbar-right {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.sandbox-banner {
+  background: var(--warning);
+  color: #FFF;
+  text-align: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.3rem;
+  font-family: var(--font-display);
+}
+
+.mockup-body {
+  padding: 2rem;
+  min-height: 420px;
+}
+
+/* Mockup flow steps */
+.flow-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.flow-step {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  padding: 1.25rem;
+  background: var(--bg-surface-alt);
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.flow-step:hover {
+  border-color: var(--border);
+  background: var(--bg-surface);
+}
+
+.flow-step.active-step {
+  border-color: var(--accent);
+  background: var(--accent-surface);
+}
+
+.flow-step-num {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--tag-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.active-step .flow-step-num {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.flow-step-content h3 { font-size: 0.9rem; margin-bottom: 0.25rem; }
+.flow-step-content p { font-size: 0.8rem; color: var(--text-secondary); margin: 0; }
+
+/* Overlay toggles */
+.overlay-toggles {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+
+.overlay-toggle {
+  font-size: 0.72rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: var(--font-display);
+  font-weight: 500;
+  color: var(--text-tertiary);
+  letter-spacing: 0.03em;
+}
+
+.overlay-toggle:hover { border-color: var(--border-strong); color: var(--text-secondary); }
+
+.overlay-toggle.active {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+}
+
+/* ========================================
+   SCREEN 81: STANDARDS EXPLORER PANEL
+   ======================================== */
+.standards-panel {
+  position: fixed;
+  top: 56px;
+  right: 0;
+  width: 380px;
+  height: calc(100vh - 56px);
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border);
+  z-index: 80;
+  transform: translateX(100%);
+  transition: transform 0.3s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.standards-panel.open { transform: translateX(0); }
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.panel-header h3 { font-size: 0.95rem; }
+
+.panel-close {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: var(--bg-surface-alt);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 1rem;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.panel-close:hover { background: var(--border); color: var(--text); }
+
+.panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem;
+}
+
+.standard-item {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.standard-item:last-child { border-bottom: none; }
+
+.standard-item h4 {
+  font-size: 0.7rem;
+  color: var(--accent);
+  margin-bottom: 0.5rem;
+}
+
+.standard-item .exec-summary {
+  font-size: 0.85rem;
+  color: var(--text);
+  margin-bottom: 0.5rem;
+}
+
+.standard-item .tech-detail {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  display: none;
+}
+
+.standard-item .tech-detail.visible { display: block; }
+
+.detail-toggle {
+  font-size: 0.72rem;
+  color: var(--accent);
+  cursor: pointer;
+  background: none;
+  border: none;
+  font-family: var(--font-display);
+  font-weight: 500;
+  padding: 0;
+  letter-spacing: 0.02em;
+}
+
+.detail-toggle:hover { text-decoration: underline; }
+
+/* ========================================
+   SCREEN 82: REQUIREMENTS MAPPER OVERLAY
+   ======================================== */
+.req-overlay {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border);
+  z-index: 80;
+  transform: translateY(100%);
+  transition: transform 0.3s ease;
+  max-height: 45vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.req-overlay.open { transform: translateY(0); }
+
+.req-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.req-filters {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.req-filter {
+  font-size: 0.7rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  background: var(--bg-surface);
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-weight: 500;
+  color: var(--text-tertiary);
+  transition: all 0.15s ease;
+}
+
+.req-filter:hover { border-color: var(--border-strong); color: var(--text-secondary); }
+.req-filter.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+
+.req-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem 1.5rem;
+}
+
+.req-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.req-table th {
+  text-align: left;
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.req-table td {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.req-table tr:hover td { background: var(--bg-surface-alt); }
+
+.req-id { font-family: var(--font-mono); font-size: 0.75rem; color: var(--accent); font-weight: 500; }
+
+/* ========================================
+   SCREEN 83: TIERED PACKAGE MAPPER
+   ======================================== */
+.tiers-screen { padding: 5rem 0; }
+
+.tiers-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.tier-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.tier-card.recommended {
+  border-color: var(--accent);
+}
+
+.tier-card.recommended::before {
+  content: 'Recommended';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: var(--accent);
+  color: var(--accent-text);
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.3rem;
+}
+
+.tier-card.recommended .tier-inner { padding-top: 2.5rem; }
+.tier-inner { padding: 0; }
+
+.tier-name {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 500;
+  margin-bottom: 0.35rem;
+}
+
+.tier-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 1.25rem;
+  line-height: 1.5;
+}
+
+.tier-features { list-style: none; }
+
+.tier-features li {
+  font-size: 0.8rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.tier-features li:last-child { border-bottom: none; }
+
+.tier-check {
+  color: var(--accent);
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.tier-features li.excluded {
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+}
+
+.tier-features li.excluded .tier-check { color: var(--text-tertiary); }
+
+/* ========================================
+   SCREEN 84: ROLE SELECTOR
+   ======================================== */
+.roles-screen { padding: 5rem 0; }
+
+.roles-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.role-card {
+  text-align: center;
+  padding: 2rem 1.5rem;
+  position: relative;
+}
+
+.role-icon {
+  font-size: 2rem;
+  margin-bottom: 1rem;
+  display: block;
+}
+
+.role-card h3 { margin-bottom: 0.35rem; }
+
+.role-card p {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 1rem;
+}
+
+.role-default {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+}
+
+/* ========================================
+   SCREEN 85: AUDITOR DASHBOARD
+   ======================================== */
+.auditor-screen { padding: 5rem 0; }
+
+.audit-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.audit-metric {
+  padding: 1.25rem;
+}
+
+.audit-metric .stat-number { font-size: 1.5rem; }
+.audit-metric .stat-label { font-size: 0.68rem; }
+
+.audit-timeline {
+  margin-top: 2rem;
+}
+
+.audit-entry {
+  display: flex;
+  gap: 1rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.83rem;
+  align-items: flex-start;
+}
+
+.audit-time {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  flex-shrink: 0;
+  width: 140px;
+}
+
+.audit-event { flex: 1; }
+.audit-actor { color: var(--accent); font-weight: 500; }
+.audit-action { color: var(--text-secondary); }
+.audit-target { font-weight: 500; }
+
+.audit-result {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-family: var(--font-display);
+  letter-spacing: 0.04em;
+}
+
+.audit-result.pass { color: var(--success); }
+.audit-result.fail { color: var(--error); }
+
+/* ========================================
+   SCREEN 86: CHATBOT INTERFACE
+   ======================================== */
+.chatbot-trigger {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 90;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  box-shadow: var(--shadow-lg);
+  transition: all 0.2s ease;
+}
+
+.chatbot-trigger:hover {
+  transform: scale(1.06);
+  background: var(--accent-hover);
+}
+
+.chatbot-panel {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 91;
+  width: 380px;
+  height: 520px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chatbot-panel.open {
+  display: flex;
+  animation: chatIn 0.3s ease-out;
+}
+
+@keyframes chatIn {
+  from { opacity: 0; transform: translateY(12px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.chatbot-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.chatbot-header-info {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.chatbot-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-family: var(--font-display);
+}
+
+.chatbot-header-text h3 {
+  font-size: 0.85rem;
+  line-height: 1.2;
+}
+
+.chatbot-header-text p {
+  font-size: 0.7rem;
+  color: var(--text-tertiary);
+}
+
+.chatbot-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.chat-msg {
+  max-width: 85%;
+  font-size: 0.83rem;
+  line-height: 1.55;
+}
+
+.chat-msg.bot {
+  align-self: flex-start;
+  background: var(--bg-surface-alt);
+  padding: 0.75rem 1rem;
+  border-radius: 2px var(--radius-md) var(--radius-md) var(--radius-md);
+}
+
+.chat-msg.user {
+  align-self: flex-end;
+  background: var(--accent);
+  color: var(--accent-text);
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md) 2px var(--radius-md) var(--radius-md);
+}
+
+.chat-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+.chat-suggestion {
+  font-size: 0.75rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  background: var(--bg-surface);
+  cursor: pointer;
+  font-family: var(--font-body);
+  color: var(--text-secondary);
+  transition: all 0.15s ease;
+}
+
+.chat-suggestion:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.chatbot-input {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.chatbot-input input {
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.55rem 0.85rem;
+  font-size: 0.83rem;
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.chatbot-input input:focus { border-color: var(--accent); }
+
+.chatbot-input input::placeholder { color: var(--text-tertiary); }
+
+.chat-send {
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  transition: background 0.2s ease;
+  flex-shrink: 0;
+}
+
+.chat-send:hover { background: var(--accent-hover); }
+
+/* ========================================
+   SCREEN 87: AGENT OUTPUT VIEWER
+   ======================================== */
+.agent-output-screen { padding: 5rem 0; }
+
+.output-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2rem;
+}
+
+.output-type-tabs {
+  display: flex;
+  gap: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.output-type-tab {
+  font-size: 0.75rem;
+  padding: 0.4rem 0.85rem;
+  background: var(--bg-surface);
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: all 0.15s ease;
+}
+
+.output-type-tab:hover { background: var(--bg-surface-alt); }
+.output-type-tab.active { background: var(--accent); color: var(--accent-text); }
+
+.output-export-btns { display: flex; gap: 0.35rem; }
+
+.output-preview {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  min-height: 400px;
+  padding: 2.5rem;
+  position: relative;
+}
+
+.output-preview-label {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  font-size: 0.65rem;
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.output-doc h2 {
+  font-size: 1.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.output-doc h3 {
+  font-size: 1rem;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+  color: var(--accent);
+}
+
+.output-doc p {
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.75rem;
+}
+
+.output-revision {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.output-revision input {
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.55rem 0.85rem;
+  font-size: 0.83rem;
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+}
+
+.output-revision input:focus { border-color: var(--accent); }
+
+/* ========================================
+   RESPONSIVE
+   ======================================== */
+@media (max-width: 768px) {
+  .mockup-config { grid-template-columns: 1fr; }
+  .tiers-grid { grid-template-columns: 1fr; }
+  .usecase-grid { grid-template-columns: 1fr; }
+  .audit-metrics { grid-template-columns: 1fr 1fr; }
+  .audience-grid { grid-template-columns: 1fr 1fr; }
+  .nav-links { display: none; }
+  .chatbot-panel { width: calc(100vw - 2rem); right: 1rem; left: 1rem; }
+  .standards-panel { width: 100%; }
+  .roles-grid { grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- ====================================
+     NAVIGATION
+     ==================================== -->
+<nav class="nav">
+  <div class="container nav-inner">
+    <div class="nav-brand" onclick="navigate('landing')">vc<span>.</span>infra</div>
+    <div class="nav-links">
+      <button class="nav-link active" data-screen="landing" onclick="navigate('landing')">Home</button>
+      <button class="nav-link" data-screen="explainer" onclick="navigate('explainer')">Learn</button>
+      <button class="nav-link" data-screen="mockup" onclick="navigate('mockup')">Explore</button>
+      <button class="nav-link" data-screen="tiers" onclick="navigate('tiers')">Packages</button>
+      <button class="nav-link" data-screen="roles" onclick="navigate('roles')">Portal</button>
+      <button class="nav-link" data-screen="auditor" onclick="navigate('auditor')">Audit</button>
+      <button class="nav-link" data-screen="agent-output" onclick="navigate('agent-output')">Outputs</button>
+      <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">◐</button>
+    </div>
+  </div>
+</nav>
+
+<!-- ====================================
+     SCREEN 78: LANDING PAGE
+     ==================================== -->
+<div id="screen-landing" class="screen active">
+  <div class="container landing-hero">
+    <div class="landing-eyebrow">Verifiable Credentials Infrastructure</div>
+    <h1 class="landing-title">One ecosystem,<br>many journeys.</h1>
+    <p class="landing-subtitle">What can verifiable credentials do for you? What can you do for verifiable credentials infrastructure? Explore, understand, and deploy — at your pace.</p>
+    <div class="landing-actions">
+      <button class="btn btn-primary" onclick="navigate('explainer')">Start learning</button>
+      <button class="btn btn-secondary" onclick="navigate('mockup')">Explore the platform</button>
+      <button class="btn btn-ghost" onclick="navigate('roles')">Go to portal →</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="stats-ribbon">
+      <div class="stat-cell">
+        <div class="stat-number">80%</div>
+        <div class="stat-label">of global initiatives use W3C VCs</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-number">50+</div>
+        <div class="stat-label">National programs deploying</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-number">267</div>
+        <div class="stat-label">Projects across 60 countries</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-number">2.0</div>
+        <div class="stat-label">W3C Standard since May 2025</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container audience-section">
+    <div class="section-label">Who is this for?</div>
+    <div class="audience-grid">
+      <div class="card card-interactive audience-card" onclick="navigate('explainer')">
+        <span class="audience-icon">🏛</span>
+        <h3>Governments</h3>
+        <p>Deploy national credential infrastructure for identity, education, land, health.</p>
+      </div>
+      <div class="card card-interactive audience-card" onclick="navigate('explainer')">
+        <span class="audience-icon">🎓</span>
+        <h3>Institutions</h3>
+        <p>Issue tamper-proof digital certificates your graduates and professionals can carry anywhere.</p>
+      </div>
+      <div class="card card-interactive audience-card" onclick="navigate('explainer')">
+        <span class="audience-icon">👤</span>
+        <h3>Citizens</h3>
+        <p>Own and control your credentials. Share only what's needed, when it's needed.</p>
+      </div>
+      <div class="card card-interactive audience-card" onclick="navigate('tiers')">
+        <span class="audience-icon">💰</span>
+        <h3>Funders</h3>
+        <p>Evaluate credentialing DPI for investment. See impact evidence and cost models.</p>
+      </div>
+      <div class="card card-interactive audience-card" onclick="navigate('explainer')">
+        <span class="audience-icon">📋</span>
+        <h3>Advisors</h3>
+        <p>Guide country-level adoption with standards-based architecture and proven playbooks.</p>
+      </div>
+      <div class="card card-interactive audience-card" onclick="navigate('agent-output')">
+        <span class="audience-icon">📊</span>
+        <h3>Program Managers</h3>
+        <p>Generate pitch decks, adoption proposals, and rollout briefs from proven templates.</p>
+      </div>
+      <div class="card card-interactive audience-card" onclick="navigate('mockup')">
+        <span class="audience-icon">⚙</span>
+        <h3>Developers</h3>
+        <p>Explore the stack. Understand protocols. Build integrations against a live sandbox.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====================================
+     SCREEN 79: VC EXPLAINER JOURNEY
+     ==================================== -->
+<div id="screen-explainer" class="screen explainer-screen">
+  <div class="journey-progress">
+    <div class="container">
+      <div class="progress-steps">
+        <button class="progress-step active" onclick="showJourneyStep(0)"><span class="step-num">1</span> What are VCs</button>
+        <button class="progress-step" onclick="showJourneyStep(1)"><span class="step-num">2</span> How they work</button>
+        <button class="progress-step" onclick="showJourneyStep(2)"><span class="step-num">3</span> Use cases</button>
+        <button class="progress-step" onclick="showJourneyStep(3)"><span class="step-num">4</span> Global adoption</button>
+        <button class="progress-step" onclick="showJourneyStep(4)"><span class="step-num">5</span> Cost &amp; benefit</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="container journey-content">
+    <!-- Step 1 -->
+    <div class="journey-section active" data-step="0">
+      <h2>What are Verifiable Credentials?</h2>
+      <p>A verifiable credential is a digital version of a document you already use — a driver's license, a university degree, a land certificate, a vaccination record. The difference is that it's cryptographically signed by the issuer, making it tamper-proof and instantly verifiable by anyone, anywhere.</p>
+      <p>Think of it as a document that proves itself. No phone calls to the university. No visiting a government office. No waiting days for a background check. The credential carries its own proof.</p>
+      <div class="highlight-box">
+        <p><strong>The three roles:</strong> An <strong>issuer</strong> creates and signs the credential. A <strong>holder</strong> stores it in their wallet and decides when to share it. A <strong>verifier</strong> checks its authenticity instantly.</p>
+      </div>
+      <p>Verifiable credentials are built on open W3C standards, which means they work across different systems, industries, and international borders. This interoperability eliminates redundant verification processes — instead of every new service conducting its own identity check, it can verify a credential already issued by a trusted source.</p>
+      <div class="journey-nav">
+        <div></div>
+        <button class="btn btn-primary btn-sm" onclick="showJourneyStep(1)">How they work →</button>
+      </div>
+    </div>
+
+    <!-- Step 2 -->
+    <div class="journey-section" data-step="1">
+      <h2>How Verifiable Credentials Work</h2>
+      <p>The lifecycle follows four steps:</p>
+      <div class="flow-steps" style="margin:1.5rem 0">
+        <div class="flow-step active-step">
+          <div class="flow-step-num">1</div>
+          <div class="flow-step-content">
+            <h3>Issuance</h3>
+            <p>A trusted entity validates your information and generates a cryptographically signed credential. This is delivered to your wallet.</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-step-num">2</div>
+          <div class="flow-step-content">
+            <h3>Storage</h3>
+            <p>You store the credential in a digital wallet on your phone, computer, or cloud — entirely under your control, independent of the issuer's systems.</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-step-num">3</div>
+          <div class="flow-step-content">
+            <h3>Presentation</h3>
+            <p>When you need to prove something, you share the credential — or just the specific claims needed — with a verifier. You choose what to reveal.</p>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-step-num">4</div>
+          <div class="flow-step-content">
+            <h3>Verification</h3>
+            <p>The verifier checks the cryptographic signature, confirms the issuer is trusted, and validates the credential hasn't been revoked — all in seconds.</p>
+          </div>
+        </div>
+      </div>
+      <div class="highlight-box">
+        <p><strong>Key insight:</strong> The holder controls the data. The issuer doesn't need to be contacted. The verifier doesn't need to store anything. This is fundamentally different from centralized identity databases.</p>
+      </div>
+      <div class="journey-nav">
+        <button class="btn btn-secondary btn-sm" onclick="showJourneyStep(0)">← What are VCs</button>
+        <button class="btn btn-primary btn-sm" onclick="showJourneyStep(2)">Use cases →</button>
+      </div>
+    </div>
+
+    <!-- Step 3 -->
+    <div class="journey-section" data-step="2">
+      <h2>Use Cases by Sector</h2>
+      <p>Verifiable credentials are a horizontal infrastructure layer — they apply across every sector where trust and verification matter.</p>
+      <div class="usecase-grid">
+        <div class="card usecase-card">
+          <span class="tag tag-accent">Identity</span>
+          <h3>National ID &amp; Civil Registry</h3>
+          <p>Digital birth certificates, national IDs, voter registration — portable and verifiable.</p>
+        </div>
+        <div class="card usecase-card">
+          <span class="tag tag-accent">Education</span>
+          <h3>Academic Credentials</h3>
+          <p>Degrees, transcripts, professional certifications that graduates carry to any employer or institution.</p>
+        </div>
+        <div class="card usecase-card">
+          <span class="tag tag-accent">Land &amp; Property</span>
+          <h3>Land Registry Certificates</h3>
+          <p>Landowners prove property rights to banks for loans without physical documents.</p>
+        </div>
+        <div class="card usecase-card">
+          <span class="tag tag-accent">Health</span>
+          <h3>Health Records</h3>
+          <p>Vaccination records, professional medical licenses, insurance credentials.</p>
+        </div>
+        <div class="card usecase-card">
+          <span class="tag tag-accent">Finance</span>
+          <h3>Financial Credentials</h3>
+          <p>Bank statements, tax records, credit history — shared selectively for loan applications.</p>
+        </div>
+        <div class="card usecase-card">
+          <span class="tag tag-accent">Climate</span>
+          <h3>Carbon Credits &amp; Green Energy</h3>
+          <p>Verifiable carbon credits for energy market trading and subsidy eligibility.</p>
+        </div>
+      </div>
+      <div class="journey-nav">
+        <button class="btn btn-secondary btn-sm" onclick="showJourneyStep(1)">← How they work</button>
+        <button class="btn btn-primary btn-sm" onclick="showJourneyStep(3)">Global adoption →</button>
+      </div>
+    </div>
+
+    <!-- Step 4 -->
+    <div class="journey-section" data-step="3">
+      <h2>Global Adoption</h2>
+      <p>Verifiable credentials are being deployed at national scale across every continent. Here are some examples:</p>
+      <div class="adoption-list">
+        <div class="adoption-item"><span class="country-flag">🇺🇦</span><span class="country-name">Ukraine — DiiA</span><span class="country-use">National digital identity &amp; documents</span></div>
+        <div class="adoption-item"><span class="country-flag">🇦🇷</span><span class="country-name">Argentina — MiArgentina</span><span class="country-use">Government services &amp; identity</span></div>
+        <div class="adoption-item"><span class="country-flag">🇸🇬</span><span class="country-name">Singapore — SingPass</span><span class="country-use">National identity &amp; digital services</span></div>
+        <div class="adoption-item"><span class="country-flag">🇮🇳</span><span class="country-name">India — DigiLocker</span><span class="country-use">Document storage &amp; verification</span></div>
+        <div class="adoption-item"><span class="country-flag">🇹🇹</span><span class="country-name">Trinidad &amp; Tobago — VerifyTT</span><span class="country-use">Education credentials (UWI, UTT)</span></div>
+        <div class="adoption-item"><span class="country-flag">🇧🇹</span><span class="country-name">Bhutan — NDI</span><span class="country-use">National digital identity</span></div>
+        <div class="adoption-item"><span class="country-flag">🇪🇺</span><span class="country-name">European Union — EUDI Wallet</span><span class="country-use">Cross-border identity &amp; credentials</span></div>
+      </div>
+      <div class="journey-nav">
+        <button class="btn btn-secondary btn-sm" onclick="showJourneyStep(2)">← Use cases</button>
+        <button class="btn btn-primary btn-sm" onclick="showJourneyStep(4)">Cost &amp; benefit →</button>
+      </div>
+    </div>
+
+    <!-- Step 5 -->
+    <div class="journey-section" data-step="4">
+      <h2>Cost &amp; Benefit</h2>
+      <p>Credentialing infrastructure delivers measurable returns across three dimensions:</p>
+      <div class="highlight-box">
+        <p><strong>For citizens:</strong> Eliminate trips to government offices, reduce document fraud, maintain control over personal data, access services faster.</p>
+      </div>
+      <div class="highlight-box" style="margin-top:1rem">
+        <p><strong>For institutions:</strong> Reduce verification costs from days to seconds. VerifyTT reduced issuer onboarding from 1–2 days to minutes. Batch issuance handles 10,000+ credentials per hour.</p>
+      </div>
+      <div class="highlight-box" style="margin-top:1rem">
+        <p><strong>For governments:</strong> Lower administrative costs, reduce fraud, enable cross-sector data sharing, build foundational DPI that scales to new use cases without rebuilding.</p>
+      </div>
+      <p style="margin-top:2rem">The DaaS (DPI as a Packaged Solution) model provides a structured rollout framework — from initial deployment through ecosystem expansion to institutional sustainability — typically across a 24-week engagement.</p>
+      <div class="journey-nav">
+        <button class="btn btn-secondary btn-sm" onclick="showJourneyStep(3)">← Global adoption</button>
+        <button class="btn btn-primary" onclick="navigate('mockup')">Explore the platform →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====================================
+     SCREEN 80: INTERACTIVE MOCKUP LAUNCHER
+     ==================================== -->
+<div id="screen-mockup" class="screen mockup-screen">
+  <div class="container">
+    <div class="section-label">Interactive Exploration</div>
+    <h2 style="margin-bottom:2rem">Experience the credential lifecycle</h2>
+
+    <div class="mockup-config">
+      <div class="config-group">
+        <label>Sector</label>
+        <div class="config-options">
+          <button class="config-option selected" onclick="selectConfig(this, 'sector')">Education</button>
+          <button class="config-option" onclick="selectConfig(this, 'sector')">Land</button>
+          <button class="config-option" onclick="selectConfig(this, 'sector')">Identity</button>
+          <button class="config-option" onclick="selectConfig(this, 'sector')">Health</button>
+        </div>
+      </div>
+      <div class="config-group">
+        <label>Role</label>
+        <div class="config-options">
+          <button class="config-option" onclick="selectConfig(this, 'role')">Issuer</button>
+          <button class="config-option selected" onclick="selectConfig(this, 'role')">Holder</button>
+          <button class="config-option" onclick="selectConfig(this, 'role')">Verifier</button>
+        </div>
+      </div>
+      <div class="config-group">
+        <label>Flow</label>
+        <div class="config-options">
+          <button class="config-option selected" onclick="selectConfig(this, 'flow')">Issuer-initiated</button>
+          <button class="config-option" onclick="selectConfig(this, 'flow')">Wallet-initiated</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="mockup-viewport">
+      <div class="sandbox-banner">⚠ You are exploring with sample data</div>
+      <div class="mockup-toolbar">
+        <div class="mockup-toolbar-left">
+          <span class="mockup-dot"></span>
+          <span class="mockup-dot"></span>
+          <span class="mockup-dot"></span>
+          <span class="mockup-toolbar-title" id="mockup-title">Education — Holder — Issuer-initiated</span>
+        </div>
+        <div class="mockup-toolbar-right">
+          <button class="overlay-toggle" id="toggle-standards" onclick="toggleStandardsPanel()">Standards</button>
+          <button class="overlay-toggle" id="toggle-reqs" onclick="toggleReqOverlay()">Requirements</button>
+        </div>
+      </div>
+      <div class="mockup-body">
+        <div class="flow-steps" id="mockup-flow">
+          <div class="flow-step active-step" onclick="activateFlowStep(this, 0)">
+            <div class="flow-step-num">1</div>
+            <div class="flow-step-content">
+              <h3>Credential Offered</h3>
+              <p>University of the West Indies has issued your Bachelor of Science degree as a verifiable credential. Review the claims before accepting.</p>
+            </div>
+          </div>
+          <div class="flow-step" onclick="activateFlowStep(this, 1)">
+            <div class="flow-step-num">2</div>
+            <div class="flow-step-content">
+              <h3>Review Claims</h3>
+              <p>Degree: BSc Computer Science · Graduation: 2025 · GPA: 3.7 · Institution: UWI St. Augustine · Student ID: 816003245</p>
+            </div>
+          </div>
+          <div class="flow-step" onclick="activateFlowStep(this, 2)">
+            <div class="flow-step-num">3</div>
+            <div class="flow-step-content">
+              <h3>Accept &amp; Store</h3>
+              <p>Accept this credential into your wallet. Choose storage: mobile wallet, cloud eLocker, or download as signed PDF with QR.</p>
+            </div>
+          </div>
+          <div class="flow-step" onclick="activateFlowStep(this, 3)">
+            <div class="flow-step-num">4</div>
+            <div class="flow-step-content">
+              <h3>Share with Employer</h3>
+              <p>EmployTT requests verification of your degree. Share via QR code, deep link, or selective disclosure — reveal only what's needed.</p>
+            </div>
+          </div>
+          <div class="flow-step" onclick="activateFlowStep(this, 4)">
+            <div class="flow-step-num">5</div>
+            <div class="flow-step-content">
+              <h3>Verification Complete</h3>
+              <p>Signature valid ✓ · Issuer trusted ✓ · Not revoked ✓ · Not expired ✓ · Schema valid ✓ · Verification took 0.3 seconds.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="overlay-toggles" style="margin-top:1rem; justify-content:flex-end">
+      <button class="btn btn-ghost btn-sm" onclick="navigate('tiers')">View package tiers →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ====================================
+     SCREEN 81: STANDARDS PANEL (side drawer)
+     ==================================== -->
+<div class="standards-panel" id="standards-panel">
+  <div class="panel-header">
+    <h3>Standards &amp; Protocols</h3>
+    <button class="panel-close" onclick="toggleStandardsPanel()">✕</button>
+  </div>
+  <div class="panel-body">
+    <div class="standard-item">
+      <h4>Active on this screen</h4>
+      <div class="exec-summary">W3C Verifiable Credentials Data Model 2.0 — the core standard defining how credentials are structured, signed, and verified.</div>
+      <div class="tech-detail" id="detail-vcdm">The credential payload uses JSON-LD with a <code>@context</code> referencing the W3C VCDM 2.0 vocabulary. The <code>credentialSubject</code> block contains claims. Proof is attached via Data Integrity (EdDSA/ECDSA) or secured externally via JOSE/COSE (JWT/SD-JWT). The issuer's DID resolves to a verification method containing the public key.</div>
+      <button class="detail-toggle" onclick="toggleDetail('detail-vcdm', this)">Show technical detail</button>
+    </div>
+    <div class="standard-item">
+      <h4>Issuance Protocol</h4>
+      <div class="exec-summary">OID4VCI — OpenID for Verifiable Credential Issuance. Defines how a wallet requests and receives credentials from an issuer.</div>
+      <div class="tech-detail" id="detail-oid4vci">The wallet sends a token request to the issuer's authorization server, receives an access token, then calls the credential endpoint with a proof of possession. The issuer returns a signed credential. Supports pre-authorized code flow (issuer-initiated) and authorization code flow (wallet-initiated).</div>
+      <button class="detail-toggle" onclick="toggleDetail('detail-oid4vci', this)">Show technical detail</button>
+    </div>
+    <div class="standard-item">
+      <h4>Presentation Protocol</h4>
+      <div class="exec-summary">OID4VP — OpenID for Verifiable Presentations. Defines how a verifier requests and receives credential presentations from a holder.</div>
+      <div class="tech-detail" id="detail-oid4vp">The verifier generates a presentation request specifying required credential types and claims. This is encoded as a QR code or deep link. The holder's wallet parses the request, selects matching credentials, optionally applies selective disclosure, and sends a Verifiable Presentation signed by the holder.</div>
+      <button class="detail-toggle" onclick="toggleDetail('detail-oid4vp', this)">Show technical detail</button>
+    </div>
+    <div class="standard-item">
+      <h4>Status Check</h4>
+      <div class="exec-summary">Bitstring Status List — a privacy-preserving mechanism for checking if a credential has been revoked or suspended.</div>
+      <div class="tech-detail" id="detail-status">The issuer maintains a bitstring where each credential maps to a specific bit position. A bit value of 1 indicates revocation. The verifier fetches the status list URL from the credential, checks the relevant bit position. The bitstring is compressed and cached, so verification works offline with stale-but-acceptable data.</div>
+      <button class="detail-toggle" onclick="toggleDetail('detail-status', this)">Show technical detail</button>
+    </div>
+    <div class="standard-item">
+      <h4>Proof Formats Supported</h4>
+      <div class="exec-summary">This platform supports five credential standards: W3C-VCDM 2.0, VCDM 1.1, SD-JWT, mDL (ISO 18013-5), and AnonCreds.</div>
+      <div class="tech-detail" id="detail-proofs">Each format has different selective disclosure capabilities. BBS+ and AnonCreds support zero-knowledge proofs. SD-JWT supports claim-level disclosure. mDL supports namespace-level disclosure. VCDM 1.1 and basic Data Integrity (EdDSA/ECDSA) only support full credential presentation.</div>
+      <button class="detail-toggle" onclick="toggleDetail('detail-proofs', this)">Show technical detail</button>
+    </div>
+  </div>
+</div>
+
+<!-- ====================================
+     SCREEN 82: REQUIREMENTS OVERLAY (bottom drawer)
+     ==================================== -->
+<div class="req-overlay" id="req-overlay">
+  <div class="req-header">
+    <h3 style="font-size:0.95rem">DaaS v2.0 Requirements Mapping</h3>
+    <div style="display:flex;align-items:center;gap:1rem">
+      <div class="req-filters">
+        <button class="req-filter active" onclick="filterReqs(this, 'all')">All</button>
+        <button class="req-filter" onclick="filterReqs(this, 'CI')">Issuance</button>
+        <button class="req-filter" onclick="filterReqs(this, 'CV')">Verification</button>
+        <button class="req-filter" onclick="filterReqs(this, 'CS')">Store</button>
+      </div>
+      <button class="panel-close" onclick="toggleReqOverlay()">✕</button>
+    </div>
+  </div>
+  <div class="req-body">
+    <table class="req-table">
+      <thead>
+        <tr><th>Req ID</th><th>Requirement</th><th>Screen</th><th>Status</th></tr>
+      </thead>
+      <tbody id="req-table-body">
+        <tr data-cat="CI"><td class="req-id">CI-01</td><td>Self-service issuer onboarding with configurable approval workflows</td><td>9, 10</td><td><span class="tag tag-accent">Mapped</span></td></tr>
+        <tr data-cat="CI"><td class="req-id">CI-02</td><td>Issuer onboarding collects legal entity details, DID/key config</td><td>9</td><td><span class="tag tag-accent">Mapped</span></td></tr>
+        <tr data-cat="CI"><td class="req-id">CI-03</td><td>RBAC: Super Admin, Issuer Admin, Credential Officer, Auditor</td><td>3, 4</td><td><span class="tag tag-accent">Mapped</span></td></tr>
+        <tr data-cat="CI"><td class="req-id">CI-06</td><td>Language, templates, QR content, schema formats, multi-type</td><td>13–16, 31</td><td><span class="tag tag-accent">Mapped</span></td></tr>
+        <tr data-cat="CI"><td class="req-id">CI-08</td><td>Issuance in signed QR, signed PDF, machine-readable formats</td><td>17, 19, 21</td><td><span class="tag tag-accent">Mapped</span></td></tr>
+        <tr data-cat="CI"><td class="req-id">CI-10</td><td>CSV/Excel file upload for batch credential generation</td><td>18</td><td><span class="tag tag-accent">Mapped</span></td></tr>
+        <tr data-cat="CI"><td class="req-id">CI-13</td><td>Credential revocation</td><td>27–29</td><td><span class="tag tag-accent">Mapped</span></td></tr>
+        <tr data-cat="CI"><td class="req-id">CI-16</td><td>Delegated access for guardians of minors</td><td>2, 30, 36</td><td><span class="tag tag-accent">Mapped</span></td></tr>
+        <tr data-cat="CV"><td class="req-id">CV-01</td><td>Verification via SDK, API, web portal, mobile app</td><td>43, 45, 50</td><td><span class="tag tag-accent">Mapped</span></td></tr>
+        <tr data-cat="CV"><td class="req-id">CV-02</td><td>Six-point validation (signature, proof chain, cert path, revocation, expiry, schema)</td><td>46, 47</td><td><span class="tag tag-accent">Mapped</span></td></tr>
+        <tr data-cat="CV"><td class="req-id">CV-03</td><td>Online/offline verification; bilingual support</td><td>49, 31</td><td><span class="tag tag-accent">Mapped</span></td></tr>
+        <tr data-cat="CV"><td class="req-id">CV-06</td><td>ZKP-based selective disclosure acceptance</td><td>38, 47</td><td><span class="tag tag-accent">Mapped</span></td></tr>
+        <tr data-cat="CV"><td class="req-id">CV-08</td><td>Multi-channel notifications</td><td>5, 6</td><td><span class="tag tag-accent">Mapped</span></td></tr>
+        <tr data-cat="CS"><td class="req-id">CS-01</td><td>Multi-modal store: local, cloud, eLocker, wallet</td><td>33</td><td><span class="tag tag-accent">Mapped</span></td></tr>
+        <tr data-cat="CS"><td class="req-id">CS-02</td><td>Import via multiple auth modalities</td><td>35</td><td><span class="tag tag-accent">Mapped</span></td></tr>
+        <tr data-cat="CS"><td class="req-id">CS-03</td><td>Hold multiple credential types across issuers and standards</td><td>33, 34</td><td><span class="tag tag-accent">Mapped</span></td></tr>
+        <tr data-cat="CS"><td class="req-id">CS-04</td><td>Delegated storage for minors</td><td>36</td><td><span class="tag tag-accent">Mapped</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ====================================
+     SCREEN 83: TIERED PACKAGE MAPPER
+     ==================================== -->
+<div id="screen-tiers" class="screen tiers-screen">
+  <div class="container">
+    <div class="section-label">Tiered Packages</div>
+    <h2>What do you need?</h2>
+    <p style="color:var(--text-secondary);margin-bottom:1rem;font-size:0.95rem">Each tier builds on the previous. Select based on your deployment scope and institutional capacity.</p>
+
+    <div class="tiers-grid">
+      <div class="card tier-card">
+        <div class="tier-inner">
+          <span class="tag" style="margin-bottom:0.75rem">Tier 1</span>
+          <div class="tier-name">Foundation</div>
+          <div class="tier-desc">Single use case, single issuer, basic issuance and verification. Ideal for pilots and proof-of-concept.</div>
+          <ul class="tier-features">
+            <li><span class="tier-check">✓</span> Credential issuance (single + batch)</li>
+            <li><span class="tier-check">✓</span> Basic verification portal</li>
+            <li><span class="tier-check">✓</span> Web eLocker for holders</li>
+            <li><span class="tier-check">✓</span> Single schema/template</li>
+            <li><span class="tier-check">✓</span> QR + PDF output</li>
+            <li class="excluded"><span class="tier-check">—</span> Mobile wallet</li>
+            <li class="excluded"><span class="tier-check">—</span> Multi-issuer onboarding</li>
+            <li class="excluded"><span class="tier-check">—</span> Selective disclosure</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card tier-card recommended">
+        <div class="tier-inner">
+          <span class="tag tag-accent" style="margin-bottom:0.75rem">Tier 2</span>
+          <div class="tier-name">Ecosystem</div>
+          <div class="tier-desc">Multiple use cases, self-service issuer onboarding, mobile wallet, cross-sector deployment.</div>
+          <ul class="tier-features">
+            <li><span class="tier-check">✓</span> Everything in Foundation</li>
+            <li><span class="tier-check">✓</span> Self-service issuer onboarding</li>
+            <li><span class="tier-check">✓</span> Mobile wallet (Inji or compliant)</li>
+            <li><span class="tier-check">✓</span> Multiple schemas/templates</li>
+            <li><span class="tier-check">✓</span> Selective disclosure (SD-JWT)</li>
+            <li><span class="tier-check">✓</span> Trust registry</li>
+            <li><span class="tier-check">✓</span> Analytics dashboards</li>
+            <li class="excluded"><span class="tier-check">—</span> Cross-DPG interoperability</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card tier-card">
+        <div class="tier-inner">
+          <span class="tag" style="margin-bottom:0.75rem">Tier 3</span>
+          <div class="tier-name">National Scale</div>
+          <div class="tier-desc">Full interoperability, multi-DPG bridging, last-mile channels, ZKP, agent-assisted flows.</div>
+          <ul class="tier-features">
+            <li><span class="tier-check">✓</span> Everything in Ecosystem</li>
+            <li><span class="tier-check">✓</span> Cross-DPG adaptor layer</li>
+            <li><span class="tier-check">✓</span> Last-mile channels (SMS, USSD, IVR)</li>
+            <li><span class="tier-check">✓</span> ZKP / AnonCreds support</li>
+            <li><span class="tier-check">✓</span> Agent-assisted verification</li>
+            <li><span class="tier-check">✓</span> Offline verification</li>
+            <li><span class="tier-check">✓</span> Multi-tenancy</li>
+            <li><span class="tier-check">✓</span> Schema harmonization tools</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:2rem;text-align:center">
+      <button class="btn btn-primary" onclick="openChatbot()">Help me choose a tier</button>
+    </div>
+  </div>
+</div>
+
+<!-- ====================================
+     SCREEN 84: ROLE SELECTOR
+     ==================================== -->
+<div id="screen-roles" class="screen roles-screen">
+  <div class="container">
+    <div class="section-label">Production Portal</div>
+    <h2>Select your role</h2>
+    <p style="color:var(--text-secondary);margin-bottom:0.5rem;font-size:0.95rem">Each role opens the corresponding workspace. In production, this connects to your live backend.</p>
+
+    <div class="roles-grid">
+      <div class="card card-interactive role-card" onclick="selectRole('holder')">
+        <span class="tag role-default">Default</span>
+        <span class="role-icon">🔐</span>
+        <h3>Holder / Wallet</h3>
+        <p>Receive, store, manage, and share your credentials. Control what you reveal.</p>
+        <button class="btn btn-primary btn-sm">Enter wallet</button>
+      </div>
+      <div class="card card-interactive role-card" onclick="selectRole('issuer')">
+        <span class="role-icon">🏛</span>
+        <h3>Issuer</h3>
+        <p>Design schemas, issue credentials, manage revocation, onboard into the ecosystem.</p>
+        <button class="btn btn-secondary btn-sm">Enter issuer portal</button>
+      </div>
+      <div class="card card-interactive role-card" onclick="selectRole('verifier')">
+        <span class="role-icon">✓</span>
+        <h3>Verifier</h3>
+        <p>Build verification requests, validate presentations, manage trust policies.</p>
+        <button class="btn btn-secondary btn-sm">Enter verifier portal</button>
+      </div>
+      <div class="card card-interactive role-card" onclick="selectRole('auditor')">
+        <span class="role-icon">📊</span>
+        <h3>Auditor</h3>
+        <p>Read-only access to audit logs, compliance reports, and ecosystem metrics.</p>
+        <button class="btn btn-secondary btn-sm">Enter audit portal</button>
+      </div>
+      <div class="card card-interactive role-card" onclick="selectRole('admin')">
+        <span class="role-icon">⚙</span>
+        <h3>Admin</h3>
+        <p>Platform configuration, RBAC, deployment settings, data portability.</p>
+        <button class="btn btn-secondary btn-sm">Enter admin portal</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====================================
+     SCREEN 85: AUDITOR DASHBOARD
+     ==================================== -->
+<div id="screen-auditor" class="screen auditor-screen">
+  <div class="container">
+    <div class="section-label">Auditor Portal — Read Only</div>
+    <h2 style="margin-bottom:2rem">Ecosystem Audit Dashboard</h2>
+
+    <div class="audit-metrics">
+      <div class="card audit-metric">
+        <div class="stat-number">24,831</div>
+        <div class="stat-label">Credentials Issued</div>
+      </div>
+      <div class="card audit-metric">
+        <div class="stat-number">12,456</div>
+        <div class="stat-label">Verifications</div>
+      </div>
+      <div class="card audit-metric">
+        <div class="stat-number">7</div>
+        <div class="stat-label">Active Issuers</div>
+      </div>
+      <div class="card audit-metric">
+        <div class="stat-number">23</div>
+        <div class="stat-label">Revocations</div>
+      </div>
+    </div>
+
+    <div class="card audit-timeline">
+      <h3 style="margin-bottom:1rem; font-size:0.95rem">Recent Activity</h3>
+      <div class="audit-entry">
+        <span class="audit-time">2026-04-07 14:32</span>
+        <span class="audit-event"><span class="audit-actor">UWI</span> <span class="audit-action">issued credential to</span> <span class="audit-target">holder:816***245</span></span>
+        <span class="audit-result pass">ISSUED</span>
+      </div>
+      <div class="audit-entry">
+        <span class="audit-time">2026-04-07 14:28</span>
+        <span class="audit-event"><span class="audit-actor">EmployTT</span> <span class="audit-action">verified credential from</span> <span class="audit-target">holder:816***245</span></span>
+        <span class="audit-result pass">VALID</span>
+      </div>
+      <div class="audit-entry">
+        <span class="audit-time">2026-04-07 13:55</span>
+        <span class="audit-event"><span class="audit-actor">UTT</span> <span class="audit-action">revoked credential</span> <span class="audit-target">cred:tt-utt-2024-***</span></span>
+        <span class="audit-result fail">REVOKED</span>
+      </div>
+      <div class="audit-entry">
+        <span class="audit-time">2026-04-07 13:41</span>
+        <span class="audit-event"><span class="audit-actor">WeLearnTT</span> <span class="audit-action">batch issued 342 credentials via</span> <span class="audit-target">schema:professional-cert-v2</span></span>
+        <span class="audit-result pass">BATCH OK</span>
+      </div>
+      <div class="audit-entry">
+        <span class="audit-time">2026-04-07 12:18</span>
+        <span class="audit-event"><span class="audit-actor">System</span> <span class="audit-action">issuer onboarded:</span> <span class="audit-target">Ministry of Agriculture</span></span>
+        <span class="audit-result pass">ONBOARDED</span>
+      </div>
+      <div class="audit-entry">
+        <span class="audit-time">2026-04-07 11:02</span>
+        <span class="audit-event"><span class="audit-actor">Bank of TT</span> <span class="audit-action">verification failed for</span> <span class="audit-target">holder:702***118</span></span>
+        <span class="audit-result fail">EXPIRED</span>
+      </div>
+    </div>
+
+    <div style="margin-top:1.5rem;display:flex;gap:0.5rem">
+      <button class="btn btn-secondary btn-sm">Export Audit Package (CSV)</button>
+      <button class="btn btn-ghost btn-sm">Export Compliance Report (PDF)</button>
+    </div>
+  </div>
+</div>
+
+<!-- ====================================
+     SCREEN 87: AGENT OUTPUT VIEWER
+     ==================================== -->
+<div id="screen-agent-output" class="screen agent-output-screen">
+  <div class="container">
+    <div class="output-header">
+      <div>
+        <div class="section-label">Agent Outputs</div>
+        <h2>Generated Documents</h2>
+      </div>
+      <div class="output-export-btns">
+        <button class="btn btn-secondary btn-sm">PPTX</button>
+        <button class="btn btn-secondary btn-sm">DOCX</button>
+        <button class="btn btn-secondary btn-sm">PDF</button>
+        <button class="btn btn-ghost btn-sm">MD</button>
+      </div>
+    </div>
+
+    <div class="output-type-tabs" style="margin-bottom:1.5rem">
+      <button class="output-type-tab active" onclick="switchOutputTab(this)">Country Proposal</button>
+      <button class="output-type-tab" onclick="switchOutputTab(this)">Pitch Deck</button>
+      <button class="output-type-tab" onclick="switchOutputTab(this)">Technical Scope</button>
+      <button class="output-type-tab" onclick="switchOutputTab(this)">Advisory Note</button>
+    </div>
+
+    <div class="output-preview">
+      <span class="output-preview-label">Preview — Operations Agent</span>
+      <div class="output-doc">
+        <h2>Country Adoption Proposal: [Country Name]</h2>
+        <p>Verifiable Credentialing Infrastructure — DaaS Rollout</p>
+
+        <h3>Executive Summary</h3>
+        <p>[Country Name] seeks to establish a low-cost, high-trust digital ecosystem by enabling cryptographically signed, user-controlled credentials. The approach leverages modular, standards-based components for issuance, storage, and verification — enabling asynchronous adoption by diverse ecosystem actors.</p>
+
+        <h3>Problem Statement</h3>
+        <p>The current credentialing processes rely on paper-based documents that are costly to verify, prone to fraud, and create administrative burdens for citizens and institutions alike. An estimated [X]% of the target population lacks efficient access to verified documentation for [sector] services.</p>
+
+        <h3>Proposed Solution</h3>
+        <p>Deploy a national verifiable credentials infrastructure following the DaaS framework, starting with [first use case] and scaling to [additional use cases] across a 24-week rollout. The infrastructure supports W3C-VCDM 2.0, multiple delivery formats (wallet, PDF, QR), and self-service issuer onboarding.</p>
+
+        <h3>Success Criteria</h3>
+        <p>Credentials issued: [target] · Verification response time: &lt;2 seconds · Issuer onboarding time: &lt;1 hour · System uptime: 99.9% · Population reached: [target]% of [segment].</p>
+      </div>
+    </div>
+
+    <div class="output-revision">
+      <input type="text" placeholder="Request revision: 'add budget section', 'change tone to formal', 'shorten to one page'...">
+      <button class="btn btn-primary btn-sm">Revise</button>
+    </div>
+  </div>
+</div>
+
+<!-- ====================================
+     SCREEN 86: CHATBOT (floating)
+     ==================================== -->
+<button class="chatbot-trigger" id="chatbot-trigger" onclick="toggleChatbot()">💬</button>
+
+<div class="chatbot-panel" id="chatbot-panel">
+  <div class="chatbot-header">
+    <div class="chatbot-header-info">
+      <div class="chatbot-avatar">VC</div>
+      <div class="chatbot-header-text">
+        <h3>VC Assistant</h3>
+        <p>Explore · Decide · Generate</p>
+      </div>
+    </div>
+    <button class="panel-close" onclick="toggleChatbot()">✕</button>
+  </div>
+  <div class="chatbot-messages" id="chat-messages">
+    <div class="chat-msg bot">
+      Welcome. I can help you understand verifiable credentials, explore the platform, or generate documents for your team. What brings you here today?
+      <div class="chat-suggestions">
+        <button class="chat-suggestion" onclick="sendSuggestion(this)">What are VCs?</button>
+        <button class="chat-suggestion" onclick="sendSuggestion(this)">Help me choose a tier</button>
+        <button class="chat-suggestion" onclick="sendSuggestion(this)">Generate a pitch deck</button>
+        <button class="chat-suggestion" onclick="sendSuggestion(this)">Technical scope doc</button>
+      </div>
+    </div>
+  </div>
+  <div class="chatbot-input">
+    <input type="text" id="chat-input" placeholder="Ask anything about VCs..." onkeydown="if(event.key==='Enter')sendChat()">
+    <button class="chat-send" onclick="sendChat()">→</button>
+  </div>
+</div>
+
+<!-- ====================================
+     JAVASCRIPT
+     ==================================== -->
+<script>
+/* ---- Navigation ---- */
+function navigate(screenId) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  const target = document.getElementById('screen-' + screenId);
+  if (target) target.classList.add('active');
+
+  document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+  const navLink = document.querySelector(`.nav-link[data-screen="${screenId}"]`);
+  if (navLink) navLink.classList.add('active');
+
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+
+  // Close overlays on navigation
+  document.getElementById('standards-panel').classList.remove('open');
+  document.getElementById('req-overlay').classList.remove('open');
+  document.getElementById('toggle-standards')?.classList.remove('active');
+  document.getElementById('toggle-reqs')?.classList.remove('active');
+}
+
+/* ---- Theme toggle ---- */
+function toggleTheme() {
+  const html = document.documentElement;
+  const current = html.getAttribute('data-theme');
+  html.setAttribute('data-theme', current === 'light' ? 'dark' : 'light');
+}
+
+/* ---- Journey steps (Screen 79) ---- */
+function showJourneyStep(idx) {
+  document.querySelectorAll('.journey-section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.progress-step').forEach(s => s.classList.remove('active'));
+
+  const sections = document.querySelectorAll('.journey-section');
+  const steps = document.querySelectorAll('.progress-step');
+  if (sections[idx]) sections[idx].classList.add('active');
+  if (steps[idx]) steps[idx].classList.add('active');
+}
+
+/* ---- Mockup config selectors (Screen 80) ---- */
+function selectConfig(btn, group) {
+  const parent = btn.closest('.config-options');
+  parent.querySelectorAll('.config-option').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  updateMockupTitle();
+}
+
+function updateMockupTitle() {
+  const sector = document.querySelector('.config-group:nth-child(1) .config-option.selected')?.textContent || '';
+  const role = document.querySelector('.config-group:nth-child(2) .config-option.selected')?.textContent || '';
+  const flow = document.querySelector('.config-group:nth-child(3) .config-option.selected')?.textContent || '';
+  document.getElementById('mockup-title').textContent = `${sector} — ${role} — ${flow}`;
+}
+
+function activateFlowStep(el, idx) {
+  document.querySelectorAll('#mockup-flow .flow-step').forEach(s => s.classList.remove('active-step'));
+  el.classList.add('active-step');
+}
+
+/* ---- Standards panel (Screen 81) ---- */
+function toggleStandardsPanel() {
+  const panel = document.getElementById('standards-panel');
+  const btn = document.getElementById('toggle-standards');
+  panel.classList.toggle('open');
+  btn?.classList.toggle('active');
+}
+
+function toggleDetail(id, btn) {
+  const el = document.getElementById(id);
+  el.classList.toggle('visible');
+  btn.textContent = el.classList.contains('visible') ? 'Hide detail' : 'Show technical detail';
+}
+
+/* ---- Requirements overlay (Screen 82) ---- */
+function toggleReqOverlay() {
+  const overlay = document.getElementById('req-overlay');
+  const btn = document.getElementById('toggle-reqs');
+  overlay.classList.toggle('open');
+  btn?.classList.toggle('active');
+}
+
+function filterReqs(btn, cat) {
+  document.querySelectorAll('.req-filter').forEach(f => f.classList.remove('active'));
+  btn.classList.add('active');
+
+  document.querySelectorAll('#req-table-body tr').forEach(row => {
+    if (cat === 'all' || row.dataset.cat === cat) {
+      row.style.display = '';
+    } else {
+      row.style.display = 'none';
+    }
+  });
+}
+
+/* ---- Role selector (Screen 84) ---- */
+function selectRole(role) {
+  window.location.href = 'phase1.html?role=' + role;
+}
+
+/* ---- Output tabs (Screen 87) ---- */
+function switchOutputTab(btn) {
+  document.querySelectorAll('.output-type-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+
+  const label = document.querySelector('.output-preview-label');
+  const type = btn.textContent;
+  if (type.includes('Technical') || type.includes('Advisory')) {
+    label.textContent = 'Preview — Technical Architect Agent';
+  } else {
+    label.textContent = 'Preview — Operations Agent';
+  }
+}
+
+/* ---- Chatbot (Screen 86) ---- */
+function toggleChatbot() {
+  const panel = document.getElementById('chatbot-panel');
+  const trigger = document.getElementById('chatbot-trigger');
+  panel.classList.toggle('open');
+  trigger.style.display = panel.classList.contains('open') ? 'none' : 'flex';
+}
+
+function openChatbot() {
+  const panel = document.getElementById('chatbot-panel');
+  const trigger = document.getElementById('chatbot-trigger');
+  panel.classList.add('open');
+  trigger.style.display = 'none';
+}
+
+function sendChat() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+
+  addChatMessage(text, 'user');
+  input.value = '';
+
+  // Route based on content
+  setTimeout(() => {
+    if (text.toLowerCase().includes('pitch') || text.toLowerCase().includes('proposal') || text.toLowerCase().includes('brief') || text.toLowerCase().includes('adoption')) {
+      addChatMessage("I'll route this to the <strong>Operations & Program Management Agent</strong>. It sounds like you need a document for decision-makers. Let me gather some details — which country or region is this for, and what's the primary use case (identity, education, land, health)?", 'bot');
+    } else if (text.toLowerCase().includes('technical') || text.toLowerCase().includes('scope') || text.toLowerCase().includes('spec') || text.toLowerCase().includes('integration') || text.toLowerCase().includes('architecture')) {
+      addChatMessage("I'll route this to the <strong>Technical Architect Agent</strong>. To generate the right document, I need to know: which components are in scope (issuance, verification, store, trust infra), and which DPG stack are you evaluating?", 'bot');
+    } else if (text.toLowerCase().includes('tier') || text.toLowerCase().includes('package') || text.toLowerCase().includes('choose') || text.toLowerCase().includes('pricing')) {
+      addChatMessage("Let's figure out the right tier. A few questions: How many issuers will you onboard in the first 6 months? Do you need a mobile wallet, or is web-only sufficient? Do you require offline verification or cross-border interoperability?", 'bot');
+    } else if (text.toLowerCase().includes('what are') || text.toLowerCase().includes('explain') || text.toLowerCase().includes('how do')) {
+      addChatMessage("Great question. Verifiable credentials are cryptographically signed digital documents — like a degree, ID, or land certificate — that the holder controls and any verifier can check instantly. Want me to walk you through the full explainer journey, or focus on a specific sector?", 'bot');
+    } else {
+      addChatMessage("I can help with that. To give you the best guidance, could you tell me: are you looking for <strong>strategic/program material</strong> (proposals, briefs, pitch decks) or <strong>technical guidance</strong> (specs, architecture advice, integration docs)?", 'bot');
+    }
+  }, 600);
+}
+
+function sendSuggestion(btn) {
+  const text = btn.textContent;
+  addChatMessage(text, 'user');
+
+  setTimeout(() => {
+    if (text.includes('What are')) {
+      addChatMessage("Verifiable credentials are cryptographically signed digital documents that prove themselves — no phone calls to the issuer, no office visits, no waiting. The holder controls the data and chooses what to share. Want me to take you through the interactive explainer?", 'bot');
+    } else if (text.includes('tier')) {
+      addChatMessage("Let's find the right fit. How many credential issuers will your deployment support? And do your holders need a mobile wallet, or is web-based access sufficient for the first phase?", 'bot');
+    } else if (text.includes('pitch')) {
+      addChatMessage("I'll route this to the <strong>Operations Agent</strong>. I need three things: the target country, the primary use case (education, identity, land, health), and the audience (minister, funder, inter-departmental). I'll generate a tailored pitch deck.", 'bot');
+    } else if (text.includes('Technical')) {
+      addChatMessage("I'll route this to the <strong>Technical Architect Agent</strong>. Tell me: which components are in scope (issuance, verification, store, trust infrastructure, interoperability), and any DPG stack preferences (Inji, Credebl, Walt.id, Quark.id)?", 'bot');
+    }
+  }, 600);
+}
+
+function addChatMessage(text, type) {
+  const container = document.getElementById('chat-messages');
+  const msg = document.createElement('div');
+  msg.className = `chat-msg ${type}`;
+  msg.innerHTML = text;
+  container.appendChild(msg);
+  container.scrollTop = container.scrollHeight;
+}
+
+/* ---- Hash routing: allow phase1 to link back to a specific screen ---- */
+(function checkHash() {
+  const hash = window.location.hash.replace('#', '');
+  if (hash) navigate(hash);
+})();
+</script>
+</body>
+</html>
