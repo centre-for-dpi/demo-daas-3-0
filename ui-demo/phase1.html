@@ -1301,6 +1301,10 @@ code { font-family: var(--font-mono); font-size: 0.82em; background: var(--bg-su
           <span class="sidebar-item-icon">🌐</span> Trust & Interop
           <span class="tag tag-accent" style="margin-left:auto;font-size:0.6rem">Open</span>
         </button>
+        <button class="sidebar-item" onclick="window.location.href='phase6.html?from=' + (window._currentRole || 'admin')" data-roles="admin">
+          <span class="sidebar-item-icon">⚙</span> Platform Admin
+          <span class="tag tag-accent" style="margin-left:auto;font-size:0.6rem">Open</span>
+        </button>
       </div>
     </nav>
 
@@ -2131,11 +2135,11 @@ function doLogout() {
 }
 
 function goToExploration() {
-  window.location.href = 'phase0.html';
+  window.location.href = 'index.html';
 }
 
 function goBackToRoles() {
-  window.location.href = 'phase0.html#roles';
+  window.location.href = 'index.html#roles';
 }
 
 /* ---- Auto-init ---- */

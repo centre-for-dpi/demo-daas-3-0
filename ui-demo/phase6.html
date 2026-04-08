@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VC Infrastructure — Platform Admin & Self-Service</title>
+<link href="https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--font-display:'Josefin Sans',sans-serif;--font-body:'Geist',-apple-system,'Segoe UI',system-ui,sans-serif;--font-mono:'Geist Mono','SF Mono','Consolas',monospace;--bg:#FAFAF8;--bg-surface:#FFFFFF;--bg-surface-alt:#F3F3F0;--text:#1A1A18;--text-secondary:#6B6B66;--text-tertiary:#9C9C96;--border:#E4E4E0;--border-strong:#CCCCC6;--accent:#2D5A3D;--accent-hover:#1E3D29;--accent-surface:#E8F0EB;--accent-text:#FFFFFF;--tag-bg:#EEEEE9;--tag-text:#4A4A46;--success:#2D5A3D;--warning:#8B6914;--warning-surface:#FEF6E0;--error:#8B2C2C;--error-surface:#FDECEC;--info:#2D4A5A;--info-surface:#E8EFF3;--shadow-sm:0 1px 2px rgba(0,0,0,0.04);--shadow-md:0 4px 12px rgba(0,0,0,0.06);--radius-sm:4px;--radius-md:8px;--radius-lg:16px;--sidebar-width:240px;--topbar-height:52px}
+[data-theme="dark"]{--bg:#111110;--bg-surface:#1A1A18;--bg-surface-alt:#222220;--text:#EAEAE6;--text-secondary:#9C9C96;--text-tertiary:#6B6B66;--border:#2E2E2C;--border-strong:#444440;--accent:#5BA97A;--accent-hover:#7BC49A;--accent-surface:#1A2E22;--accent-text:#111110;--tag-bg:#2A2A28;--tag-text:#B0B0AA;--warning-surface:#2A2414;--error-surface:#2A1A1A;--info-surface:#1A2228;--shadow-sm:0 1px 2px rgba(0,0,0,0.2);--shadow-md:0 4px 12px rgba(0,0,0,0.3)}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}html{font-size:16px;-webkit-font-smoothing:antialiased}body{font-family:var(--font-body);color:var(--text);background:var(--bg);line-height:1.6;overflow:hidden;height:100vh}
+h1,h2,h3,h4{font-family:var(--font-display);font-weight:400;line-height:1.2;letter-spacing:-0.01em}h1{font-size:1.6rem;font-weight:300}h3{font-size:1rem;font-weight:500}h4{font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.08em}
+code{font-family:var(--font-mono);font-size:0.82em;background:var(--bg-surface-alt);padding:0.1em 0.35em;border-radius:var(--radius-sm)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:0.5rem;font-family:var(--font-display);font-weight:500;font-size:0.85rem;padding:0.6rem 1.4rem;border-radius:var(--radius-sm);border:1px solid transparent;cursor:pointer;transition:all 0.2s ease;letter-spacing:0.02em}.btn-primary{background:var(--accent);color:var(--accent-text);border-color:var(--accent)}.btn-primary:hover{background:var(--accent-hover)}.btn-secondary{background:transparent;color:var(--text);border-color:var(--border-strong)}.btn-secondary:hover{background:var(--bg-surface-alt)}.btn-ghost{background:transparent;color:var(--text-secondary);border-color:transparent}.btn-ghost:hover{color:var(--text);background:var(--bg-surface-alt)}.btn-sm{padding:0.35rem 0.85rem;font-size:0.78rem}.btn-block{width:100%}
+.tag{display:inline-flex;align-items:center;font-size:0.68rem;font-weight:500;padding:0.15rem 0.55rem;border-radius:100px;background:var(--tag-bg);color:var(--tag-text);letter-spacing:0.03em;font-family:var(--font-display)}.tag-accent{background:var(--accent-surface);color:var(--accent)}.tag-warning{background:var(--warning-surface);color:var(--warning)}.tag-error{background:var(--error-surface);color:var(--error)}.tag-info{background:var(--info-surface);color:var(--info)}
+.card{background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:1.25rem;transition:all 0.2s ease}.card:hover{border-color:var(--border-strong)}.card-interactive{cursor:pointer}.card-interactive:hover{transform:translateY(-1px);box-shadow:var(--shadow-md)}
+.form-group{margin-bottom:1.25rem}.form-label{display:block;font-size:0.75rem;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:0.4rem;font-family:var(--font-display)}
+.form-input,.form-select,.form-textarea{width:100%;padding:0.6rem 0.85rem;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.88rem;font-family:var(--font-body);color:var(--text);background:var(--bg-surface);outline:none;transition:border-color 0.2s ease}.form-input:focus,.form-select:focus{border-color:var(--accent)}.form-textarea{resize:vertical;min-height:80px}
+.form-select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' stroke='%236B6B66' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 0.75rem center;cursor:pointer}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:1rem}.form-row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem}.form-help{font-size:0.75rem;color:var(--text-tertiary);margin-top:0.3rem}
+.portal{display:grid;grid-template-columns:var(--sidebar-width) 1fr;grid-template-rows:var(--topbar-height) 1fr;height:100vh}
+.topbar{grid-column:2;grid-row:1;display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;border-bottom:1px solid var(--border);background:var(--bg-surface);z-index:50}.topbar-left{display:flex;align-items:center;gap:1rem}.topbar-breadcrumb{font-size:0.8rem;color:var(--text-secondary)}.topbar-breadcrumb strong{color:var(--text);font-weight:500}.topbar-right{display:flex;align-items:center;gap:0.5rem}
+.theme-toggle{width:32px;height:32px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-surface);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:0.85rem}.theme-toggle:hover{background:var(--bg-surface-alt)}
+.topbar-user{display:flex;align-items:center;gap:0.5rem;padding:0.3rem 0.6rem;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;background:none;font-family:var(--font-body);color:var(--text)}.topbar-user:hover{background:var(--bg-surface-alt)}
+.user-avatar{width:24px;height:24px;border-radius:50%;background:var(--accent);color:var(--accent-text);display:flex;align-items:center;justify-content:center;font-size:0.65rem;font-weight:700;font-family:var(--font-display)}
+.user-menu{position:absolute;top:calc(100% + 6px);right:0;width:180px;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-md);padding:0.35rem;display:none;z-index:60}.user-menu.open{display:block}
+.user-menu-item{display:block;width:100%;text-align:left;padding:0.5rem 0.75rem;font-size:0.8rem;font-family:var(--font-body);color:var(--text-secondary);background:none;border:none;border-radius:var(--radius-sm);cursor:pointer}.user-menu-item:hover{background:var(--bg-surface-alt);color:var(--text)}
+.sidebar{grid-column:1;grid-row:1/-1;background:var(--bg-surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.sidebar-brand{display:flex;align-items:center;height:var(--topbar-height);padding:0 1.25rem;border-bottom:1px solid var(--border);font-family:var(--font-display);font-weight:600;font-size:0.95rem;letter-spacing:0.02em;cursor:pointer;flex-shrink:0}.sidebar-brand span{color:var(--accent)}
+.sidebar-nav{flex:1;overflow-y:auto;padding:0.75rem 0}
+.sidebar-section{padding:0 0.75rem;margin-bottom:0.5rem}.sidebar-section-label{font-size:0.62rem;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-tertiary);padding:0.5rem 0.75rem;font-family:var(--font-display)}
+.sidebar-item{display:flex;align-items:center;gap:0.6rem;padding:0.5rem 0.75rem;border-radius:var(--radius-sm);font-size:0.82rem;color:var(--text-secondary);cursor:pointer;transition:all 0.15s ease;border:none;background:none;width:100%;text-align:left;font-family:var(--font-body)}.sidebar-item:hover{color:var(--text);background:var(--bg-surface-alt)}.sidebar-item.active{color:var(--accent);background:var(--accent-surface);font-weight:500}
+.sidebar-item-icon{font-size:1rem;flex-shrink:0;width:20px;text-align:center}
+.sidebar-item-badge{margin-left:auto;min-width:18px;height:18px;border-radius:9px;background:var(--error);color:#fff;font-size:0.6rem;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 5px}
+.sidebar-footer{padding:0.75rem 1rem;border-top:1px solid var(--border);flex-shrink:0}.sidebar-env{display:flex;align-items:center;gap:0.5rem;font-size:0.72rem;color:var(--text-tertiary)}.env-dot{width:6px;height:6px;border-radius:50%;background:var(--success)}
+.main{grid-column:2;grid-row:2;overflow-y:auto;background:var(--bg)}
+.page{display:none;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out}.page.active{display:block}
+@keyframes pageIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.page-header{margin-bottom:2rem}.page-header h1{margin-bottom:0.3rem}.page-header p{font-size:0.88rem;color:var(--text-secondary);max-width:60ch}
+.stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-bottom:2rem}.stat-card{text-align:center;padding:1.25rem}.stat-number{font-family:var(--font-display);font-size:1.6rem;font-weight:300;color:var(--accent);letter-spacing:-0.02em}.stat-label{font-size:0.68rem;color:var(--text-tertiary);margin-top:0.2rem;text-transform:uppercase;letter-spacing:0.06em}
+.filter-bar{display:flex;align-items:center;gap:0.5rem;margin-bottom:1.5rem;flex-wrap:wrap}.filter-pill{font-size:0.75rem;padding:0.3rem 0.7rem;border:1px solid var(--border);border-radius:100px;background:var(--bg-surface);cursor:pointer;font-family:var(--font-display);font-weight:500;color:var(--text-tertiary)}.filter-pill:hover{border-color:var(--border-strong)}.filter-pill.active{background:var(--accent);color:var(--accent-text);border-color:var(--accent)}.filter-search{margin-left:auto;width:220px;padding:0.35rem 0.75rem;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.82rem;font-family:var(--font-body);background:var(--bg-surface);color:var(--text);outline:none}
+.data-table{width:100%;border-collapse:collapse;font-size:0.83rem}.data-table th{text-align:left;font-family:var(--font-display);font-size:0.68rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-tertiary);padding:0.6rem 0.75rem;border-bottom:2px solid var(--border)}.data-table td{padding:0.65rem 0.75rem;border-bottom:1px solid var(--border);vertical-align:middle}.data-table tbody tr:hover td{background:var(--bg-surface-alt)}
+.toggle-small{width:36px;height:20px;border-radius:10px;background:var(--border-strong);position:relative;cursor:pointer;transition:background 0.2s ease;border:none;flex-shrink:0}.toggle-small::after{content:'';position:absolute;width:16px;height:16px;border-radius:50%;background:white;top:2px;left:2px;transition:transform 0.2s ease}.toggle-small.on{background:var(--accent)}.toggle-small.on::after{transform:translateX(16px)}
+.wizard-steps{display:flex;gap:0;margin-bottom:2rem;border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden}.wizard-step{flex:1;padding:0.75rem 1rem;text-align:center;font-size:0.78rem;font-family:var(--font-display);font-weight:500;color:var(--text-tertiary);background:var(--bg-surface);border-right:1px solid var(--border);cursor:pointer;transition:all 0.15s ease}.wizard-step:last-child{border-right:none}.wizard-step:hover{background:var(--bg-surface-alt)}.wizard-step.active{background:var(--accent);color:var(--accent-text)}.wizard-step.done{background:var(--accent-surface);color:var(--accent)}.wizard-step-num{display:block;font-size:0.65rem;opacity:0.7;margin-bottom:0.15rem}
+.progress-bar{height:6px;background:var(--bg-surface-alt);border-radius:3px;overflow:hidden;margin:0.5rem 0}.progress-fill{height:100%;background:var(--accent);border-radius:3px;transition:width 0.5s ease}
+.health-dot{width:10px;height:10px;border-radius:50%;display:inline-block}.health-dot.green{background:var(--success)}.health-dot.amber{background:var(--warning)}.health-dot.red{background:var(--error)}
+.toast-container{position:fixed;top:calc(var(--topbar-height) + 12px);right:1.5rem;z-index:160;display:flex;flex-direction:column;gap:0.5rem}.toast{display:flex;align-items:center;gap:0.75rem;padding:0.75rem 1.25rem;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-md);font-size:0.83rem;animation:toastIn 0.35s ease-out;max-width:380px}@keyframes toastIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+@media(max-width:768px){.portal{grid-template-columns:1fr}.sidebar{display:none}.topbar{grid-column:1}.main{grid-column:1}.form-row,.form-row-3{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="portal">
+  <aside class="sidebar">
+    <div class="sidebar-brand" onclick="window.location.href='index.html'">vc<span>.</span>infra</div>
+    <nav class="sidebar-nav">
+      <div class="sidebar-section" style="padding-bottom:0.5rem;border-bottom:1px solid var(--border);margin-bottom:0.25rem">
+        <button class="sidebar-item" onclick="window.location.href='phase1.html'"><span class="sidebar-item-icon">&#8592;</span> Back to Dashboard</button>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-section-label">Self-Service Toolkit</div>
+        <button class="sidebar-item active" data-page="intake" onclick="showPage('intake')"><span class="sidebar-item-icon">📝</span> Issuer Intake</button>
+        <button class="sidebar-item" data-page="guided-schema" onclick="showPage('guided-schema')"><span class="sidebar-item-icon">🧩</span> Schema Wizard</button>
+        <button class="sidebar-item" data-page="preview-gen" onclick="showPage('preview-gen')"><span class="sidebar-item-icon">👁</span> Preview Generator</button>
+        <button class="sidebar-item" data-page="sandbox" onclick="showPage('sandbox')"><span class="sidebar-item-icon">🧪</span> Sandbox</button>
+        <button class="sidebar-item" data-page="approval-queue" onclick="showPage('approval-queue')"><span class="sidebar-item-icon">✓</span> Review & Approve <span class="sidebar-item-badge">2</span></button>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-section-label">Platform Admin</div>
+        <button class="sidebar-item" data-page="deployment" onclick="showPage('deployment')"><span class="sidebar-item-icon">☁</span> Deployment</button>
+        <button class="sidebar-item" data-page="portability" onclick="showPage('portability')"><span class="sidebar-item-icon">📦</span> Data Portability</button>
+        <button class="sidebar-item" data-page="reporting" onclick="showPage('reporting')"><span class="sidebar-item-icon">📊</span> Reporting</button>
+        <button class="sidebar-item" data-page="training" onclick="showPage('training')"><span class="sidebar-item-icon">📚</span> Training Hub</button>
+        <button class="sidebar-item" data-page="health" onclick="showPage('health')"><span class="sidebar-item-icon">💚</span> Platform Health</button>
+      </div>
+    </nav>
+    <div class="sidebar-footer"><div class="sidebar-env"><span class="env-dot"></span>Platform Admin · v1.0.0</div></div>
+  </aside>
+  <header class="topbar">
+    <div class="topbar-left"><div class="topbar-breadcrumb" id="breadcrumb">Self-Service / <strong>Issuer Intake</strong></div></div>
+    <div class="topbar-right"><button class="theme-toggle" onclick="toggleTheme()">&#9684;</button>
+      <div style="position:relative"><button class="topbar-user" onclick="toggleUserMenu()"><div class="user-avatar">MG</div><div><div style="font-size:0.8rem;font-weight:500">Mar&#237;a Gonz&#225;lez</div><div style="font-size:0.68rem;color:var(--text-tertiary)">Super Admin</div></div></button>
+        <div class="user-menu" id="user-menu">
+          <button class="user-menu-item" onclick="window.location.href='phase1.html#profile'">&#128100; My Profile</button>
+          <button class="user-menu-item" onclick="window.location.href='phase1.html#settings'">&#9881; Settings</button>
+          <div style="border-top:1px solid var(--border);margin:0.25rem 0"></div>
+          <button class="user-menu-item" onclick="doSignOut()" style="color:var(--error)">&#8617; Sign out</button>
+        </div>
+      </div>
+    </div>
+  </header>
+  <main class="main">
+
+    <!-- ==================== 68: ISSUER INTAKE FORM ==================== -->
+    <div class="page active" id="page-intake">
+      <div class="page-header"><h1>Issuer Intake Form</h1><p>Simplified guided registration for new issuers. Non-technical — designed for DPI owner self-service.</p></div>
+      <div class="wizard-steps">
+        <div class="wizard-step active" onclick="activateStep(this)"><span class="wizard-step-num">1</span>Organization</div>
+        <div class="wizard-step" onclick="activateStep(this)"><span class="wizard-step-num">2</span>Credentials</div>
+        <div class="wizard-step" onclick="activateStep(this)"><span class="wizard-step-num">3</span>Technical</div>
+        <div class="wizard-step" onclick="activateStep(this)"><span class="wizard-step-num">4</span>Review</div>
+      </div>
+      <div class="card">
+        <div class="form-row"><div class="form-group"><label class="form-label">Organization Name</label><input class="form-input" placeholder="e.g., Ministry of Health"></div><div class="form-group"><label class="form-label">Sector</label><select class="form-select"><option>Government</option><option>Education</option><option>Healthcare</option><option>Financial Services</option><option>Agriculture</option><option>Other</option></select></div></div>
+        <div class="form-row"><div class="form-group"><label class="form-label">Contact Name</label><input class="form-input" placeholder="Full name"></div><div class="form-group"><label class="form-label">Contact Email</label><input class="form-input" placeholder="admin@organization.gov"></div></div>
+        <div class="form-row"><div class="form-group"><label class="form-label">Jurisdiction</label><select class="form-select"><option>Trinidad and Tobago</option><option>Jamaica</option><option>Barbados</option><option>Other CARICOM</option></select></div><div class="form-group"><label class="form-label">Estimated Credential Volume</label><select class="form-select"><option>< 100 / year</option><option>100 - 1,000 / year</option><option>1,000 - 10,000 / year</option><option>10,000+ / year</option></select></div></div>
+        <div class="form-group"><label class="form-label">What credentials will you issue?</label><textarea class="form-textarea" placeholder="Describe the credential types in plain language. e.g., 'We need to issue birth certificates and vaccination records to citizens.'"></textarea></div>
+        <div style="display:flex;gap:0.5rem;justify-content:flex-end"><button class="btn btn-secondary btn-sm" onclick="showToast('Saved','Draft saved.')">Save Draft</button><button class="btn btn-primary btn-sm" onclick="showPage('guided-schema');showToast('Saved','Organization details saved. Next: define your schema.')">Next: Define Schema &#8594;</button></div>
+      </div>
+    </div>
+
+    <!-- ==================== 69: GUIDED SCHEMA BUILDER ==================== -->
+    <div class="page" id="page-guided-schema">
+      <div class="page-header"><h1>Schema Wizard</h1><p>Create a credential schema without writing code. Answer questions and the system builds the schema for you.</p></div>
+      <div class="card" style="margin-bottom:1rem">
+        <h3 style="font-size:0.9rem;margin-bottom:1rem">What information does your credential contain?</h3>
+        <div style="display:flex;flex-direction:column;gap:0.5rem" id="wizard-fields">
+          <div style="display:flex;align-items:center;gap:0.75rem;padding:0.6rem 0.85rem;background:var(--bg-surface-alt);border-radius:var(--radius-sm)"><input type="checkbox" checked><span style="flex:1;font-size:0.85rem;font-weight:500">Full Name</span><span style="font-size:0.75rem;color:var(--text-tertiary)">Text</span></div>
+          <div style="display:flex;align-items:center;gap:0.75rem;padding:0.6rem 0.85rem;background:var(--bg-surface-alt);border-radius:var(--radius-sm)"><input type="checkbox" checked><span style="flex:1;font-size:0.85rem;font-weight:500">Date of Birth</span><span style="font-size:0.75rem;color:var(--text-tertiary)">Date</span></div>
+          <div style="display:flex;align-items:center;gap:0.75rem;padding:0.6rem 0.85rem;background:var(--bg-surface-alt);border-radius:var(--radius-sm)"><input type="checkbox" checked><span style="flex:1;font-size:0.85rem;font-weight:500">Certificate Type</span><span style="font-size:0.75rem;color:var(--text-tertiary)">Text</span></div>
+          <div style="display:flex;align-items:center;gap:0.75rem;padding:0.6rem 0.85rem;background:var(--bg-surface-alt);border-radius:var(--radius-sm)"><input type="checkbox" checked><span style="flex:1;font-size:0.85rem;font-weight:500">Issue Date</span><span style="font-size:0.75rem;color:var(--text-tertiary)">Date</span></div>
+          <div style="display:flex;align-items:center;gap:0.75rem;padding:0.6rem 0.85rem;background:var(--bg-surface-alt);border-radius:var(--radius-sm)"><input type="checkbox"><span style="flex:1;font-size:0.85rem;font-weight:500">Expiry Date</span><span style="font-size:0.75rem;color:var(--text-tertiary)">Date</span></div>
+          <div style="display:flex;align-items:center;gap:0.75rem;padding:0.6rem 0.85rem;background:var(--bg-surface-alt);border-radius:var(--radius-sm)"><input type="checkbox"><span style="flex:1;font-size:0.85rem;font-weight:500">National ID Number</span><span style="font-size:0.75rem;color:var(--text-tertiary)">Text</span></div>
+        </div>
+        <div style="margin-top:0.75rem"><button class="btn btn-secondary btn-sm" onclick="addWizardField()">+ Add custom field</button></div>
+      </div>
+      <div class="form-row" style="margin-bottom:1.5rem"><div class="form-group" style="margin-bottom:0"><label class="form-label">Credential Standard</label><select class="form-select"><option>W3C-VCDM 2.0 (recommended)</option><option>SD-JWT</option><option>mDL</option></select></div><div class="form-group" style="margin-bottom:0"><label class="form-label">Schema Name</label><input class="form-input" placeholder="e.g., health-cert-v1" id="wizard-schema-name"></div></div>
+      <div style="display:flex;gap:0.5rem;justify-content:flex-end"><button class="btn btn-secondary btn-sm" onclick="showPage('intake')">&#8592; Back</button><button class="btn btn-primary btn-sm" onclick="showPage('preview-gen');showToast('Schema Created','Schema generated from your selections. Preview it next.')">Next: Preview &#8594;</button></div>
+    </div>
+
+    <!-- ==================== 70: CREDENTIAL PREVIEW GENERATOR ==================== -->
+    <div class="page" id="page-preview-gen">
+      <div class="page-header"><h1>Credential Preview</h1><p>See how your credential will look with sample data. Adjust before publishing.</p></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem">
+        <div>
+          <div class="card"><h3 style="font-size:0.9rem;margin-bottom:1rem">Sample Data</h3>
+            <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" value="Maria Baptiste"></div>
+            <div class="form-group"><label class="form-label">Date of Birth</label><input class="form-input" type="date" value="1990-03-15"></div>
+            <div class="form-group"><label class="form-label">Certificate Type</label><input class="form-input" value="Birth Certificate"></div>
+            <div class="form-group" style="margin-bottom:0"><label class="form-label">Issue Date</label><input class="form-input" type="date" value="2026-04-08"></div>
+          </div>
+        </div>
+        <div>
+          <h4 style="margin-bottom:0.75rem">Wallet Card Preview</h4>
+          <div class="card" style="padding:0;overflow:hidden;margin-bottom:1rem">
+            <div style="background:var(--accent);color:white;padding:1.25rem"><div style="font-size:0.65rem;text-transform:uppercase;opacity:0.7;margin-bottom:0.35rem">Verifiable Credential</div><div style="font-family:var(--font-display);font-size:1.05rem;margin-bottom:0.15rem">Birth Certificate</div><div style="font-size:0.78rem;opacity:0.8">Ministry of Health</div></div>
+            <div style="padding:1rem;font-size:0.83rem"><div style="display:flex;justify-content:space-between;padding:0.35rem 0;border-bottom:1px solid var(--border)"><span style="color:var(--text-tertiary)">Name</span><span style="font-weight:500">Maria Baptiste</span></div><div style="display:flex;justify-content:space-between;padding:0.35rem 0;border-bottom:1px solid var(--border)"><span style="color:var(--text-tertiary)">DOB</span><span>1990-03-15</span></div><div style="display:flex;justify-content:space-between;padding:0.35rem 0;border-bottom:1px solid var(--border)"><span style="color:var(--text-tertiary)">Issued</span><span>2026-04-08</span></div><div style="display:flex;justify-content:space-between;padding:0.35rem 0"><span style="color:var(--text-tertiary)">Status</span><span class="tag tag-accent">Active</span></div></div>
+          </div>
+          <h4 style="margin-bottom:0.75rem">PDF Preview</h4>
+          <div style="border:1px solid var(--border);padding:1.5rem;border-radius:var(--radius-sm);text-align:center;background:white;color:#1a1a18"><div style="font-family:var(--font-display);font-size:1rem;margin-bottom:0.25rem">Ministry of Health</div><div style="font-size:0.82rem;color:#666;margin-bottom:0.75rem">certifies the birth of</div><div style="font-size:1.2rem;font-family:var(--font-display);margin-bottom:0.5rem">Maria Baptiste</div><div style="font-size:0.78rem;color:#999">Born: March 15, 1990 &#183; Issued: April 8, 2026</div><div style="width:60px;height:60px;background:#f0f0f0;margin:1rem auto 0;border:1px solid #ddd;border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:0.6rem;color:#999">QR</div></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1.5rem"><button class="btn btn-secondary btn-sm" onclick="showPage('guided-schema')">&#8592; Back</button><button class="btn btn-primary btn-sm" onclick="showPage('sandbox');showToast('Ready','Preview looks good. Test it in the sandbox next.')">Next: Test in Sandbox &#8594;</button></div>
+    </div>
+
+    <!-- ==================== 71: SANDBOX ENVIRONMENT ==================== -->
+    <div class="page" id="page-sandbox">
+      <div class="page-header"><h1>Sandbox Environment</h1><p>Isolated test environment. Issue and verify sample credentials without affecting production.</p></div>
+      <div style="padding:0.75rem 1rem;background:var(--warning-surface);border-radius:var(--radius-md);margin-bottom:1.5rem;font-size:0.82rem;color:var(--warning)"><strong>Sandbox Mode</strong> &#8212; All operations here are isolated. No production data is affected.</div>
+      <div class="stats-row">
+        <div class="card stat-card"><div class="stat-number">12</div><div class="stat-label">Test Credentials Issued</div></div>
+        <div class="card stat-card"><div class="stat-number">8</div><div class="stat-label">Test Verifications</div></div>
+        <div class="card stat-card"><div class="stat-number">3</div><div class="stat-label">Schemas Under Test</div></div>
+        <div class="card stat-card"><div class="stat-number">0</div><div class="stat-label">Errors</div></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.5rem">
+        <div class="card card-interactive" style="text-align:center;padding:2rem" onclick="showToast('Sandbox Issuance','Sample credential issued using health-cert-v1 schema. Check results below.')">
+          <span style="font-size:2rem;display:block;margin-bottom:0.75rem">📤</span>
+          <div style="font-weight:500;font-size:0.9rem;margin-bottom:0.25rem">Test Issue</div>
+          <div style="font-size:0.78rem;color:var(--text-secondary)">Issue a sample credential with test data</div>
+        </div>
+        <div class="card card-interactive" style="text-align:center;padding:2rem" onclick="showToast('Sandbox Verification','Sample credential verified. 6/6 checks passed in sandbox.')">
+          <span style="font-size:2rem;display:block;margin-bottom:0.75rem">✓</span>
+          <div style="font-weight:500;font-size:0.9rem;margin-bottom:0.25rem">Test Verify</div>
+          <div style="font-size:0.78rem;color:var(--text-secondary)">Verify a sample credential against sandbox trust registry</div>
+        </div>
+      </div>
+      <div class="card"><h3 style="font-size:0.9rem;margin-bottom:1rem">Sandbox Log</h3>
+        <div style="font-family:var(--font-mono);font-size:0.75rem;line-height:1.8;max-height:200px;overflow-y:auto;color:var(--text-secondary)">
+          <div>[14:28:03] ISSUE health-cert-v1 &#8594; holder:test-001 &#8212; OK (sandbox)</div>
+          <div>[14:28:05] VERIFY tt-sandbox-001 &#8594; 6/6 checks passed</div>
+          <div>[14:27:55] ISSUE health-cert-v1 &#8594; holder:test-002 &#8212; OK (sandbox)</div>
+          <div>[14:27:41] SCHEMA health-cert-v1 validated &#8212; 4 fields, W3C-VCDM 2.0</div>
+          <div>[14:26:30] SANDBOX initialized &#8212; clean environment</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1.5rem"><button class="btn btn-secondary btn-sm" onclick="showToast('Reset','Sandbox environment reset. All test data cleared.')">Reset Sandbox</button><button class="btn btn-primary btn-sm" onclick="showPage('approval-queue');showToast('Ready','Testing complete. Submit for production approval.')">Submit for Approval &#8594;</button></div>
+    </div>
+
+    <!-- ==================== 72: ONBOARDING REVIEW & APPROVAL ==================== -->
+    <div class="page" id="page-approval-queue">
+      <div class="page-header"><h1>Review & Approve</h1><p>DPI owner approval queue for new issuers and verifiers. Review sandbox results before going live.</p></div>
+      <div class="filter-bar"><button class="filter-pill active" onclick="filterApprovals(this,'all')">All</button><button class="filter-pill" onclick="filterApprovals(this,'pending')">Pending</button><button class="filter-pill" onclick="filterApprovals(this,'approved')">Approved</button><button class="filter-pill" onclick="filterApprovals(this,'rejected')">Rejected</button></div>
+      <div class="card" style="margin-bottom:1rem;border-color:var(--warning)" data-approval="pending">
+        <div style="display:flex;align-items:flex-start;gap:1rem"><span style="font-size:1.3rem">🏛</span><div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem"><div style="font-weight:500">Ministry of Health</div><span class="tag tag-warning">Pending Review</span></div>
+        <div style="font-size:0.83rem;color:var(--text-secondary);margin-bottom:0.75rem">Requesting to issue <strong>Birth Certificates</strong> and <strong>Vaccination Records</strong>. Schema: <code>health-cert-v1</code>.</div>
+        <div style="font-size:0.78rem;margin-bottom:0.5rem"><strong>Sandbox results:</strong> 12 test issuances, 8 verifications, 0 errors. All checks passed.</div>
+        <div style="font-size:0.78rem;margin-bottom:1rem"><strong>Submitted:</strong> 2026-04-08 &#183; <strong>Volume:</strong> 10,000+ / year &#183; <strong>Sector:</strong> Healthcare</div>
+        <div style="display:flex;gap:0.5rem"><button class="btn btn-primary btn-sm" onclick="showToast('Approved','Ministry of Health approved for production. DID provisioned, schema published.')">Approve for Production</button><button class="btn btn-secondary btn-sm" onclick="showToast('Info','Additional documentation requested.')">Request Info</button><button class="btn btn-ghost btn-sm" onclick="showToast('Rejected','Application rejected.')">Reject</button></div></div></div>
+      </div>
+      <div class="card" style="margin-bottom:1rem;border-color:var(--warning)" data-approval="pending">
+        <div style="display:flex;align-items:flex-start;gap:1rem"><span style="font-size:1.3rem">🏢</span><div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem"><div style="font-weight:500">TT Chamber of Commerce</div><span class="tag tag-warning">Pending Review</span></div>
+        <div style="font-size:0.83rem;color:var(--text-secondary);margin-bottom:0.75rem">Requesting to verify <strong>Professional Certificates</strong> for member employer organizations.</div>
+        <div style="font-size:0.78rem;margin-bottom:1rem"><strong>Submitted:</strong> 2026-04-06 &#183; <strong>Type:</strong> Verifier &#183; <strong>Sector:</strong> Employment</div>
+        <div style="display:flex;gap:0.5rem"><button class="btn btn-primary btn-sm" onclick="showToast('Approved','TT Chamber approved as verifier.')">Approve</button><button class="btn btn-ghost btn-sm" onclick="showToast('Rejected','Application rejected.')">Reject</button></div></div></div>
+      </div>
+      <div class="card" data-approval="approved" style="opacity:0.7">
+        <div style="display:flex;align-items:center;gap:1rem"><span style="font-size:1.3rem">🎓</span><div style="flex:1"><div style="font-weight:500">University of the West Indies</div><div style="font-size:0.78rem;color:var(--text-secondary)">Issuer &#183; Education &#183; Approved 2026-03-15</div></div><span class="tag tag-accent">Approved</span></div>
+      </div>
+    </div>
+
+    <!-- ==================== 73: DEPLOYMENT CONFIGURATION ==================== -->
+    <div class="page" id="page-deployment">
+      <div class="page-header"><h1>Deployment Configuration</h1><p>Cloud provider, data sovereignty, environment management, and infrastructure-as-code status.</p></div>
+      <div class="stats-row">
+        <div class="card stat-card"><div class="stat-number" style="font-size:1.2rem">Production</div><div class="stat-label">Active Environment</div></div>
+        <div class="card stat-card"><div class="stat-number" style="font-size:1.2rem">AWS</div><div class="stat-label">Cloud Provider</div></div>
+        <div class="card stat-card"><div class="stat-number" style="font-size:1.2rem">TT</div><div class="stat-label">Data Residency</div></div>
+        <div class="card stat-card"><div class="stat-number" style="color:var(--success)">&#9679;</div><div class="stat-label">IaC: Synced</div></div>
+      </div>
+      <div class="card" style="margin-bottom:1rem"><h3 style="font-size:0.9rem;margin-bottom:1rem">Environment Settings</h3>
+        <div class="form-row"><div class="form-group"><label class="form-label">Cloud Provider</label><select class="form-select"><option selected>AWS (ap-southeast-1)</option><option>GCP (us-central1)</option><option>Azure (eastus)</option><option>OCI</option><option>OpenStack (on-premises)</option></select></div><div class="form-group"><label class="form-label">Data Residency</label><select class="form-select"><option selected>Trinidad and Tobago</option><option>Jamaica</option><option>CARICOM Region</option><option>No restriction</option></select></div></div>
+        <div class="form-row"><div class="form-group"><label class="form-label">Environment</label><select class="form-select"><option>Production</option><option>Staging</option><option>Development</option><option>Sandbox</option></select></div><div class="form-group"><label class="form-label">IaC Repository</label><input class="form-input" value="github.com/tt-gov/vc-infra-terraform" readonly style="font-family:var(--font-mono);font-size:0.78rem;background:var(--bg-surface-alt)"></div></div>
+        <button class="btn btn-primary btn-sm" onclick="showToast('Saved','Deployment configuration saved.')">Save Configuration</button>
+      </div>
+      <div class="card"><h3 style="font-size:0.9rem;margin-bottom:1rem">Infrastructure Status</h3>
+        <div style="font-size:0.83rem"><div style="display:flex;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)"><span>API Gateway</span><span><span class="health-dot green"></span> Healthy</span></div><div style="display:flex;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)"><span>Credential Service</span><span><span class="health-dot green"></span> Healthy</span></div><div style="display:flex;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)"><span>Trust Registry</span><span><span class="health-dot green"></span> Healthy</span></div><div style="display:flex;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)"><span>Status List Service</span><span><span class="health-dot green"></span> Healthy</span></div><div style="display:flex;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)"><span>Database (Primary)</span><span><span class="health-dot green"></span> Healthy</span></div><div style="display:flex;justify-content:space-between;padding:0.5rem 0"><span>Database (Replica)</span><span><span class="health-dot amber"></span> Replication lag: 2s</span></div></div>
+      </div>
+    </div>
+
+    <!-- ==================== 74: DATA PORTABILITY CONSOLE ==================== -->
+    <div class="page" id="page-portability">
+      <div class="page-header"><h1>Data Portability Console</h1><p>Export and import all platform data. Migration validation with zero-loss verification.</p></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem">
+        <div class="card"><h3 style="font-size:0.9rem;margin-bottom:1rem">Export</h3>
+          <div class="form-group"><label class="form-label">Export Scope</label><select class="form-select"><option>Full platform (all data)</option><option>Credentials only</option><option>Schemas only</option><option>Trust registry only</option><option>Audit logs only</option></select></div>
+          <div class="form-group"><label class="form-label">Format</label><select class="form-select"><option>JSON-LD (W3C compliant)</option><option>CSV</option><option>SQL dump</option><option>Custom (JSON)</option></select></div>
+          <div class="form-group" style="margin-bottom:0"><label class="form-label">Include</label>
+            <div style="display:flex;flex-direction:column;gap:0.35rem;font-size:0.83rem"><label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer"><input type="checkbox" checked> Credential data</label><label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer"><input type="checkbox" checked> Schemas &amp; templates</label><label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer"><input type="checkbox" checked> Trust registry entries</label><label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer"><input type="checkbox" checked> Audit trail</label><label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer"><input type="checkbox"> User accounts</label></div>
+          </div>
+          <button class="btn btn-primary btn-sm" style="margin-top:1rem" onclick="showToast('Exporting','Full platform export started. Download will be available shortly.')">Start Export</button>
+        </div>
+        <div class="card"><h3 style="font-size:0.9rem;margin-bottom:1rem">Import</h3>
+          <div style="border:2px dashed var(--border);border-radius:var(--radius-md);padding:2rem;text-align:center;cursor:pointer;margin-bottom:1rem" onclick="showToast('Upload','Import file received. Validating...')"><span style="font-size:1.5rem;display:block;margin-bottom:0.5rem">📤</span><div style="font-size:0.85rem;color:var(--text-secondary)">Drop export file here</div><div style="font-size:0.75rem;color:var(--text-tertiary)">.json, .jsonld, .csv, .sql</div></div>
+          <div class="form-group"><label class="form-label">Conflict Resolution</label><select class="form-select"><option>Skip duplicates</option><option>Overwrite existing</option><option>Create new version</option><option>Fail on conflict</option></select></div>
+          <div style="padding:0.75rem;background:var(--accent-surface);border-radius:var(--radius-sm);font-size:0.82rem;color:var(--accent)"><strong>Zero-loss validation:</strong> After import, the system compares source and destination record counts, checksums, and schema integrity. Any discrepancy is flagged before commit.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== 75: REPORTING DASHBOARD ==================== -->
+    <div class="page" id="page-reporting">
+      <div class="page-header"><h1>Reporting Dashboard</h1><p>Configurable reports for funders, DPI owners, and DPG owners.</p></div>
+      <div class="filter-bar"><button class="filter-pill active" onclick="switchReportTier(this,'funders')">Funders / Convenors</button><button class="filter-pill" onclick="switchReportTier(this,'dpi')">DPI Owner</button><button class="filter-pill" onclick="switchReportTier(this,'dpg')">DPG Owner</button><button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="showToast('Exported','Report exported as PDF.')">Export PDF</button></div>
+      <div id="report-content">
+        <div class="stats-row">
+          <div class="card stat-card"><div class="stat-number">24,831</div><div class="stat-label">Credentials Issued</div></div>
+          <div class="card stat-card"><div class="stat-number">18,204</div><div class="stat-label">Population Reached</div></div>
+          <div class="card stat-card"><div class="stat-number">99.97%</div><div class="stat-label">System Uptime</div></div>
+          <div class="card stat-card"><div class="stat-number">7</div><div class="stat-label">Active Issuers</div></div>
+          <div class="card stat-card"><div class="stat-number">4</div><div class="stat-label">Sectors Covered</div></div>
+        </div>
+        <div class="card"><h3 style="font-size:0.9rem;margin-bottom:0.5rem">Summary</h3><p style="font-size:0.85rem;color:var(--text-secondary);line-height:1.7">The national verifiable credential infrastructure has issued 24,831 credentials across 7 issuers in 4 sectors. System uptime over the past 30 days is 99.97%. The holder base has grown 23% month-over-month, with the education sector accounting for 68% of all issuances. Verification volume has increased 31% as EmployTT and Bank of TT expand their acceptance programs.</p></div>
+      </div>
+    </div>
+
+    <!-- ==================== 76: TRAINING HUB ==================== -->
+    <div class="page" id="page-training">
+      <div class="page-header"><h1>Training Hub</h1><p>SOPs, documentation, and training materials. Searchable, multi-language.</p></div>
+      <div class="filter-bar"><input class="filter-search" placeholder="Search documentation..." style="margin-left:0;flex:1;max-width:400px"><select class="form-select" style="width:auto;padding:0.35rem 2rem 0.35rem 0.75rem;font-size:0.82rem"><option>English</option><option>Spanish</option><option>French</option></select></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+        <div class="card card-interactive" onclick="showToast('Opening','Issuer Onboarding SOP')"><h3 style="font-size:0.9rem;margin-bottom:0.25rem">Issuer Onboarding SOP</h3><p style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:0.5rem">Step-by-step guide for onboarding new credential issuers.</p><span class="tag">SOP</span> <span class="tag tag-info">Updated Apr 2026</span></div>
+        <div class="card card-interactive" onclick="showToast('Opening','Holder Wallet Guide')"><h3 style="font-size:0.9rem;margin-bottom:0.25rem">Holder Wallet User Guide</h3><p style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:0.5rem">How to receive, store, and share verifiable credentials.</p><span class="tag">User Guide</span> <span class="tag tag-info">Updated Mar 2026</span></div>
+        <div class="card card-interactive" onclick="showToast('Opening','Verifier Integration Guide')"><h3 style="font-size:0.9rem;margin-bottom:0.25rem">Verifier Integration Guide</h3><p style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:0.5rem">SDK setup, API endpoints, and test verification walkthrough.</p><span class="tag">Technical</span> <span class="tag tag-accent">API v1.2</span></div>
+        <div class="card card-interactive" onclick="showToast('Opening','Trust Framework Policy')"><h3 style="font-size:0.9rem;margin-bottom:0.25rem">National Trust Framework Policy</h3><p style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:0.5rem">Governance rules, acceptance policies, and compliance requirements.</p><span class="tag">Policy</span></div>
+        <div class="card card-interactive" onclick="showToast('Opening','Agent-Assisted Mode Training')"><h3 style="font-size:0.9rem;margin-bottom:0.25rem">Field Agent Training</h3><p style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:0.5rem">Consent capture, kiosk operation, and offline verification procedures.</p><span class="tag">Training</span></div>
+        <div class="card card-interactive" onclick="showToast('Opening','Admin Operations Manual')"><h3 style="font-size:0.9rem;margin-bottom:0.25rem">Platform Admin Operations</h3><p style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:0.5rem">Deployment, monitoring, backup, and disaster recovery procedures.</p><span class="tag">Operations</span></div>
+      </div>
+    </div>
+
+    <!-- ==================== 77: PLATFORM HEALTH DASHBOARD ==================== -->
+    <div class="page" id="page-health">
+      <div class="page-header"><h1>Platform Health</h1><p>System uptime, API latency, error rates, active users, and storage utilization.</p></div>
+      <div class="stats-row">
+        <div class="card stat-card"><div class="stat-number" style="color:var(--success)">99.97%</div><div class="stat-label">Uptime (30d)</div></div>
+        <div class="card stat-card"><div class="stat-number">142ms</div><div class="stat-label">API Latency (p50)</div></div>
+        <div class="card stat-card"><div class="stat-number">0.03%</div><div class="stat-label">Error Rate</div></div>
+        <div class="card stat-card"><div class="stat-number">1,847</div><div class="stat-label">Active Users (7d)</div></div>
+        <div class="card stat-card"><div class="stat-number">2.4 GB</div><div class="stat-label">Storage Used</div></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+        <div class="card"><h3 style="font-size:0.9rem;margin-bottom:1rem">Service Health</h3>
+          <div style="font-size:0.83rem"><div style="display:flex;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)"><span>API Gateway</span><span><span class="health-dot green"></span> 99.99% &#183; 48ms</span></div><div style="display:flex;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)"><span>Credential Issuance</span><span><span class="health-dot green"></span> 99.98% &#183; 156ms</span></div><div style="display:flex;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)"><span>Verification Engine</span><span><span class="health-dot green"></span> 99.99% &#183; 280ms</span></div><div style="display:flex;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)"><span>Trust Registry</span><span><span class="health-dot green"></span> 99.95% &#183; 32ms</span></div><div style="display:flex;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)"><span>Status List Service</span><span><span class="health-dot green"></span> 100% &#183; 18ms</span></div><div style="display:flex;justify-content:space-between;padding:0.5rem 0"><span>Notification Service</span><span><span class="health-dot amber"></span> 98.7% &#183; 340ms</span></div></div>
+        </div>
+        <div class="card"><h3 style="font-size:0.9rem;margin-bottom:1rem">Resource Utilization</h3>
+          <div style="font-size:0.83rem"><div style="margin-bottom:0.75rem"><div style="display:flex;justify-content:space-between;margin-bottom:0.25rem"><span>CPU</span><span>34%</span></div><div class="progress-bar"><div class="progress-fill" style="width:34%"></div></div></div><div style="margin-bottom:0.75rem"><div style="display:flex;justify-content:space-between;margin-bottom:0.25rem"><span>Memory</span><span>58%</span></div><div class="progress-bar"><div class="progress-fill" style="width:58%"></div></div></div><div style="margin-bottom:0.75rem"><div style="display:flex;justify-content:space-between;margin-bottom:0.25rem"><span>Storage</span><span>24% (2.4 / 10 GB)</span></div><div class="progress-bar"><div class="progress-fill" style="width:24%"></div></div></div><div><div style="display:flex;justify-content:space-between;margin-bottom:0.25rem"><span>Network I/O</span><span>12 Mbps avg</span></div><div class="progress-bar"><div class="progress-fill" style="width:12%"></div></div></div></div>
+        </div>
+      </div>
+      <div class="card"><h3 style="font-size:0.9rem;margin-bottom:1rem">Recent Incidents</h3>
+        <div style="font-size:0.83rem"><div style="display:flex;align-items:flex-start;gap:0.75rem;padding:0.6rem 0;border-bottom:1px solid var(--border)"><span class="health-dot amber" style="margin-top:0.3rem;flex-shrink:0"></span><div><div style="font-weight:500">Notification service degradation</div><div style="font-size:0.75rem;color:var(--text-tertiary)">Apr 8, 2026 06:15 &#8212; Apr 8, 2026 06:42 (27 min) &#183; SMS delivery delays</div></div></div><div style="display:flex;align-items:flex-start;gap:0.75rem;padding:0.6rem 0"><span class="health-dot green" style="margin-top:0.3rem;flex-shrink:0"></span><div><div style="font-weight:500">Scheduled maintenance completed</div><div style="font-size:0.75rem;color:var(--text-tertiary)">Apr 6, 2026 02:00 &#8212; Apr 6, 2026 02:15 (15 min) &#183; Database migration</div></div></div></div>
+      </div>
+    </div>
+
+  </main>
+</div>
+<div class="toast-container" id="toast-container"></div>
+<script>
+function showPage(id){document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active')});document.querySelectorAll('.sidebar-item').forEach(function(i){i.classList.remove('active')});var page=document.getElementById('page-'+id);var item=document.querySelector('.sidebar-item[data-page="'+id+'"]');if(page)page.classList.add('active');if(item)item.classList.add('active');
+var names={'intake':'Self-Service / <strong>Issuer Intake</strong>','guided-schema':'Self-Service / <strong>Schema Wizard</strong>','preview-gen':'Self-Service / <strong>Preview Generator</strong>','sandbox':'Self-Service / <strong>Sandbox</strong>','approval-queue':'Self-Service / <strong>Review & Approve</strong>','deployment':'Platform / <strong>Deployment</strong>','portability':'Platform / <strong>Data Portability</strong>','reporting':'Platform / <strong>Reporting</strong>','training':'Platform / <strong>Training Hub</strong>','health':'Platform / <strong>Platform Health</strong>'};
+document.getElementById('breadcrumb').innerHTML=names[id]||id;}
+
+function toggleTheme(){var h=document.documentElement;h.setAttribute('data-theme',h.getAttribute('data-theme')==='light'?'dark':'light')}
+function showToast(t,x){var c=document.getElementById('toast-container');var e=document.createElement('div');e.className='toast';e.innerHTML='<span style="font-size:1.1rem">&#10003;</span><div><strong>'+t+'</strong><br><span style="font-size:0.78rem;color:var(--text-secondary)">'+x+'</span></div><button style="background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:0.9rem" onclick="this.parentElement.remove()">&#10005;</button>';c.appendChild(e);setTimeout(function(){e.remove()},4000)}
+function activateStep(el){var steps=el.parentElement.querySelectorAll('.wizard-step');var idx=Array.from(steps).indexOf(el);steps.forEach(function(s,i){s.classList.remove('active','done');if(i<idx)s.classList.add('done');if(i===idx)s.classList.add('active')})}
+
+function addWizardField(){
+  var list=document.getElementById('wizard-fields');
+  var row=document.createElement('div');
+  row.style.cssText='display:flex;align-items:center;gap:0.75rem;padding:0.6rem 0.85rem;background:var(--bg-surface-alt);border-radius:var(--radius-sm);border:1px solid var(--accent)';
+  row.innerHTML='<input type="checkbox" checked><input class="form-input" style="flex:1;padding:0.3rem 0.6rem;font-size:0.82rem" placeholder="Field name"><select class="form-select" style="width:100px;padding:0.3rem 0.5rem;font-size:0.78rem"><option>Text</option><option>Number</option><option>Date</option><option>Yes/No</option></select><button class="btn btn-ghost btn-sm" style="font-size:0.7rem;color:var(--error);padding:0.2rem 0.4rem" onclick="this.parentElement.remove()">&#10005;</button>';
+  list.appendChild(row);
+  row.querySelector('input[type=text],input.form-input').focus();
+}
+
+function filterApprovals(btn,status){
+  btn.parentElement.querySelectorAll('.filter-pill').forEach(function(f){f.classList.remove('active')});btn.classList.add('active');
+  document.querySelectorAll('[data-approval]').forEach(function(c){c.style.display=(status==='all'||c.dataset.approval===status)?'':'none'});
+}
+
+var REPORT_TIERS={
+  funders:'<div class="stats-row"><div class="card stat-card"><div class="stat-number">24,831</div><div class="stat-label">Credentials Issued</div></div><div class="card stat-card"><div class="stat-number">18,204</div><div class="stat-label">Population Reached</div></div><div class="card stat-card"><div class="stat-number">99.97%</div><div class="stat-label">System Uptime</div></div><div class="card stat-card"><div class="stat-number">7</div><div class="stat-label">Active Issuers</div></div><div class="card stat-card"><div class="stat-number">4</div><div class="stat-label">Sectors Covered</div></div></div><div class="card"><h3 style="font-size:0.9rem;margin-bottom:0.5rem">Summary</h3><p style="font-size:0.85rem;color:var(--text-secondary);line-height:1.7">The national VC infrastructure has issued 24,831 credentials across 7 issuers in 4 sectors. System uptime is 99.97%. Holder base grew 23% MoM. Education accounts for 68% of issuances. Verification volume up 31%.</p></div>',
+  dpi:'<div class="stats-row"><div class="card stat-card"><div class="stat-number">7</div><div class="stat-label">Active Issuers</div></div><div class="card stat-card"><div class="stat-number">4</div><div class="stat-label">Active Verifiers</div></div><div class="card stat-card"><div class="stat-number">1,847</div><div class="stat-label">Active Users (7d)</div></div><div class="card stat-card"><div class="stat-number">12</div><div class="stat-label">Support Tickets</div></div><div class="card stat-card"><div class="stat-number">23%</div><div class="stat-label">Adoption Growth</div></div></div><div class="card"><h3 style="font-size:0.9rem;margin-bottom:0.5rem">Operational Summary</h3><p style="font-size:0.85rem;color:var(--text-secondary);line-height:1.7">Issuer activity: UWI (342 this week), WeLearnTT (89), MDT (204). Verifier activity: EmployTT (847 total), Bank of TT (1,204). 1 issuer pending onboarding (Min. Agriculture). 12 open support tickets, 3 high priority. Avg resolution time: 4.2 hours.</p></div>',
+  dpg:'<div class="stats-row"><div class="card stat-card"><div class="stat-number">v1.2.4</div><div class="stat-label">Current Version</div></div><div class="card stat-card"><div class="stat-number">142ms</div><div class="stat-label">API Latency (p50)</div></div><div class="card stat-card"><div class="stat-number">0.03%</div><div class="stat-label">Error Rate</div></div><div class="card stat-card"><div class="stat-number">87%</div><div class="stat-label">Test Coverage</div></div><div class="card stat-card"><div class="stat-number">14</div><div class="stat-label">Open PRs</div></div></div><div class="card"><h3 style="font-size:0.9rem;margin-bottom:0.5rem">Technical Summary</h3><p style="font-size:0.85rem;color:var(--text-secondary);line-height:1.7">Deployment: AWS ap-southeast-1, Terraform-managed. Last deploy: Apr 7 (v1.2.4). 5 adaptors active (1 degraded: Jamaica NIDS). 6 schemas published, 1 draft. API health: all endpoints green except notification service (98.7%). 14 PRs pending review, 3 with CI failures.</p></div>'
+};
+function switchReportTier(btn,tier){
+  btn.parentElement.querySelectorAll('.filter-pill').forEach(function(f){f.classList.remove('active')});btn.classList.add('active');
+  document.getElementById('report-content').innerHTML=REPORT_TIERS[tier]||REPORT_TIERS.funders;
+}
+
+function toggleUserMenu(){var m=document.getElementById('user-menu');m.classList.toggle('open')}
+document.addEventListener('click',function(e){var m=document.getElementById('user-menu');var b=e.target.closest('.topbar-user');if(!b&&m)m.classList.remove('open')});
+function doSignOut(){try{sessionStorage.removeItem('vc_role')}catch(e){}window.location.href='phase1.html'}
+
+(function(){var h=window.location.hash.replace('#','');if(h)showPage(h)})();
+</script>
+</body>
+</html>
