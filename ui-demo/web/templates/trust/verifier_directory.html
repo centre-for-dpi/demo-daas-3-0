@@ -1,0 +1,52 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Verifier Directory</h1><p>Organizations registered to verify credentials in the ecosystem.</p></div>
+
+  {{$isReal := and .User (not .User.Demo)}}
+  <div class="card" style="padding:0;overflow-x:auto">
+    <table class="data-table">
+      <thead>
+        <tr><th>Organization</th><th>Sector</th><th>Accepts</th><th>Policy</th><th>Verifications</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        {{if $isReal}}
+        <tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--text-secondary)">No verifiers registered. Organizations will appear here once they have been approved to verify credentials in the ecosystem.</td></tr>
+        {{else}}
+        <tr>
+          <td><strong>EmployTT</strong></td>
+          <td>Employment</td>
+          <td>BSc, MSc, Professional Certs</td>
+          <td>Standard</td>
+          <td>847</td>
+          <td><span class="tag tag-accent">Active</span></td>
+        </tr>
+        <tr>
+          <td><strong>Bank of Trinidad &amp; Tobago</strong></td>
+          <td>Banking</td>
+          <td>National ID, KYC</td>
+          <td>Enhanced</td>
+          <td>1,204</td>
+          <td><span class="tag tag-accent">Active</span></td>
+        </tr>
+        <tr>
+          <td><strong>Ministry of Education</strong></td>
+          <td>Government</td>
+          <td>All Education Credentials</td>
+          <td>Standard</td>
+          <td>312</td>
+          <td><span class="tag tag-accent">Active</span></td>
+        </tr>
+        <tr>
+          <td><strong>Lands &amp; Surveys Division</strong></td>
+          <td>Government</td>
+          <td>Land Certificates, National ID</td>
+          <td>Enhanced</td>
+          <td>89</td>
+          <td><span class="tag tag-accent">Active</span></td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}

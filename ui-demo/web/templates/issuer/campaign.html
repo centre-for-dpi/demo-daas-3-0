@@ -1,0 +1,44 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Campaign Builder</h1><p>Define a batch issuance campaign — select schema, population, and delivery channels.</p></div>
+
+  {{$dm := dataMap .Data}}
+  {{$schemas := index ($dm) "schemas"}}
+  {{$isReal := and .User (not .User.Demo)}}
+
+  {{if $isReal}}
+  <div class="card" style="text-align:center;padding:3rem">
+    <div style="font-size:2rem;margin-bottom:0.75rem">&#128231;</div>
+    <h3 style="font-size:0.95rem;margin-bottom:0.5rem">Campaign Builder</h3>
+    <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:1rem">Batch campaigns are not yet connected to the backend. Use Single Issuance to issue credentials one at a time via the Walt.id API.</p>
+    <button class="btn btn-primary btn-sm" hx-get="/portal/issuer/single-issue" hx-target="#main-content" hx-push-url="true">Go to Single Issuance</button>
+  </div>
+  {{else}}
+  <div class="card" style="margin-bottom:1rem">
+    <div class="form-row-3">
+      <div class="form-group" style="margin-bottom:0"><label class="form-label">Schema</label>
+        <select class="form-select">
+          <option>bsc-degree-v2</option><option>msc-degree-v1</option><option>professional-cert-v2</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:0"><label class="form-label">Template</label><select class="form-select"><option>BSc Degree Certificate</option><option>MSc Degree Certificate</option></select></div>
+      <div class="form-group" style="margin-bottom:0"><label class="form-label">Population Source</label><select class="form-select"><option>CSV/Excel Upload</option><option>Registry Query</option><option>API Trigger</option></select></div>
+    </div>
+  </div>
+  <div class="card" style="margin-bottom:1rem">
+    <h3 style="font-size:0.9rem;margin-bottom:1rem">Delivery Channels</h3>
+    <div style="display:flex;gap:1rem;flex-wrap:wrap">
+      <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.83rem;cursor:pointer"><input type="checkbox" checked> Mobile Wallet (push)</label>
+      <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.83rem;cursor:pointer"><input type="checkbox" checked> Cloud eLocker</label>
+      <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.83rem;cursor:pointer"><input type="checkbox" checked> Download Portal</label>
+      <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.83rem;cursor:pointer"><input type="checkbox"> Print Queue (PDF with QR)</label>
+      <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.83rem;cursor:pointer"><input type="checkbox"> Email Notification</label>
+    </div>
+  </div>
+  <div style="display:flex;gap:0.5rem;justify-content:flex-end">
+    <button class="btn btn-secondary btn-sm" onclick="showToast('Saved','Campaign saved.')">Save Campaign</button>
+    <button class="btn btn-primary btn-sm" hx-get="/portal/issuer/batch" hx-target="#main-content" hx-push-url="true">Next: Upload Data &rarr;</button>
+  </div>
+  {{end}}
+</div>
+{{end}}

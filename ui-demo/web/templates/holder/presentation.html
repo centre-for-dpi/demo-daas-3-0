@@ -1,0 +1,95 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Build Presentation</h1><p>Select credentials and claims to include in your verifiable presentation.</p></div>
+
+  {{$dm := dataMap .Data}}
+  {{$creds := index ($dm) "credentials"}}
+  {{$isReal := and .User (not .User.Demo)}}
+
+  {{if and $isReal (hasItems $creds)}}
+  <!-- LIVE DATA from Walt.id -->
+  <!-- Selected Credentials -->
+  <div class="card" style="margin-bottom:1rem">
+    <h3 style="font-size:0.9rem;margin-bottom:1rem">Selected Credentials</h3>
+    <div style="display:flex;flex-direction:column;gap:0.5rem">
+      {{range $creds}}
+      {{$pd := .ParsedDocument}}
+      {{$subj := credSubject $pd}}
+      {{$typeName := credTypes $pd}}
+      <div style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem;background:var(--bg-surface-alt);border-radius:var(--radius-md)">
+        <input type="checkbox" checked style="width:18px;height:18px;accent-color:var(--color-accent)">
+        <span style="font-size:1.2rem">&#128220;</span>
+        <div style="flex:1">
+          <div style="font-weight:500;font-size:0.88rem">{{$typeName}}</div>
+          <div style="font-size:0.72rem;color:var(--text-secondary)">{{mapStr $subj "university"}}{{mapStr $subj "institution"}}{{mapStr $subj "name"}} &middot; Format: {{.Format}}</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="font-size:0.72rem" hx-get="/portal/holder/disclosure" hx-target="#main-content" hx-push-url="true">Edit Claims</button>
+      </div>
+      {{end}}
+    </div>
+  </div>
+
+  {{else if $isReal}}
+  <!-- REAL USER BUT EMPTY — no credentials available -->
+  <div class="card" style="text-align:center;padding:3rem 2rem;margin-bottom:1rem">
+    <div style="font-size:2.5rem;margin-bottom:1rem">&#128220;</div>
+    <h3 style="font-size:1rem;margin-bottom:0.5rem">No credentials available for presentation</h3>
+    <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:1.5rem">Your wallet is empty. Retrieve credentials first, then build a verifiable presentation to share with verifiers.</p>
+    <button class="btn btn-primary btn-sm" hx-get="/portal/holder/retrieval" hx-target="#main-content" hx-push-url="true">Retrieve Credentials</button>
+  </div>
+
+  {{else}}
+  <!-- DEMO — show mock data -->
+  <!-- Selected Credentials -->
+  <div class="card" style="margin-bottom:1rem">
+    <h3 style="font-size:0.9rem;margin-bottom:1rem">Selected Credentials</h3>
+    <div style="display:flex;flex-direction:column;gap:0.5rem">
+      <!-- Credential 1 -->
+      <div style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem;background:var(--bg-surface-alt);border-radius:var(--radius-md)">
+        <input type="checkbox" checked style="width:18px;height:18px;accent-color:var(--color-accent)">
+        <span style="font-size:1.2rem">&#127891;</span>
+        <div style="flex:1">
+          <div style="font-weight:500;font-size:0.88rem">BSc Computer Science</div>
+          <div style="font-size:0.72rem;color:var(--text-secondary)">University of the West Indies (UWI) &middot; 5 claims selected</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="font-size:0.72rem" hx-get="/portal/holder/disclosure" hx-target="#main-content" hx-push-url="true">Edit Claims</button>
+      </div>
+      <!-- Credential 2 -->
+      <div style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem;background:var(--bg-surface-alt);border-radius:var(--radius-md)">
+        <input type="checkbox" style="width:18px;height:18px;accent-color:var(--color-accent)">
+        <span style="font-size:1.2rem">&#128220;</span>
+        <div style="flex:1">
+          <div style="font-weight:500;font-size:0.88rem">Professional Certificate &mdash; Data Analytics</div>
+          <div style="font-size:0.72rem;color:var(--text-secondary)">WeLearnTT &middot; All claims</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="font-size:0.72rem" hx-get="/portal/holder/disclosure" hx-target="#main-content" hx-push-url="true">Edit Claims</button>
+      </div>
+      <!-- Credential 3 -->
+      <div style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem;background:var(--bg-surface-alt);border-radius:var(--radius-md)">
+        <input type="checkbox" style="width:18px;height:18px;accent-color:var(--color-accent)">
+        <span style="font-size:1.2rem">&#128179;</span>
+        <div style="flex:1">
+          <div style="font-weight:500;font-size:0.88rem">National Identity Card</div>
+          <div style="font-size:0.72rem;color:var(--text-secondary)">Ministry of Digital Transformation (MDT) &middot; All claims</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="font-size:0.72rem" hx-get="/portal/holder/disclosure" hx-target="#main-content" hx-push-url="true">Edit Claims</button>
+      </div>
+    </div>
+  </div>
+  {{end}}
+
+  <!-- Verifier will see -->
+  <div class="card" style="background:var(--bg-surface-alt);border-left:3px solid var(--color-info);margin-bottom:1.5rem">
+    <h4 style="font-size:0.85rem;margin-bottom:0.5rem">Verifier will see</h4>
+    <div style="font-size:0.8rem;color:var(--text-secondary)">
+      The verifier will receive a signed Verifiable Presentation containing the selected credentials and claims. They can cryptographically verify the issuer signature, check revocation status, and confirm credential authenticity &mdash; without contacting the issuer directly.
+    </div>
+  </div>
+
+  <!-- Actions -->
+  <div style="display:flex;justify-content:space-between">
+    <button class="btn btn-ghost" hx-get="/portal/holder/wallet" hx-target="#main-content" hx-push-url="true">Cancel</button>
+    <button class="btn btn-primary" hx-get="/portal/holder/share" hx-target="#main-content" hx-push-url="true">Sign &amp; Continue to Share &rarr;</button>
+  </div>
+</div>
+{{end}}

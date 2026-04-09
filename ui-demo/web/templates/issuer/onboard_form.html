@@ -1,0 +1,91 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Register New Issuer</h1><p>Self-service onboarding. Submit details and the provisioning pipeline handles the rest — no engineering required.</p></div>
+  <div class="wizard-steps">
+    <div class="wizard-step active" onclick="activateWizardStep(this)"><span class="wizard-step-num">1</span>Organization</div>
+    <div class="wizard-step" onclick="activateWizardStep(this)"><span class="wizard-step-num">2</span>Identity &amp; Keys</div>
+    <div class="wizard-step" onclick="activateWizardStep(this)"><span class="wizard-step-num">3</span>Configuration</div>
+    <div class="wizard-step" onclick="activateWizardStep(this)"><span class="wizard-step-num">4</span>Review</div>
+  </div>
+  {{$isReal := and .User (not .User.Demo)}}
+  <div class="card">
+    <div class="form-row" style="margin-bottom:0">
+      <div class="form-group"><label class="form-label">Legal Entity Name</label><input class="form-input" placeholder="{{if $isReal}}Enter organization name{{else}}University of the West Indies{{end}}"></div>
+      <div class="form-group"><label class="form-label">Registration Number</label><input class="form-input" placeholder="{{if $isReal}}e.g. REG-2024-00142{{else}}REG-2024-00142{{end}}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Authorized Signatory</label><input class="form-input" placeholder="{{if $isReal}}Full name{{else}}Dr. Keisha Williams{{end}}"></div>
+      <div class="form-group"><label class="form-label">Signatory Email</label><input class="form-input" placeholder="{{if $isReal}}email@example.com{{else}}k.williams@uwi.edu{{end}}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Technical Contact</label><input class="form-input" placeholder="{{if $isReal}}admin@example.com{{else}}it-admin@uwi.edu{{end}}"></div>
+      <div class="form-group"><label class="form-label">Geographic Jurisdiction</label><select class="form-select"><option>Trinidad and Tobago</option><option>Jamaica</option><option>Barbados</option><option>Other (specify)</option></select></div>
+    </div>
+    <div class="form-group"><label class="form-label">Approval Workflow</label><select class="form-select"><option>Manual approval by DPI Owner</option><option>Automated verification</option><option>Hybrid (auto-verify + manual review)</option></select></div>
+    <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1.5rem">
+      <button class="btn btn-secondary btn-sm" onclick="showToast('Saved','Draft saved.')">Save Draft</button>
+      {{if $isReal}}
+      <button class="btn btn-primary btn-sm" id="onboard-submit" onclick="submitOnboarding()">Register &amp; Generate DID &rarr;</button>
+      {{else}}
+      <button class="btn btn-primary btn-sm" hx-get="/portal/issuer/onboard-queue" hx-target="#main-content" hx-push-url="true" onclick="showToast('Submitted','Issuer registration submitted for approval.')">Next: Identity &amp; Keys &rarr;</button>
+      {{end}}
+    </div>
+  </div>
+
+  <!-- Result panel (shown after onboarding) -->
+  <div class="card" id="onboard-result" style="display:none;margin-top:1rem;border-left:3px solid var(--color-accent)">
+    <h3 style="font-size:0.9rem;margin-bottom:1rem">Issuer Onboarded</h3>
+    <div style="display:flex;flex-direction:column;gap:0.5rem;font-size:0.82rem">
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Issuer DID</span></div>
+      <code id="result-did" style="font-size:0.72rem;background:var(--bg-surface-alt);padding:0.75rem;border-radius:var(--radius-md);word-break:break-all"></code>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Key Type</span><span style="font-weight:500" id="result-keytype"></span></div>
+    </div>
+    <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem">
+      <button class="btn btn-secondary btn-sm" onclick="var d=document.getElementById('result-did').textContent;navigator.clipboard.writeText(d);showToast('Copied','Issuer DID copied')">Copy DID</button>
+      <button class="btn btn-primary btn-sm" hx-get="/portal/issuer/schema-builder" hx-target="#main-content" hx-push-url="true">Build Credential Schema &rarr;</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function activateWizardStep(el) {
+  var steps = el.parentElement.querySelectorAll('.wizard-step');
+  var clickedIdx = Array.from(steps).indexOf(el);
+  steps.forEach(function(s, i) {
+    s.classList.remove('active', 'done');
+    if (i < clickedIdx) s.classList.add('done');
+    if (i === clickedIdx) s.classList.add('active');
+  });
+}
+
+function submitOnboarding() {
+  var btn = document.getElementById('onboard-submit');
+  btn.disabled = true;
+  btn.textContent = 'Registering...';
+
+  fetch('/api/issuer/onboard?keyType=secp256r1', {method: 'POST'})
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      btn.disabled = false;
+      btn.textContent = 'Register & Generate DID →';
+      if (d.error) { showToast('Error', d.error); return; }
+
+      document.getElementById('result-did').textContent = d.issuerDid || 'unknown';
+      document.getElementById('result-keytype').textContent = 'secp256r1 (P-256)';
+      document.getElementById('onboard-result').style.display = '';
+      document.getElementById('onboard-result').scrollIntoView({behavior:'smooth', block:'nearest'});
+
+      // Mark wizard steps
+      var steps = document.querySelectorAll('.wizard-step');
+      steps.forEach(function(s) { s.classList.add('done'); s.classList.remove('active'); });
+
+      showToast('Issuer Registered', 'DID created. You can now issue credentials.');
+    })
+    .catch(function(e) {
+      btn.disabled = false;
+      btn.textContent = 'Register & Generate DID →';
+      showToast('Error', e.message);
+    });
+}
+</script>
+{{end}}

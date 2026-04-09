@@ -1,0 +1,74 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Adaptor Configuration</h1><p>Configure protocol adaptor connection settings.</p></div>
+
+  {{$isReal := and .User (not .User.Demo)}}
+
+  <div class="card">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+      <div class="form-group">
+        <label class="form-label">Adaptor Name</label>
+        <input type="text" class="form-input" {{if not $isReal}}value="Inji Bridge"{{else}}placeholder="e.g. Inji Bridge"{{end}}>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Target System</label>
+        <input type="text" class="form-input" {{if not $isReal}}value="Inji Mobile"{{else}}placeholder="e.g. Inji Mobile"{{end}}>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Protocol</label>
+        <select class="form-input">
+          <option selected>OID4VCI</option>
+          <option>OID4VP</option>
+          <option>DIDComm v2</option>
+          <option>CHAPI</option>
+          <option>OIDC</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Protocol Version</label>
+        <input type="text" class="form-input" {{if not $isReal}}value="draft-13"{{else}}placeholder="e.g. draft-13"{{end}}>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Endpoint URL</label>
+      <input type="text" class="form-input" {{if not $isReal}}value="https://inji-bridge.tt.gov/api/v1/oid4vci"{{else}}placeholder="https://..."{{end}}>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+      <div class="form-group">
+        <label class="form-label">Auth Method</label>
+        <select class="form-input">
+          <option selected>Bearer Token</option>
+          <option>mTLS</option>
+          <option>API Key</option>
+          <option>OAuth2 Client Credentials</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Auth Credential</label>
+        <input type="password" class="form-input" {{if not $isReal}}value="sk_live_xxxxxxxxxxxx"{{end}} placeholder="Enter credential">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Retry Policy</label>
+        <select class="form-input">
+          <option selected>Exponential Backoff (3 retries)</option>
+          <option>Linear (5 retries)</option>
+          <option>No Retry</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Fallback Behaviour</label>
+        <select class="form-input">
+          <option selected>Queue &amp; Retry</option>
+          <option>Fail Immediately</option>
+          <option>Route to Alternate Adaptor</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1.5rem">
+    <button class="btn btn-secondary btn-sm" hx-get="/portal/trust/adaptor-registry" hx-target="#main-content" hx-push-url="true">Cancel</button>
+    <button class="btn btn-primary btn-sm" onclick="showToast('Saved','Adaptor configuration updated successfully.')">Save Config</button>
+  </div>
+</div>
+{{end}}

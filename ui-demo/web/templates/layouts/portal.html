@@ -1,0 +1,10 @@
+{{define "body"}}
+<div class="portal">
+  {{template "sidebar" .}}
+  {{template "topbar" .}}
+  <main class="main" id="main-content" role="main">
+    {{block "content" .}}{{end}}
+  </main>
+</div>
+<div id="toast-container" class="toast-container" role="status" aria-live="polite"></div>
+{{end}}

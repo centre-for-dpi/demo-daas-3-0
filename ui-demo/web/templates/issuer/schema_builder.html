@@ -1,0 +1,277 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Schema Builder</h1><p>Define credential claims, types, and constraints. No code required.</p></div>
+
+  {{$dm := dataMap .Data}}
+  {{$schemas := index ($dm) "schemas"}}
+  {{$isReal := and .User (not .User.Demo)}}
+
+  <div class="form-row" style="margin-bottom:1.5rem">
+    <div class="form-group" style="margin-bottom:0"><label class="form-label">Schema ID</label>
+      {{if $isReal}}
+      <input class="form-input" id="schema-id" placeholder="e.g. my-credential-v1" style="font-family:var(--font-mono)">
+      {{else}}
+      <input class="form-input" id="schema-id" value="bsc-degree-v2">
+      {{end}}
+    </div>
+    <div class="form-group" style="margin-bottom:0"><label class="form-label">Version</label><input class="form-input" id="schema-version" {{if $isReal}}placeholder="1.0"{{else}}value="2.0"{{end}} style="max-width:100px"></div>
+  </div>
+  <div class="form-row" style="margin-bottom:1.5rem">
+    <div class="form-group" style="margin-bottom:0"><label class="form-label">VC Format</label>
+      <select class="form-select" id="schema-format">
+        <option value="jwt_vc_json">JWT (jwt_vc_json)</option>
+        <option value="ldp_vc">JSON-LD (ldp_vc)</option>
+        <option value="sdjwt_vc">SD-JWT (sdjwt_vc)</option>
+        <option value="mso_mdoc">mDL / mDoc (mso_mdoc)</option>
+      </select>
+      <div class="form-help" style="margin-top:0.25rem">Determines the credential encoding and proof format.</div>
+    </div>
+    <div class="form-group" style="margin-bottom:0"><label class="form-label">Standard</label>
+      <select class="form-select" id="schema-standard">
+        <option>W3C-VCDM 2.0</option>
+        <option>W3C-VCDM 1.1</option>
+        <option>SD-JWT</option>
+        <option>mDL (ISO 18013-5)</option>
+        <option>AnonCreds</option>
+      </select>
+    </div>
+  </div>
+  <div class="card" style="margin-bottom:1rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem"><h3 style="font-size:0.9rem">Claim Fields</h3><button class="btn btn-secondary btn-sm" onclick="addNewField()">+ Add Field</button></div>
+    <p style="font-size:0.72rem;color:var(--text-tertiary);margin-bottom:1rem">All fields are under <code>credentialSubject</code>. Use <strong>camelCase</strong> for field names (e.g. <code>firstName</code>, <code>graduationDate</code>).</p>
+    <div class="field-list" id="field-list">
+      {{if $isReal}}
+      <div style="text-align:center;padding:1.5rem;color:var(--text-tertiary);font-size:0.85rem">Click <strong>+ Add Field</strong> to define credential claims.</div>
+      {{else}}
+      <div class="field-row" draggable="true"><span class="field-drag">&#10495;</span><span class="field-name">credentialSubject.name</span><span class="field-type">string</span><span class="field-required tag tag-accent">Required</span><div class="field-actions"><button class="btn btn-ghost btn-sm" style="font-size:0.7rem" onclick="showToast('Edit Field','Field editor modal would open here.')">Edit</button><button class="btn btn-ghost btn-sm" style="font-size:0.7rem;color:var(--error)" onclick="this.closest('.field-row').remove();showToast('Removed','Field removed from schema.')">&#10005;</button></div></div>
+      <div class="field-row" draggable="true"><span class="field-drag">&#10495;</span><span class="field-name">credentialSubject.degree</span><span class="field-type">string</span><span class="field-required tag tag-accent">Required</span><div class="field-actions"><button class="btn btn-ghost btn-sm" style="font-size:0.7rem" onclick="showToast('Edit Field','Field editor modal would open here.')">Edit</button><button class="btn btn-ghost btn-sm" style="font-size:0.7rem;color:var(--error)" onclick="this.closest('.field-row').remove();showToast('Removed','Field removed from schema.')">&#10005;</button></div></div>
+      <div class="field-row" draggable="true"><span class="field-drag">&#10495;</span><span class="field-name">credentialSubject.major</span><span class="field-type">string</span><span class="field-required tag tag-accent">Required</span><div class="field-actions"><button class="btn btn-ghost btn-sm" style="font-size:0.7rem" onclick="showToast('Edit Field','Field editor modal would open here.')">Edit</button><button class="btn btn-ghost btn-sm" style="font-size:0.7rem;color:var(--error)" onclick="this.closest('.field-row').remove();showToast('Removed','Field removed from schema.')">&#10005;</button></div></div>
+      <div class="field-row" draggable="true"><span class="field-drag">&#10495;</span><span class="field-name">credentialSubject.graduationDate</span><span class="field-type">date</span><span class="field-required tag tag-accent">Required</span><div class="field-actions"><button class="btn btn-ghost btn-sm" style="font-size:0.7rem" onclick="showToast('Edit Field','Field editor modal would open here.')">Edit</button><button class="btn btn-ghost btn-sm" style="font-size:0.7rem;color:var(--error)" onclick="this.closest('.field-row').remove();showToast('Removed','Field removed from schema.')">&#10005;</button></div></div>
+      <div class="field-row" draggable="true"><span class="field-drag">&#10495;</span><span class="field-name">credentialSubject.gpa</span><span class="field-type">number</span><span class="field-required tag">Optional</span><div class="field-actions"><button class="btn btn-ghost btn-sm" style="font-size:0.7rem" onclick="showToast('Edit Field','Field editor modal would open here.')">Edit</button><button class="btn btn-ghost btn-sm" style="font-size:0.7rem;color:var(--error)" onclick="this.closest('.field-row').remove();showToast('Removed','Field removed from schema.')">&#10005;</button></div></div>
+      <div class="field-row" draggable="true"><span class="field-drag">&#10495;</span><span class="field-name">credentialSubject.studentId</span><span class="field-type">string</span><span class="field-required tag tag-accent">Required</span><div class="field-actions"><button class="btn btn-ghost btn-sm" style="font-size:0.7rem" onclick="showToast('Edit Field','Field editor modal would open here.')">Edit</button><button class="btn btn-ghost btn-sm" style="font-size:0.7rem;color:var(--error)" onclick="this.closest('.field-row').remove();showToast('Removed','Field removed from schema.')">&#10005;</button></div></div>
+      <div class="field-row" draggable="true"><span class="field-drag">&#10495;</span><span class="field-name">credentialSubject.institution</span><span class="field-type">string</span><span class="field-required tag tag-accent">Required</span><div class="field-actions"><button class="btn btn-ghost btn-sm" style="font-size:0.7rem" onclick="showToast('Edit Field','Field editor modal would open here.')">Edit</button><button class="btn btn-ghost btn-sm" style="font-size:0.7rem;color:var(--error)" onclick="this.closest('.field-row').remove();showToast('Removed','Field removed from schema.')">&#10005;</button></div></div>
+      {{end}}
+    </div>
+  </div>
+  <div style="display:flex;gap:0.5rem;justify-content:space-between">
+    <div><button class="btn btn-secondary btn-sm" onclick="showToast('Import','JSON-LD context import dialog would open here.')">Import JSON-LD</button> <button class="btn btn-secondary btn-sm" onclick="showToast('Import','JSON Schema import dialog would open here.')">Import JSON Schema</button></div>
+    <div>
+      {{if $isReal}}
+      <button class="btn btn-primary btn-sm" id="publish-btn" onclick="publishSchema()">Publish Schema</button>
+      {{else}}
+      <button class="btn btn-primary btn-sm" onclick="showToast('Published','Schema published to registry.')">Publish</button>
+      {{end}}
+    </div>
+  </div>
+</div>
+
+<script>
+function publishSchema() {
+  var id = document.getElementById('schema-id').value.trim();
+  var version = document.getElementById('schema-version').value.trim() || '1.0';
+  var format = document.getElementById('schema-format').value;
+  var standard = document.getElementById('schema-standard').value;
+
+  if (!id) {
+    showToast('Required', 'Enter a Schema ID.');
+    document.getElementById('schema-id').style.borderColor = 'var(--error)';
+    return;
+  }
+
+  // Collect fields from the field list
+  var fields = [];
+  document.querySelectorAll('#field-list .field-row:not(.editing)').forEach(function(row) {
+    var nameEl = row.querySelector('.field-name');
+    var typeEl = row.querySelector('.field-type');
+    var reqEl = row.querySelector('.field-required');
+    if (nameEl) {
+      fields.push({
+        name: nameEl.textContent.replace('credentialSubject.', ''),
+        type: typeEl ? typeEl.textContent : 'string',
+        required: reqEl ? reqEl.textContent.trim() === 'Required' : false
+      });
+    }
+  });
+
+  if (fields.length === 0) {
+    showToast('Required', 'Add at least one claim field.');
+    return;
+  }
+
+  var btn = document.getElementById('publish-btn');
+  btn.disabled = true;
+  btn.textContent = 'Publishing...';
+
+  fetch('/api/schemas/create', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      id: id + '_' + format,
+      name: id,
+      version: version,
+      format: format,
+      standard: standard,
+      fields: fields
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    btn.disabled = false;
+    btn.textContent = 'Publish Schema';
+    if (d.error) { showToast('Error', d.error); return; }
+    showToast('Schema Published', id + ' (' + format + ') — ready for issuance.');
+    // Navigate to schemas list
+    htmx.ajax('GET', '/portal/issuer/schemas', {target: '#main-content', swap: 'innerHTML'});
+    history.pushState(null, '', '/portal/issuer/schemas');
+  })
+  .catch(function(e) {
+    btn.disabled = false;
+    btn.textContent = 'Publish Schema';
+    showToast('Error', e.message);
+  });
+}
+
+function addNewField() {
+  var list = document.getElementById('field-list');
+  var row = document.createElement('div');
+  row.className = 'field-row editing';
+  row.draggable = true;
+  row.style.borderColor = 'var(--accent)';
+  row.innerHTML =
+    '<span class="field-drag">\u2800\u2800\u2800</span>' +
+    '<span style="font-size:0.78rem;color:var(--text-tertiary);flex-shrink:0;padding:0.35rem 0 0.35rem 0.5rem;font-family:var(--font-mono)">credentialSubject.</span>' +
+    '<input class="form-input" style="flex:1;padding:0.35rem 0.6rem;font-size:0.82rem;font-family:var(--font-mono)" placeholder="fieldName (camelCase)" id="new-field-name">' +
+    '<select class="form-select" style="width:100px;padding:0.35rem 0.5rem;font-size:0.78rem" id="new-field-type">' +
+      '<option>string</option><option>number</option><option>date</option><option>boolean</option><option>uri</option>' +
+    '</select>' +
+    '<select class="form-select" style="width:100px;padding:0.35rem 0.5rem;font-size:0.78rem" id="new-field-req">' +
+      '<option value="required">Required</option><option value="optional">Optional</option>' +
+    '</select>' +
+    '<div class="field-actions">' +
+      '<button class="btn btn-primary btn-sm" style="font-size:0.7rem;padding:0.25rem 0.6rem" onclick="confirmField(this)">Add</button>' +
+      '<button class="btn btn-ghost btn-sm" style="font-size:0.7rem;color:var(--error)" onclick="this.closest(\'.field-row\').remove()">Cancel</button>' +
+    '</div>';
+  list.appendChild(row);
+  row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  row.querySelector('#new-field-name').focus();
+}
+
+function confirmField(btn) {
+  var row = btn.closest('.field-row');
+  var name = row.querySelector('#new-field-name').value.trim();
+  var type = row.querySelector('#new-field-type').value;
+  var req = row.querySelector('#new-field-req').value;
+
+  if (!name) {
+    row.querySelector('#new-field-name').style.borderColor = 'var(--error)';
+    return;
+  }
+
+  if (!name.startsWith('credentialSubject.')) {
+    name = 'credentialSubject.' + name;
+  }
+
+  var reqClass = req === 'required' ? 'tag tag-accent' : 'tag';
+  var reqLabel = req === 'required' ? 'Required' : 'Optional';
+
+  row.className = 'field-row';
+  row.draggable = true;
+  row.style.borderColor = '';
+  row.innerHTML =
+    '<span class="field-drag">\u2800\u2800\u2800</span>' +
+    '<span class="field-name">' + name + '</span>' +
+    '<span class="field-type">' + type + '</span>' +
+    '<span class="field-required ' + reqClass + '">' + reqLabel + '</span>' +
+    '<div class="field-actions">' +
+      '<button class="btn btn-ghost btn-sm" style="font-size:0.7rem" onclick="editField(this)">Edit</button>' +
+      '<button class="btn btn-ghost btn-sm" style="font-size:0.7rem;color:var(--error)" onclick="this.closest(\'.field-row\').remove();showToast(\'Removed\',\'Field removed from schema.\')">&#10005;</button>' +
+    '</div>';
+
+  showToast('Field added', name + ' (' + type + ', ' + reqLabel.toLowerCase() + ')');
+}
+
+function editField(btn) {
+  var row = btn.closest('.field-row');
+  var nameEl = row.querySelector('.field-name');
+  var typeEl = row.querySelector('.field-type');
+  var reqEl = row.querySelector('.field-required');
+
+  var fullName = nameEl.textContent;
+  var fieldName = fullName.replace('credentialSubject.', '');
+  var fieldType = typeEl.textContent;
+  var isRequired = reqEl.textContent.trim() === 'Required';
+
+  row.className = 'field-row editing';
+  row.style.borderColor = 'var(--accent)';
+  row.innerHTML =
+    '<span class="field-drag">\u2800\u2800\u2800</span>' +
+    '<span style="font-size:0.78rem;color:var(--text-tertiary);flex-shrink:0;padding:0.35rem 0 0.35rem 0.5rem;font-family:var(--font-mono)">credentialSubject.</span>' +
+    '<input class="form-input" style="flex:1;padding:0.35rem 0.6rem;font-size:0.82rem;font-family:var(--font-mono)" value="' + fieldName + '" id="new-field-name">' +
+    '<select class="form-select" style="width:100px;padding:0.35rem 0.5rem;font-size:0.78rem" id="new-field-type">' +
+      '<option' + (fieldType === 'string' ? ' selected' : '') + '>string</option>' +
+      '<option' + (fieldType === 'number' ? ' selected' : '') + '>number</option>' +
+      '<option' + (fieldType === 'date' ? ' selected' : '') + '>date</option>' +
+      '<option' + (fieldType === 'boolean' ? ' selected' : '') + '>boolean</option>' +
+      '<option' + (fieldType === 'uri' ? ' selected' : '') + '>uri</option>' +
+    '</select>' +
+    '<select class="form-select" style="width:100px;padding:0.35rem 0.5rem;font-size:0.78rem" id="new-field-req">' +
+      '<option value="required"' + (isRequired ? ' selected' : '') + '>Required</option>' +
+      '<option value="optional"' + (!isRequired ? ' selected' : '') + '>Optional</option>' +
+    '</select>' +
+    '<div class="field-actions">' +
+      '<button class="btn btn-primary btn-sm" style="font-size:0.7rem;padding:0.25rem 0.6rem" onclick="confirmField(this)">Save</button>' +
+      '<button class="btn btn-ghost btn-sm" style="font-size:0.7rem;color:var(--error)" onclick="this.closest(\'.field-row\').remove()">Cancel</button>' +
+    '</div>';
+  row.querySelector('#new-field-name').focus();
+}
+
+/* Drag-and-drop for schema fields */
+(function initDragDrop() {
+  var dragSrc = null;
+
+  document.addEventListener('dragstart', function(e) {
+    var row = e.target.closest('.field-row');
+    if (!row) return;
+    dragSrc = row;
+    row.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', '');
+  });
+
+  document.addEventListener('dragover', function(e) {
+    var row = e.target.closest('.field-row');
+    if (!row || row === dragSrc) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    row.classList.add('drag-over');
+  });
+
+  document.addEventListener('dragleave', function(e) {
+    var row = e.target.closest('.field-row');
+    if (row) row.classList.remove('drag-over');
+  });
+
+  document.addEventListener('drop', function(e) {
+    var row = e.target.closest('.field-row');
+    if (!row || !dragSrc || row === dragSrc) return;
+    e.preventDefault();
+    var list = row.parentElement;
+    var rows = Array.from(list.querySelectorAll('.field-row'));
+    var srcIdx = rows.indexOf(dragSrc);
+    var tgtIdx = rows.indexOf(row);
+    if (srcIdx < tgtIdx) {
+      list.insertBefore(dragSrc, row.nextSibling);
+    } else {
+      list.insertBefore(dragSrc, row);
+    }
+    row.classList.remove('drag-over');
+  });
+
+  document.addEventListener('dragend', function(e) {
+    var row = e.target.closest('.field-row');
+    if (row) row.classList.remove('dragging');
+    document.querySelectorAll('.field-row.drag-over').forEach(function(r) { r.classList.remove('drag-over'); });
+  });
+})();
+</script>
+{{end}}

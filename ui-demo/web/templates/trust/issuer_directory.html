@@ -1,0 +1,90 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Issuer Directory</h1><p>Trusted issuers registered in the national credential ecosystem.</p></div>
+
+  <!-- Filter bar -->
+  <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1.25rem;flex-wrap:wrap">
+    <button class="btn btn-sm btn-primary" onclick="filterIssuers(this,'all')">All</button>
+    <button class="btn btn-sm btn-ghost" onclick="filterIssuers(this,'Active')">Active</button>
+    <button class="btn btn-sm btn-ghost" onclick="filterIssuers(this,'Pending')">Pending</button>
+    <div style="margin-left:auto"><input type="text" placeholder="Search issuers..." class="form-input" style="font-size:0.8rem;padding:0.4rem 0.75rem;width:220px" oninput="searchIssuers(this.value)"></div>
+  </div>
+
+  {{$isReal := and .User (not .User.Demo)}}
+  <div class="card" style="padding:0;overflow-x:auto">
+    <table class="data-table" id="issuerTable">
+      <thead>
+        <tr><th>Issuer</th><th>DID</th><th>Jurisdiction</th><th>Credential Types</th><th>Status</th><th></th></tr>
+      </thead>
+      <tbody>
+        {{if $isReal}}
+        <tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--text-secondary)">No issuers registered yet. Issuers will appear here once they have been onboarded through the <a href="/portal/trust/trust-admin" hx-get="/portal/trust/trust-admin" hx-target="#main-content" hx-push-url="true" style="color:var(--color-accent)">Registry Admin</a>.</td></tr>
+        {{else}}
+        <tr data-status="Active">
+          <td><strong>University of the West Indies</strong></td>
+          <td><code style="font-size:0.75rem">did:web:uwi.edu:issuer</code></td>
+          <td>Trinidad &amp; Tobago</td>
+          <td>BSc, MSc Degrees</td>
+          <td><span class="tag tag-accent">Active</span></td>
+          <td><button class="btn btn-sm btn-ghost">View</button></td>
+        </tr>
+        <tr data-status="Active">
+          <td><strong>University of Trinidad &amp; Tobago</strong></td>
+          <td><code style="font-size:0.75rem">did:web:utt.edu.tt:issuer</code></td>
+          <td>Trinidad &amp; Tobago</td>
+          <td>BSc, Diplomas</td>
+          <td><span class="tag tag-accent">Active</span></td>
+          <td><button class="btn btn-sm btn-ghost">View</button></td>
+        </tr>
+        <tr data-status="Active">
+          <td><strong>WeLearnTT</strong></td>
+          <td><code style="font-size:0.75rem">did:web:welearntt.com:issuer</code></td>
+          <td>Trinidad &amp; Tobago</td>
+          <td>Professional Certs</td>
+          <td><span class="tag tag-accent">Active</span></td>
+          <td><button class="btn btn-sm btn-ghost">View</button></td>
+        </tr>
+        <tr data-status="Active">
+          <td><strong>Ministry of Digital Transformation</strong></td>
+          <td><code style="font-size:0.75rem">did:web:mdt.gov.tt:issuer</code></td>
+          <td>Trinidad &amp; Tobago</td>
+          <td>National ID</td>
+          <td><span class="tag tag-accent">Active</span></td>
+          <td><button class="btn btn-sm btn-ghost">View</button></td>
+        </tr>
+        <tr data-status="Pending">
+          <td><strong>Ministry of Agriculture</strong></td>
+          <td><code style="font-size:0.75rem">did:web:agri.gov.tt:issuer</code></td>
+          <td>Trinidad &amp; Tobago</td>
+          <td>Land Certificates</td>
+          <td><span class="tag tag-warning">Pending</span></td>
+          <td><button class="btn btn-sm btn-ghost" hx-get="/portal/trust/trust-admin" hx-target="#main-content" hx-push-url="true">Review</button></td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+function filterIssuers(btn, status) {
+  btn.parentElement.querySelectorAll('.btn').forEach(function(b) {
+    b.className = 'btn btn-sm btn-ghost';
+  });
+  btn.className = 'btn btn-sm btn-primary';
+  document.querySelectorAll('#issuerTable tbody tr').forEach(function(row) {
+    if (status === 'all' || row.getAttribute('data-status') === status) {
+      row.style.display = '';
+    } else {
+      row.style.display = 'none';
+    }
+  });
+}
+function searchIssuers(q) {
+  var term = q.toLowerCase();
+  document.querySelectorAll('#issuerTable tbody tr').forEach(function(row) {
+    row.style.display = row.textContent.toLowerCase().indexOf(term) >= 0 ? '' : 'none';
+  });
+}
+</script>
+{{end}}

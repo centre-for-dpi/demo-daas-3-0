@@ -1,0 +1,160 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Single Issuance</h1><p>Issue a credential on-demand to a single holder.</p></div>
+
+  {{$dm := dataMap .Data}}
+  {{$schemas := index ($dm) "schemas"}}
+  {{$isReal := and .User (not .User.Demo)}}
+
+  <div class="card">
+    <div class="form-group"><label class="form-label">Schema</label>
+      <select class="form-select" id="issue-schema" onchange="renderSchemaFields()">
+        {{if and $isReal (hasItems $schemas)}}
+        <option value="" disabled selected>Select a schema...</option>
+        {{range $schemas}}<option value="{{.ID}}">{{.Name}} ({{.Format}})</option>{{end}}
+        {{else if $isReal}}
+        <option value="" disabled selected>No schemas created yet — build one in Schema Builder</option>
+        {{else}}
+        <option value="UniversityDegree_jwt_vc_json">UniversityDegree_jwt_vc_json</option>
+        <option value="bsc-degree-v2">bsc-degree-v2</option>
+        {{end}}
+      </select>
+    </div>
+
+    <div class="form-group"><label class="form-label">Holder Identifier</label><input class="form-input" id="issue-identifier" placeholder="DID, email, or national ID"></div>
+
+    <!-- Dynamic fields rendered from the selected schema -->
+    <div id="schema-fields">
+      {{if not $isReal}}
+      <!-- Demo: static fields -->
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Holder Name</label><input class="form-input" id="claim-name" placeholder="Full name"></div>
+        <div class="form-group"><label class="form-label">Degree</label><input class="form-input" id="claim-degree" placeholder="BSc"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Major</label><input class="form-input" id="claim-major" placeholder="Computer Science"></div>
+        <div class="form-group"><label class="form-label">GPA</label><input class="form-input" type="number" step="0.1" id="claim-gpa" placeholder="3.7"></div>
+      </div>
+      {{else}}
+      <div style="text-align:center;padding:1.5rem;color:var(--text-tertiary);font-size:0.85rem" id="fields-placeholder">Select a schema above to see its claim fields.</div>
+      {{end}}
+    </div>
+
+    <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem">
+      <button class="btn btn-primary btn-sm" id="issue-btn" onclick="issueCredential()">Sign &amp; Issue</button>
+    </div>
+  </div>
+</div>
+
+{{if $isReal}}
+<!-- Embed schema field definitions as JSON for JS to use -->
+<script id="schema-data" type="application/json">
+{{if hasItems $schemas}}[{{range $i, $s := $schemas}}{{if $i}},{{end}}{"id":"{{$s.ID}}","name":"{{$s.Name}}","format":"{{$s.Format}}","fields":[{{range $j, $f := $s.Fields}}{{if $j}},{{end}}{"name":"{{$f.Name}}","type":"{{$f.Type}}","required":{{$f.Required}}}{{end}}]}{{end}}]{{else}}[]{{end}}
+</script>
+{{end}}
+
+<script>
+var schemaFieldDefs = [];
+try {
+  var dataEl = document.getElementById('schema-data');
+  if (dataEl) schemaFieldDefs = JSON.parse(dataEl.textContent);
+} catch(e) {}
+
+function renderSchemaFields() {
+  var schemaId = document.getElementById('issue-schema').value;
+  var container = document.getElementById('schema-fields');
+  if (!schemaId || !schemaFieldDefs.length) return;
+
+  var schema = null;
+  for (var i = 0; i < schemaFieldDefs.length; i++) {
+    if (schemaFieldDefs[i].id === schemaId) { schema = schemaFieldDefs[i]; break; }
+  }
+  if (!schema || !schema.fields.length) {
+    container.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--text-tertiary);font-size:0.85rem">This schema has no claim fields defined.</div>';
+    return;
+  }
+
+  var html = '';
+  // Render fields in pairs
+  for (var i = 0; i < schema.fields.length; i += 2) {
+    var f1 = schema.fields[i];
+    var f2 = (i + 1 < schema.fields.length) ? schema.fields[i + 1] : null;
+
+    html += '<div class="form-row">';
+    html += renderFieldInput(f1);
+    if (f2) html += renderFieldInput(f2);
+    html += '</div>';
+  }
+  container.innerHTML = html;
+}
+
+function renderFieldInput(field) {
+  var inputType = 'text';
+  var placeholder = '';
+  var step = '';
+  if (field.type === 'number') { inputType = 'number'; step = ' step="any"'; }
+  else if (field.type === 'date') { inputType = 'date'; }
+  else if (field.type === 'boolean') { inputType = 'checkbox'; }
+  else if (field.type === 'uri') { placeholder = 'https://...'; }
+
+  var label = field.name.replace(/([A-Z])/g, ' $1').replace(/^./, function(s) { return s.toUpperCase(); });
+  var req = field.required ? ' <span style="color:var(--error)">*</span>' : '';
+
+  if (field.type === 'boolean') {
+    return '<div class="form-group"><label style="display:flex;align-items:center;gap:0.5rem;font-size:0.83rem;cursor:pointer"><input type="checkbox" data-claim="' + field.name + '">' + label + req + '</label></div>';
+  }
+
+  return '<div class="form-group"><label class="form-label">' + label + req + '</label><input class="form-input" type="' + inputType + '"' + step + ' data-claim="' + field.name + '" placeholder="' + (placeholder || label) + '"></div>';
+}
+
+function issueCredential() {
+  {{if $isReal}}
+  var schemaId = document.getElementById('issue-schema').value;
+  if (!schemaId) {
+    showToast('Required', 'Select a schema first.');
+    return;
+  }
+
+  // Collect claims dynamically from rendered fields
+  var claims = {};
+  document.querySelectorAll('#schema-fields [data-claim]').forEach(function(el) {
+    var key = el.getAttribute('data-claim');
+    if (el.type === 'checkbox') {
+      claims[key] = el.checked;
+    } else if (el.type === 'number') {
+      claims[key] = parseFloat(el.value) || 0;
+    } else {
+      claims[key] = el.value;
+    }
+  });
+
+  var identifier = document.getElementById('issue-identifier').value.trim();
+  if (identifier) claims['id'] = identifier;
+
+  var btn = document.getElementById('issue-btn');
+  btn.disabled = true;
+  btn.textContent = 'Issuing...';
+
+  fetch('/api/credential/issue-and-claim', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({configId: schemaId, claims: claims})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    btn.disabled = false;
+    btn.textContent = 'Sign & Issue';
+    if (d.error) { showToast('Error', d.error); return; }
+    showToast('Issued', 'Credential issued and claimed into wallet.');
+  })
+  .catch(function(e) {
+    btn.disabled = false;
+    btn.textContent = 'Sign & Issue';
+    showToast('Error', e.message);
+  });
+  {{else}}
+  showToast('Issued', 'Credential issued and dispatched to holder.');
+  {{end}}
+}
+</script>
+{{end}}

@@ -1,0 +1,108 @@
+# Unified docker-compose: VC Platform + Walt.id DPG Stack
+# Usage: docker compose --profile waltid up -d
+#        docker compose --profile mock up -d (just the app with mock backend)
+
+services:
+  # VC Platform (our Go app)
+  vcplatform:
+    build: .
+    ports:
+      - "8080:8080"
+    profiles:
+      - mock
+      - waltid
+    environment:
+      - VCPLATFORM_CONFIG=/app/config/default.json
+    command: ["-addr", ":8080", "-config", "config/default.json"]
+
+  vcplatform-waltid:
+    build: .
+    ports:
+      - "8080:8080"
+    profiles:
+      - waltid
+    extra_hosts:
+      - "localhost:host-gateway"
+    command: ["-addr", ":8080", "-config", "config/waltid.json"]
+    depends_on:
+      - caddy
+
+  # --- Walt.id DPG Stack ---
+  postgres:
+    image: postgres:latest
+    profiles:
+      - waltid
+    healthcheck:
+      test: ["CMD", "pg_isready", "-q", "-U", "waltid"]
+      interval: 5s
+      timeout: 1s
+      retries: 5
+    environment:
+      POSTGRES_DB: waltid
+      POSTGRES_USER: waltid
+      POSTGRES_PASSWORD: waltid
+    volumes:
+      - wallet-db:/var/lib/postgresql
+
+  caddy:
+    image: caddy:2
+    profiles:
+      - waltid
+    restart: unless-stopped
+    environment:
+      WALLET_BACKEND_PORT: 7001
+      ISSUER_API_PORT: 7002
+      VERIFIER_API_PORT: 7003
+    ports:
+      - "7001:7001"
+      - "7002:7002"
+      - "7003:7003"
+    volumes:
+      - ./docker/waltid/Caddyfile:/etc/caddy/Caddyfile
+
+  issuer-api:
+    image: waltid/issuer-api:latest
+    profiles:
+      - waltid
+    depends_on:
+      - caddy
+    environment:
+      SERVICE_HOST: localhost
+      ISSUER_API_PORT: 7002
+    volumes:
+      - ./docker/waltid/issuer-api/config:/waltid-issuer-api/config
+
+  verifier-api:
+    image: waltid/verifier-api:latest
+    profiles:
+      - waltid
+    depends_on:
+      - caddy
+    environment:
+      SERVICE_HOST: localhost
+      VERIFIER_API_PORT: 7003
+    volumes:
+      - ./docker/waltid/verifier-api/config:/waltid-verifier-api/config
+
+  wallet-api:
+    image: waltid/wallet-api:latest
+    profiles:
+      - waltid
+    depends_on:
+      postgres:
+        condition: service_healthy
+      caddy:
+        condition: service_started
+    extra_hosts:
+      - "localhost:host-gateway"
+    environment:
+      SERVICE_HOST: localhost
+      WALLET_BACKEND_PORT: 7001
+      DB_NAME: waltid
+      DB_USERNAME: waltid
+      DB_PASSWORD: waltid
+    volumes:
+      - ./docker/waltid/wallet-api/config:/waltid-wallet-api/config
+
+volumes:
+  wallet-db:

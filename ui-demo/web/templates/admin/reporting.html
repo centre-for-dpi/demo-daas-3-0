@@ -1,0 +1,126 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Reporting Dashboard</h1><p>Role-specific reports for funders, DPI owners, and DPG maintainers.</p></div>
+  {{$isReal := and .User (not .User.Demo)}}
+  {{if $isReal}}
+  <div style="margin-bottom:1.5rem;text-align:right">
+    <button class="btn btn-secondary btn-sm" onclick="showToast('Export','PDF report is being generated for download.')">Export PDF</button>
+  </div>
+  <div id="report-content">
+    <div class="stats-row">
+      <div class="card stat-card"><div class="stat-number" id="real-cred-count">--</div><div class="stat-label">Credentials in Wallet</div></div>
+      <div class="card stat-card"><div class="stat-number">--</div><div class="stat-label">Schemas Registered</div></div>
+      <div class="card stat-card"><div class="stat-number" style="color:var(--color-accent)">Live</div><div class="stat-label">Backend Status</div></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:0.75rem;font-size:0.9rem">Live Reporting</h3>
+      <p style="font-size:0.85rem;color:var(--text-secondary);line-height:1.7">Reporting data is sourced from the Walt.id backend. Credential counts reflect actual wallet contents. Use the button below to refresh counts from the API.</p>
+      <div style="margin-top:1rem">
+        <button class="btn btn-primary btn-sm" id="refresh-report-btn" onclick="refreshReportCounts()">Refresh from API</button>
+      </div>
+    </div>
+  </div>
+  <script>
+  function refreshReportCounts() {
+    var btn = document.getElementById('refresh-report-btn');
+    btn.disabled = true;
+    btn.textContent = 'Loading...';
+    fetch('/api/wallet/credentials').then(function(r) { return r.json(); }).then(function(data) {
+      var count = 0;
+      if (Array.isArray(data)) count = data.length;
+      else if (data && Array.isArray(data.credentials)) count = data.credentials.length;
+      document.getElementById('real-cred-count').textContent = count;
+      showToast('Updated', 'Credential count refreshed from API.');
+    }).catch(function(err) {
+      showToast('Error', 'Could not fetch credential count: ' + err.message);
+    }).finally(function() {
+      btn.disabled = false;
+      btn.textContent = 'Refresh from API';
+    });
+  }
+  refreshReportCounts();
+  </script>
+  {{else}}
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem">
+    <div class="filter-bar">
+      <button class="filter-pill active" onclick="switchReportTier(this,'funders')">Funders / Convenors</button>
+      <button class="filter-pill" onclick="switchReportTier(this,'dpi')">DPI Owner</button>
+      <button class="filter-pill" onclick="switchReportTier(this,'dpg')">DPG Owner</button>
+    </div>
+    <button class="btn btn-secondary btn-sm" onclick="showToast('Export','PDF report is being generated for download.')">Export PDF</button>
+  </div>
+  <div id="report-content">
+    <!-- Default: Funders view -->
+    <div class="stats-row" id="report-stats">
+      <div class="card stat-card"><div class="stat-number" id="rs1">24,831</div><div class="stat-label" id="rl1">Credentials Issued</div></div>
+      <div class="card stat-card"><div class="stat-number" id="rs2">18,204</div><div class="stat-label" id="rl2">Beneficiaries Reached</div></div>
+      <div class="card stat-card"><div class="stat-number" id="rs3">99.97%</div><div class="stat-label" id="rl3">Uptime (30d)</div></div>
+      <div class="card stat-card"><div class="stat-number" id="rs4">7</div><div class="stat-label" id="rl4">Active Issuers</div></div>
+      <div class="card stat-card"><div class="stat-number" id="rs5">4</div><div class="stat-label" id="rl5">Sectors</div></div>
+    </div>
+    <div class="card" id="report-summary">
+      <h3 style="margin-bottom:0.75rem;font-size:0.9rem" id="report-title">Adoption Summary</h3>
+      <p style="font-size:0.85rem;color:var(--text-secondary);line-height:1.7" id="report-text">The CDPI credential ecosystem has onboarded <strong>7 issuers</strong> across <strong>4 sectors</strong> (Government, Education, Healthcare, Agriculture), reaching <strong>18,204 unique beneficiaries</strong> to date. Credential issuance is growing at <strong>12% month-over-month</strong>, with birth certificates and educational degrees representing the highest volume. Platform uptime remains at <strong>99.97%</strong> over the last 30 days, exceeding the 99.9% SLA target. No data breaches or security incidents have been reported this quarter.</p>
+    </div>
+  </div>
+  {{end}}
+</div>
+
+{{if not (and .User (not .User.Demo))}}
+<script>
+var REPORT_TIERS = {
+  funders: {
+    stats: [
+      { value: '24,831', label: 'Credentials Issued' },
+      { value: '18,204', label: 'Beneficiaries Reached' },
+      { value: '99.97%', label: 'Uptime (30d)' },
+      { value: '7', label: 'Active Issuers' },
+      { value: '4', label: 'Sectors' }
+    ],
+    title: 'Adoption Summary',
+    text: 'The CDPI credential ecosystem has onboarded <strong>7 issuers</strong> across <strong>4 sectors</strong> (Government, Education, Healthcare, Agriculture), reaching <strong>18,204 unique beneficiaries</strong> to date. Credential issuance is growing at <strong>12% month-over-month</strong>, with birth certificates and educational degrees representing the highest volume. Platform uptime remains at <strong>99.97%</strong> over the last 30 days, exceeding the 99.9% SLA target. No data breaches or security incidents have been reported this quarter.'
+  },
+  dpi: {
+    stats: [
+      { value: '142ms', label: 'Avg Latency' },
+      { value: '0.03%', label: 'Error Rate' },
+      { value: '99.97%', label: 'Uptime' },
+      { value: '1,847', label: 'Active Users' },
+      { value: '23', label: 'Revocations' }
+    ],
+    title: 'Operational Summary',
+    text: 'Platform operations remain stable with <strong>142ms average latency</strong> and a <strong>0.03% error rate</strong>. There are <strong>1,847 active users</strong> across all roles. <strong>23 credentials</strong> have been revoked this period (all legitimate corrections). Infrastructure is running on AWS with data residency in Trinidad and Tobago. The database replica shows a <strong>2-second replication lag</strong> that is being monitored. All IaC deployments are synced with the main branch.'
+  },
+  dpg: {
+    stats: [
+      { value: 'W3C 2.0', label: 'Primary Standard' },
+      { value: '12', label: 'API Endpoints' },
+      { value: '6', label: 'Active Schemas' },
+      { value: '100%', label: 'Test Coverage' },
+      { value: 'MIT', label: 'License' }
+    ],
+    title: 'Technical Summary',
+    text: 'The platform implements <strong>W3C Verifiable Credentials Data Model 2.0</strong> with support for SD-JWT and mDL formats. There are <strong>12 public API endpoints</strong> documented with OpenAPI 3.0 specs. <strong>6 credential schemas</strong> are registered in the trust registry. All components maintain <strong>100% test coverage</strong> on critical paths. The codebase is released under the <strong>MIT license</strong> and published as a Digital Public Good. Interoperability testing with 3 external wallet providers is complete.'
+  }
+};
+
+function switchReportTier(btn, tier) {
+  btn.parentElement.querySelectorAll('.filter-pill').forEach(function(f) { f.classList.remove('active'); });
+  btn.classList.add('active');
+  var data = REPORT_TIERS[tier];
+  if (!data) return;
+  for (var i = 0; i < data.stats.length; i++) {
+    var n = i + 1;
+    var sv = document.getElementById('rs' + n);
+    var sl = document.getElementById('rl' + n);
+    if (sv) sv.textContent = data.stats[i].value;
+    if (sl) sl.textContent = data.stats[i].label;
+  }
+  var title = document.getElementById('report-title');
+  var text = document.getElementById('report-text');
+  if (title) title.textContent = data.title;
+  if (text) text.innerHTML = data.text;
+}
+</script>
+{{end}}
+{{end}}

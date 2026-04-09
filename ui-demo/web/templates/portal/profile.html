@@ -1,0 +1,60 @@
+{{define "content"}}
+<div class="page">
+  <div class="page-header">
+    <h1>My Profile</h1>
+    <p>Account settings and session information.</p>
+  </div>
+
+  {{if .User}}
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem">
+    <div class="card">
+      <h3 style="margin-bottom:1.25rem">Account Information</h3>
+      <div class="form-group">
+        <label class="form-label">Name</label>
+        <input class="form-input" type="text" value="{{.User.Name}}" readonly>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input class="form-input" type="email" value="{{.User.Email}}" readonly>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Role</label>
+        <input class="form-input" type="text" value="{{.User.Role}}" readonly>
+      </div>
+      <div class="form-group">
+        <label class="form-label">User ID</label>
+        <input class="form-input" type="text" value="{{.User.ID}}" readonly style="font-family:var(--font-mono);font-size:0.82rem">
+      </div>
+      {{if eq .Mode "exploration"}}
+      <p class="form-help">Fields are read-only in exploration mode.</p>
+      {{end}}
+    </div>
+
+    <div class="card">
+      <h3 style="margin-bottom:1.25rem">Session</h3>
+      <div style="display:flex;flex-direction:column;gap:0.75rem;font-size:0.83rem">
+        <div style="display:flex;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)">
+          <span style="color:var(--text-tertiary)">Mode</span>
+          <span>{{if eq .Mode "exploration"}}<span class="tag tag-warning">Exploration</span>{{else}}<span class="tag tag-accent">Production</span>{{end}}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)">
+          <span style="color:var(--text-tertiary)">Role</span>
+          <span class="tag tag-accent">{{.User.Role}}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)">
+          <span style="color:var(--text-tertiary)">Brand</span>
+          <span>{{.Config.Brand.Name}}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:0.5rem 0">
+          <span style="color:var(--text-tertiary)">Locale</span>
+          <span>{{.Config.Locale}}</span>
+        </div>
+      </div>
+      <div style="margin-top:1.5rem">
+        <a class="btn btn-danger btn-sm" href="/logout">Sign out</a>
+      </div>
+    </div>
+  </div>
+  {{end}}
+</div>
+{{end}}

@@ -1,0 +1,100 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  {{$dm := dataMap .Data}}
+  {{$creds := index ($dm) "credentials"}}
+  {{$isReal := and .User (not .User.Demo)}}
+
+  {{if $isReal}}
+  <div class="page-header"><h1>Credentials</h1><p>Credentials in the connected wallet. In production, this view shows credentials issued by your organization.</p></div>
+  {{else}}
+  <div class="page-header"><h1>Issued Credentials</h1><p>All credentials issued by your organization. Search, filter, and manage status.</p></div>
+  {{end}}
+
+  {{if and $isReal (hasItems $creds)}}
+  <!-- ===== REAL USER WITH CREDENTIALS ===== -->
+  <div class="stats-row">
+    <div class="card stat-card"><div class="stat-number">{{len $creds}}</div><div class="stat-label">Credentials in Wallet</div></div>
+  </div>
+  <div class="filter-bar">
+    <button class="filter-pill active" onclick="filterTable(this,'issued-tbody','all')">All</button>
+    <input class="filter-search" placeholder="Search by holder, ID...">
+  </div>
+  <div class="card" style="overflow-x:auto">
+    <table class="data-table">
+      <thead><tr><th>Credential ID</th><th>Type</th><th>Format</th><th>Added On</th><th>Status</th><th></th></tr></thead>
+      <tbody id="issued-tbody">
+        {{range $creds}}
+        {{$pd := .ParsedDocument}}
+        {{$subj := credSubject $pd}}
+        {{$typeName := credTypes $pd}}
+        <tr data-status="Active">
+          <td><code style="font-size:0.75rem">{{.ID}}</code></td>
+          <td style="font-weight:500">{{$typeName}}</td>
+          <td><span class="tag tag-accent" style="font-size:0.65rem">{{.Format}}</span></td>
+          <td style="font-size:0.78rem;color:var(--text-tertiary)">{{.AddedOn}}</td>
+          <td><span class="tag tag-accent">Active</span></td>
+          <td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem" hx-get="/portal/issuer/cred-detail?id={{.ID}}" hx-target="#main-content" hx-push-url="true">Detail</button></td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+
+  {{else if $isReal}}
+  <!-- ===== REAL USER, NO CREDENTIALS ===== -->
+  <div class="stats-row">
+    <div class="card stat-card"><div class="stat-number">0</div><div class="stat-label">Total Issued</div></div>
+  </div>
+  <div class="card" style="text-align:center;padding:3rem">
+    <div style="font-size:2rem;margin-bottom:1rem">&#128196;</div>
+    <p style="font-size:0.9rem;color:var(--text-secondary);margin-bottom:1rem">No credentials issued yet.</p>
+    <p style="font-size:0.82rem;color:var(--text-tertiary);margin-bottom:1.5rem">Use Single Issuance or Campaign Builder to issue your first credential.</p>
+    <button class="btn btn-primary btn-sm" hx-get="/portal/issuer/single-issue" hx-target="#main-content" hx-push-url="true">Issue a Credential</button>
+  </div>
+
+  {{else}}
+  <!-- ===== DEMO USER: MOCK DATA ===== -->
+  <div class="stats-row">
+    <div class="card stat-card"><div class="stat-number">4,218</div><div class="stat-label">Total Issued</div></div>
+    <div class="card stat-card"><div class="stat-number">4,190</div><div class="stat-label">Active</div></div>
+    <div class="card stat-card"><div class="stat-number">5</div><div class="stat-label">Revoked</div></div>
+    <div class="card stat-card"><div class="stat-number">23</div><div class="stat-label">Suspended</div></div>
+  </div>
+  <div class="filter-bar">
+    <button class="filter-pill active" onclick="filterTable(this,'issued-tbody','all')">All</button>
+    <button class="filter-pill" onclick="filterTable(this,'issued-tbody','Active')">Active</button>
+    <button class="filter-pill" onclick="filterTable(this,'issued-tbody','Revoked')">Revoked</button>
+    <button class="filter-pill" onclick="filterTable(this,'issued-tbody','Suspended')">Suspended</button>
+    <button class="filter-pill" onclick="filterTable(this,'issued-tbody','Expired')">Expired</button>
+    <input class="filter-search" placeholder="Search by holder, ID...">
+  </div>
+  <div class="card" style="overflow-x:auto">
+    <table class="data-table">
+      <thead><tr><th>Credential ID</th><th>Holder</th><th>Schema</th><th>Issued</th><th>Status</th><th></th></tr></thead>
+      <tbody id="issued-tbody">
+        <tr data-status="Active"><td><code style="font-size:0.75rem">tt-uwi-2025-bsc-00342</code></td><td style="font-weight:500">Jane Doe</td><td>bsc-degree-v2</td><td style="font-size:0.78rem;color:var(--text-tertiary)">2025-06-15</td><td><span class="tag tag-accent">Active</span></td><td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem" hx-get="/portal/issuer/cred-detail" hx-target="#main-content" hx-push-url="true">Detail</button></td></tr>
+        <tr data-status="Active"><td><code style="font-size:0.75rem">tt-uwi-2025-bsc-00301</code></td><td style="font-weight:500">Marcus Chen</td><td>bsc-degree-v2</td><td style="font-size:0.78rem;color:var(--text-tertiary)">2025-06-15</td><td><span class="tag tag-accent">Active</span></td><td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem" hx-get="/portal/issuer/cred-detail" hx-target="#main-content" hx-push-url="true">Detail</button></td></tr>
+        <tr data-status="Revoked"><td><code style="font-size:0.75rem">tt-utt-2024-cert-04421</code></td><td style="font-weight:500">Ravi Sharma</td><td>professional-cert-v2</td><td style="font-size:0.78rem;color:var(--text-tertiary)">2024-11-20</td><td><span class="tag tag-error">Revoked</span></td><td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem" hx-get="/portal/issuer/cred-detail" hx-target="#main-content" hx-push-url="true">Detail</button></td></tr>
+        <tr data-status="Active"><td><code style="font-size:0.75rem">tt-uwi-2025-msc-00089</code></td><td style="font-weight:500">Anika Persad</td><td>msc-degree-v1</td><td style="font-size:0.78rem;color:var(--text-tertiary)">2026-01-10</td><td><span class="tag tag-accent">Active</span></td><td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem" hx-get="/portal/issuer/cred-detail" hx-target="#main-content" hx-push-url="true">Detail</button></td></tr>
+      </tbody>
+    </table>
+  </div>
+  {{end}}
+</div>
+
+<script>
+function filterTable(btn, tbodyId, status) {
+  btn.parentElement.querySelectorAll('.filter-pill').forEach(function(f) { f.classList.remove('active'); });
+  btn.classList.add('active');
+  var tbody = document.getElementById(tbodyId);
+  if (!tbody) return;
+  tbody.querySelectorAll('tr').forEach(function(row) {
+    if (status === 'all' || row.dataset.status === status) {
+      row.style.display = '';
+    } else {
+      row.style.display = 'none';
+    }
+  });
+}
+</script>
+{{end}}

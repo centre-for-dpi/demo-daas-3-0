@@ -1,0 +1,229 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Platform Health</h1><p>Real-time monitoring of system performance, service health, and resource utilization.</p></div>
+  {{$isReal := and .User (not .User.Demo)}}
+  {{if $isReal}}
+  {{$data := .Data}}
+  <div class="stats-row">
+    <div class="card stat-card"><div class="stat-number" style="font-size:1.1rem;color:var(--color-accent)">Connected</div><div class="stat-label">Walt.id Backend</div></div>
+    <div class="card stat-card"><div class="stat-number" id="health-wallet-status">--</div><div class="stat-label">Wallet API</div></div>
+    <div class="card stat-card"><div class="stat-number" id="health-issuer-status">--</div><div class="stat-label">Issuer API</div></div>
+    <div class="card stat-card"><div class="stat-number" id="health-verifier-status">--</div><div class="stat-label">Verifier API</div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:1.5rem">
+    <!-- Backend Services -->
+    <div class="card">
+      <h3 style="margin-bottom:1rem;font-size:0.9rem">Backend Services</h3>
+      <div style="display:flex;flex-direction:column;gap:0.75rem;font-size:0.83rem">
+        <div style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0;border-bottom:1px solid var(--border)">
+          <span id="health-dot-wallet" style="width:8px;height:8px;border-radius:50%;background:var(--text-tertiary);display:inline-block;flex-shrink:0"></span>
+          <span style="flex:1">Wallet API</span>
+          <code style="font-size:0.73rem;color:var(--text-tertiary)">{{if and $data (index $data "walletURL")}}{{index $data "walletURL"}}{{else}}--{{end}}</code>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0;border-bottom:1px solid var(--border)">
+          <span id="health-dot-issuer" style="width:8px;height:8px;border-radius:50%;background:var(--text-tertiary);display:inline-block;flex-shrink:0"></span>
+          <span style="flex:1">Issuer API</span>
+          <code style="font-size:0.73rem;color:var(--text-tertiary)">{{if and $data (index $data "issuerURL")}}{{index $data "issuerURL"}}{{else}}--{{end}}</code>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0;border-bottom:1px solid var(--border)">
+          <span id="health-dot-verifier" style="width:8px;height:8px;border-radius:50%;background:var(--text-tertiary);display:inline-block;flex-shrink:0"></span>
+          <span style="flex:1">Verifier API</span>
+          <code style="font-size:0.73rem;color:var(--text-tertiary)">{{if and $data (index $data "verifierURL")}}{{index $data "verifierURL"}}{{else}}--{{end}}</code>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0">
+          <span style="width:8px;height:8px;border-radius:50%;background:var(--color-accent);display:inline-block;flex-shrink:0"></span>
+          <span style="flex:1">Schema Registry</span>
+          <span style="color:var(--text-tertiary);font-size:0.78rem">Built-in</span>
+        </div>
+      </div>
+      <div style="margin-top:1rem;text-align:right">
+        <button class="btn btn-primary btn-sm" id="health-check-btn" onclick="runHealthCheck()">Run Health Check</button>
+      </div>
+    </div>
+
+    <!-- Connection Info -->
+    <div class="card">
+      <h3 style="margin-bottom:1rem;font-size:0.9rem">Connection Details</h3>
+      <div style="display:flex;flex-direction:column;gap:0.75rem;font-size:0.83rem">
+        <div style="padding:0.5rem 0;border-bottom:1px solid var(--border)">
+          <span style="color:var(--text-secondary)">Backend Type:</span> <strong>{{if and $data (index $data "backendType")}}{{index $data "backendType"}}{{else}}unknown{{end}}</strong>
+        </div>
+        <div style="padding:0.5rem 0;border-bottom:1px solid var(--border)">
+          <span style="color:var(--text-secondary)">Protocol:</span> <strong>OID4VC (OpenID for Verifiable Credentials)</strong>
+        </div>
+        <div style="padding:0.5rem 0;border-bottom:1px solid var(--border)">
+          <span style="color:var(--text-secondary)">Transport:</span> <strong>Direct HTTP</strong>
+        </div>
+        <div style="padding:0.5rem 0">
+          <span style="color:var(--text-secondary)">Authentication:</span> <strong>Wallet Token</strong>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Health Check Log -->
+  <div class="card">
+    <h3 style="margin-bottom:1rem;font-size:0.9rem">Health Check Log</h3>
+    <div id="health-log" style="background:var(--bg-surface-alt);border-radius:var(--radius-md);padding:1rem;font-family:var(--font-mono);font-size:0.75rem;line-height:1.9;color:var(--text-secondary);min-height:60px">
+      <div style="color:var(--text-tertiary)">Click "Run Health Check" to test backend connectivity.</div>
+    </div>
+  </div>
+
+  <script>
+  function runHealthCheck() {
+    var btn = document.getElementById('health-check-btn');
+    btn.disabled = true;
+    btn.textContent = 'Checking...';
+    var log = document.getElementById('health-log');
+    log.innerHTML = '';
+    function logLine(msg) {
+      var d = document.createElement('div');
+      d.textContent = '[' + new Date().toISOString().replace('T',' ').substring(0,19) + '] ' + msg;
+      log.appendChild(d);
+    }
+    logLine('Starting health check...');
+    // Check wallet API via credentials endpoint
+    fetch('/api/wallet/credentials').then(function(r) {
+      if (r.ok) {
+        logLine('Wallet API: OK (' + r.status + ')');
+        document.getElementById('health-wallet-status').textContent = 'OK';
+        document.getElementById('health-wallet-status').style.color = 'var(--color-accent)';
+        document.getElementById('health-dot-wallet').style.background = 'var(--color-accent)';
+      } else {
+        logLine('Wallet API: ERROR (' + r.status + ')');
+        document.getElementById('health-wallet-status').textContent = 'Error';
+        document.getElementById('health-wallet-status').style.color = 'var(--color-error)';
+        document.getElementById('health-dot-wallet').style.background = 'var(--color-error)';
+      }
+    }).catch(function(e) {
+      logLine('Wallet API: UNREACHABLE - ' + e.message);
+      document.getElementById('health-wallet-status').textContent = 'Down';
+      document.getElementById('health-wallet-status').style.color = 'var(--color-error)';
+      document.getElementById('health-dot-wallet').style.background = 'var(--color-error)';
+    });
+    // Check schemas API
+    fetch('/api/schemas').then(function(r) {
+      if (r.ok) {
+        logLine('Schema Registry: OK (' + r.status + ')');
+        document.getElementById('health-issuer-status').textContent = 'OK';
+        document.getElementById('health-issuer-status').style.color = 'var(--color-accent)';
+        document.getElementById('health-dot-issuer').style.background = 'var(--color-accent)';
+      } else {
+        logLine('Schema Registry: ERROR (' + r.status + ')');
+        document.getElementById('health-issuer-status').textContent = 'Error';
+        document.getElementById('health-issuer-status').style.color = 'var(--color-error)';
+        document.getElementById('health-dot-issuer').style.background = 'var(--color-error)';
+      }
+    }).catch(function(e) {
+      logLine('Schema Registry: UNREACHABLE - ' + e.message);
+    });
+    // Check verifier policies
+    fetch('/api/verifier/policies').then(function(r) {
+      if (r.ok) {
+        logLine('Verifier API: OK (' + r.status + ')');
+        document.getElementById('health-verifier-status').textContent = 'OK';
+        document.getElementById('health-verifier-status').style.color = 'var(--color-accent)';
+        document.getElementById('health-dot-verifier').style.background = 'var(--color-accent)';
+      } else {
+        logLine('Verifier API: ERROR (' + r.status + ')');
+        document.getElementById('health-verifier-status').textContent = 'Error';
+        document.getElementById('health-verifier-status').style.color = 'var(--color-error)';
+        document.getElementById('health-dot-verifier').style.background = 'var(--color-error)';
+      }
+    }).catch(function(e) {
+      logLine('Verifier API: UNREACHABLE - ' + e.message);
+    });
+    setTimeout(function() {
+      logLine('Health check complete.');
+      btn.disabled = false;
+      btn.textContent = 'Run Health Check';
+    }, 2000);
+  }
+  </script>
+  {{else}}
+  <div class="stats-row">
+    <div class="card stat-card"><div class="stat-number">99.97%</div><div class="stat-label">Uptime (30d)</div></div>
+    <div class="card stat-card"><div class="stat-number">142ms</div><div class="stat-label">Avg Latency</div></div>
+    <div class="card stat-card"><div class="stat-number">0.03%</div><div class="stat-label">Error Rate</div></div>
+    <div class="card stat-card"><div class="stat-number">1,847</div><div class="stat-label">Active Users</div></div>
+    <div class="card stat-card"><div class="stat-number">2.4 GB</div><div class="stat-label">Storage Used</div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:1.5rem">
+    <!-- Service Health -->
+    <div class="card">
+      <h3 style="margin-bottom:1rem;font-size:0.9rem">Service Health</h3>
+      <div style="display:flex;flex-direction:column;gap:0.75rem;font-size:0.83rem">
+        <div style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0;border-bottom:1px solid var(--border)">
+          <span style="width:8px;height:8px;border-radius:50%;background:var(--accent);display:inline-block;flex-shrink:0"></span>
+          <span style="flex:1">API Gateway</span><span style="color:var(--text-tertiary);font-size:0.78rem">45ms</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0;border-bottom:1px solid var(--border)">
+          <span style="width:8px;height:8px;border-radius:50%;background:var(--accent);display:inline-block;flex-shrink:0"></span>
+          <span style="flex:1">Credential Service</span><span style="color:var(--text-tertiary);font-size:0.78rem">89ms</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0;border-bottom:1px solid var(--border)">
+          <span style="width:8px;height:8px;border-radius:50%;background:var(--accent);display:inline-block;flex-shrink:0"></span>
+          <span style="flex:1">Trust Registry</span><span style="color:var(--text-tertiary);font-size:0.78rem">62ms</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0;border-bottom:1px solid var(--border)">
+          <span style="width:8px;height:8px;border-radius:50%;background:var(--accent);display:inline-block;flex-shrink:0"></span>
+          <span style="flex:1">Status List Service</span><span style="color:var(--text-tertiary);font-size:0.78rem">38ms</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0;border-bottom:1px solid var(--border)">
+          <span style="width:8px;height:8px;border-radius:50%;background:var(--accent);display:inline-block;flex-shrink:0"></span>
+          <span style="flex:1">Database Primary</span><span style="color:var(--text-tertiary);font-size:0.78rem">12ms</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0">
+          <span style="width:8px;height:8px;border-radius:50%;background:var(--warning, #f5a623);display:inline-block;flex-shrink:0"></span>
+          <span style="flex:1">Database Replica</span><span style="color:var(--warning, #f5a623);font-size:0.78rem">2.1s lag</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resource Utilization -->
+    <div class="card">
+      <h3 style="margin-bottom:1rem;font-size:0.9rem">Resource Utilization</h3>
+      <div style="display:flex;flex-direction:column;gap:1.25rem">
+        <div>
+          <div style="display:flex;justify-content:space-between;font-size:0.82rem;margin-bottom:0.35rem"><span>CPU</span><span style="font-weight:500">34%</span></div>
+          <div style="background:var(--bg-surface-alt);border-radius:999px;height:8px;overflow:hidden"><div style="background:var(--accent);height:100%;width:34%;border-radius:999px;transition:width 0.3s ease"></div></div>
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;font-size:0.82rem;margin-bottom:0.35rem"><span>Memory</span><span style="font-weight:500">58%</span></div>
+          <div style="background:var(--bg-surface-alt);border-radius:999px;height:8px;overflow:hidden"><div style="background:var(--accent);height:100%;width:58%;border-radius:999px;transition:width 0.3s ease"></div></div>
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;font-size:0.82rem;margin-bottom:0.35rem"><span>Storage</span><span style="font-weight:500">24%</span></div>
+          <div style="background:var(--bg-surface-alt);border-radius:999px;height:8px;overflow:hidden"><div style="background:var(--accent);height:100%;width:24%;border-radius:999px;transition:width 0.3s ease"></div></div>
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;font-size:0.82rem;margin-bottom:0.35rem"><span>Network</span><span style="font-weight:500">12%</span></div>
+          <div style="background:var(--bg-surface-alt);border-radius:999px;height:8px;overflow:hidden"><div style="background:var(--accent);height:100%;width:12%;border-radius:999px;transition:width 0.3s ease"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Incidents -->
+  <div class="card">
+    <h3 style="margin-bottom:1rem;font-size:0.9rem">Recent Incidents</h3>
+    <div style="display:flex;flex-direction:column;gap:0.75rem;font-size:0.83rem">
+      <div style="display:flex;align-items:flex-start;gap:0.75rem;padding:0.75rem;background:var(--bg-surface-alt);border-radius:var(--radius-md)">
+        <span style="width:8px;height:8px;border-radius:50%;background:var(--warning, #f5a623);display:inline-block;flex-shrink:0;margin-top:0.35rem"></span>
+        <div style="flex:1">
+          <div style="display:flex;justify-content:space-between;margin-bottom:0.25rem"><span style="font-weight:500">Notification delivery degradation</span><span style="font-size:0.75rem;color:var(--text-tertiary)">2 hours ago</span></div>
+          <p style="font-size:0.78rem;color:var(--text-secondary);margin:0">Email notification queue experienced delays of up to 15 minutes due to SMTP provider throttling. Resolved by switching to backup relay.</p>
+        </div>
+      </div>
+      <div style="display:flex;align-items:flex-start;gap:0.75rem;padding:0.75rem;background:var(--bg-surface-alt);border-radius:var(--radius-md)">
+        <span style="width:8px;height:8px;border-radius:50%;background:var(--accent);display:inline-block;flex-shrink:0;margin-top:0.35rem"></span>
+        <div style="flex:1">
+          <div style="display:flex;justify-content:space-between;margin-bottom:0.25rem"><span style="font-weight:500">Scheduled maintenance completed</span><span style="font-size:0.75rem;color:var(--text-tertiary)">3 days ago</span></div>
+          <p style="font-size:0.78rem;color:var(--text-secondary);margin:0">Database migration and index optimization completed during scheduled maintenance window (02:00-04:00 UTC). No downtime recorded.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  {{end}}
+</div>
+{{end}}

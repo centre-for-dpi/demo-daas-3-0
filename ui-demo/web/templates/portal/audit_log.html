@@ -1,0 +1,45 @@
+{{define "content"}}
+{{$dm := dataMap .Data}}
+{{$isReal := and .User (not .User.Demo)}}
+<div class="page">
+  <div class="page-header">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <h1>Audit Log</h1>
+        <p>Immutable event stream across all modules. Privacy-preserving — minimal holder PII.</p>
+      </div>
+      <div style="display:flex;gap:0.35rem">
+        <button class="btn btn-secondary btn-sm">Export CSV</button>
+        <button class="btn btn-secondary btn-sm">Export JSON</button>
+      </div>
+    </div>
+  </div>
+  {{if $isReal}}
+  <!-- Real user: no audit backend yet -->
+  <div class="card" style="text-align:center;padding:3rem">
+    <div style="font-size:2rem;margin-bottom:1rem">&#128203;</div>
+    <p style="font-size:0.9rem;color:var(--text-secondary);margin-bottom:0.5rem">Audit logging is not yet connected to the backend.</p>
+    <p style="font-size:0.82rem;color:var(--text-tertiary)">When connected, this page will show an immutable event stream of all credential operations — issuance, verification, revocation, and system events.</p>
+  </div>
+  {{else}}
+  <!-- Demo user: mock audit data -->
+  <div class="filter-bar">
+    <button class="filter-pill active">All</button>
+    <button class="filter-pill">Issuance</button>
+    <button class="filter-pill">Verification</button>
+    <button class="filter-pill">Store</button>
+    <button class="filter-pill">System</button>
+    <input class="filter-search" type="text" placeholder="Search events...">
+  </div>
+  <div class="card">
+    <div class="audit-entry"><span class="audit-time">2026-04-07 14:32:18</span><span class="audit-module"><span class="tag tag-accent" style="font-size:0.6rem">Issuance</span></span><span class="audit-event"><span class="audit-actor">UWI</span> issued batch — 342 credentials, schema <code>bsc-degree-v2</code></span><span class="audit-outcome success">OK</span></div>
+    <div class="audit-entry"><span class="audit-time">2026-04-07 14:28:05</span><span class="audit-module"><span class="tag tag-info" style="font-size:0.6rem">Verification</span></span><span class="audit-event"><span class="audit-actor">EmployTT</span> verified credential for <code>holder:816***245</code></span><span class="audit-outcome success">VALID</span></div>
+    <div class="audit-entry"><span class="audit-time">2026-04-07 13:55:41</span><span class="audit-module"><span class="tag tag-error" style="font-size:0.6rem">Issuance</span></span><span class="audit-event"><span class="audit-actor">UTT</span> revoked <code>cred:tt-utt-2024-4421</code> — data correction</span><span class="audit-outcome warning">REVOKED</span></div>
+    <div class="audit-entry"><span class="audit-time">2026-04-07 12:18:33</span><span class="audit-module"><span class="tag" style="font-size:0.6rem">System</span></span><span class="audit-event"><span class="audit-actor">System</span> issuer onboarded: <strong>Ministry of Agriculture</strong></span><span class="audit-outcome success">OK</span></div>
+    <div class="audit-entry"><span class="audit-time">2026-04-07 11:02:07</span><span class="audit-module"><span class="tag tag-info" style="font-size:0.6rem">Verification</span></span><span class="audit-event"><span class="audit-actor">Bank of TT</span> verification failed for <code>holder:702***118</code> — expired</span><span class="audit-outcome error">EXPIRED</span></div>
+    <div class="audit-entry"><span class="audit-time">2026-04-07 10:45:22</span><span class="audit-module"><span class="tag" style="font-size:0.6rem">System</span></span><span class="audit-event"><span class="audit-actor">Mar&iacute;a Gonz&aacute;lez</span> updated RBAC — added <code>schema:publish</code> to <code>Issuer Admin</code></span><span class="audit-outcome success">OK</span></div>
+    <div class="audit-entry"><span class="audit-time">2026-04-07 09:30:00</span><span class="audit-module"><span class="tag" style="font-size:0.6rem">System</span></span><span class="audit-event"><span class="audit-actor">System</span> daily status list refresh — all 7 registries synced</span><span class="audit-outcome success">OK</span></div>
+  </div>
+  {{end}}
+</div>
+{{end}}

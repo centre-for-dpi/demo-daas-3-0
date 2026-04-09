@@ -1,0 +1,75 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Governance Framework</h1><p>Manage trust governance frameworks and rules for the credential ecosystem.</p></div>
+
+  {{$isReal := and .User (not .User.Demo)}}
+
+  <!-- Active Frameworks -->
+  <div class="card">
+    <h3 style="font-size:0.95rem;margin-bottom:1rem">Active Frameworks</h3>
+    <table class="data-table">
+      <thead>
+        <tr><th>Framework</th><th>Version</th><th>Scope</th><th>Issuers</th><th>Status</th><th></th></tr>
+      </thead>
+      <tbody>
+        {{if $isReal}}
+        <tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--text-tertiary);font-size:0.85rem">No governance frameworks defined yet. Use the form below to create one.</td></tr>
+        {{else}}
+        <tr>
+          <td><strong>TT National VC Framework</strong></td>
+          <td>1.2.0</td>
+          <td>National</td>
+          <td>4</td>
+          <td><span class="tag tag-accent">Active</span></td>
+          <td><button class="btn btn-sm btn-ghost">Edit</button></td>
+        </tr>
+        <tr>
+          <td><strong>CARICOM Education Credential Standard</strong></td>
+          <td>0.3.0</td>
+          <td>Regional</td>
+          <td>2</td>
+          <td><span class="tag tag-warning">Draft</span></td>
+          <td><button class="btn btn-sm btn-ghost">Edit</button></td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- New Framework -->
+  <div class="card" style="margin-top:1.5rem">
+    <h3 style="font-size:0.95rem;margin-bottom:1rem">New Governance Framework</h3>
+    <div class="form-group">
+      <label class="form-label">Framework Name</label>
+      <input type="text" class="form-input" placeholder="e.g. CARICOM Health Credential Standard">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Scope Level</label>
+      <select class="form-input">
+        <option>National</option>
+        <option>Regional (CARICOM)</option>
+        <option>Bilateral</option>
+        <option>Sectoral</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Trust Rules (YAML)</label>
+      <textarea class="form-input" rows="10" style="font-family:monospace;font-size:0.82rem">trust_rules:
+  issuer_requirements:
+    - did_method: "did:web"
+    - key_algorithm: ["Ed25519", "P-256"]
+    - schema_validation: required
+  credential_policies:
+    - max_validity: "5y"
+    - revocation_check: required
+    - status_list: "StatusList2021"
+  verification_rules:
+    - proof_type: ["DataIntegrityProof", "jwt_vc"]
+    - trust_chain: required</textarea>
+    </div>
+    <div style="display:flex;justify-content:flex-end">
+      <button class="btn btn-primary btn-sm" onclick="showToast('Created','Governance framework created as draft.')">Create Framework</button>
+    </div>
+  </div>
+</div>
+{{end}}

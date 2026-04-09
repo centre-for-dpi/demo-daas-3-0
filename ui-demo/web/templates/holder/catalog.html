@@ -1,0 +1,143 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Credential Catalog</h1><p>Browse available credentials by sector and request issuance.</p></div>
+
+  {{$dm := dataMap .Data}}
+  {{$schemas := index ($dm) "schemas"}}
+
+  {{$isReal := and .User (not .User.Demo)}}
+
+  {{if and $isReal (hasItems $schemas)}}
+  <!-- LIVE: credential types from issuer API metadata -->
+  <div style="padding:0.75rem 1rem;background:var(--bg-surface-alt);border-radius:var(--radius-md);margin-bottom:1.25rem;font-size:0.82rem;color:var(--text-secondary)">
+    Showing <strong>{{len $schemas}}</strong> credential type(s) supported by the connected issuer. To obtain a credential, click <strong>Retrieve</strong> to start the OID4VCI flow.
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1rem">
+    {{range $schemas}}
+    <div class="card catalog-card" data-sector="all" data-name="{{.Name}}">
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.6rem">
+        <span style="font-size:1.2rem">&#128220;</span>
+        <div style="flex:1"><div style="font-weight:600;font-size:0.9rem">{{.Name}}</div></div>
+        <span class="tag" style="font-size:0.65rem">{{.Standard}}</span>
+      </div>
+      <div style="font-size:0.78rem;display:flex;flex-direction:column;gap:0.3rem;margin-bottom:0.75rem">
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Configuration</span><span style="font-weight:500;font-size:0.72rem">{{.ID}}</span></div>
+      </div>
+      <button class="btn btn-primary btn-sm" style="width:100%" hx-get="/portal/holder/retrieval" hx-target="#main-content" hx-push-url="true">Retrieve</button>
+    </div>
+    {{end}}
+  </div>
+
+  {{else if $isReal}}
+  <!-- LIVE: no credential types available -->
+  <div class="card" style="text-align:center;padding:3rem">
+    <div style="font-size:2rem;margin-bottom:1rem">&#128218;</div>
+    <h3 style="font-size:0.95rem;margin-bottom:0.5rem">No Credential Types Available</h3>
+    <p style="font-size:0.82rem;color:var(--text-secondary)">No issuer has published credential configurations yet. Contact your issuer to begin the onboarding process.</p>
+  </div>
+
+  {{else}}
+  <!-- MOCK DATA (exploration mode) -->
+  <!-- Filter bar -->
+  <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1.25rem;flex-wrap:wrap">
+    <button class="btn btn-sm btn-primary" onclick="filterCatalog(this,'all')">All Sectors</button>
+    <button class="btn btn-sm btn-ghost" onclick="filterCatalog(this,'education')">Education</button>
+    <button class="btn btn-sm btn-ghost" onclick="filterCatalog(this,'identity')">Identity</button>
+    <button class="btn btn-sm btn-ghost" onclick="filterCatalog(this,'professional')">Professional</button>
+    <button class="btn btn-sm btn-ghost" onclick="filterCatalog(this,'land')">Land</button>
+    <div style="margin-left:auto"><input type="text" placeholder="Search catalog..." class="form-input" style="font-size:0.8rem;padding:0.4rem 0.75rem;width:220px" oninput="searchCatalog(this.value)"></div>
+  </div>
+
+  <!-- Catalog grid -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1rem">
+    <!-- Card 1: BSc/BA Degree -->
+    <div class="card catalog-card" data-sector="education" data-name="BSc BA Degree Certificate">
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.6rem">
+        <span style="font-size:1.2rem">&#127891;</span>
+        <div style="flex:1"><div style="font-weight:600;font-size:0.9rem">BSc / BA Degree Certificate</div></div>
+        <span class="tag tag-accent" style="font-size:0.65rem">Education</span>
+      </div>
+      <div style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:0.75rem">University of the West Indies (UWI)</div>
+      <div style="font-size:0.78rem;display:flex;flex-direction:column;gap:0.3rem;margin-bottom:0.75rem">
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Requirements</span><span style="font-weight:500">Student ID + Graduation Date</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Processing</span><span style="font-weight:500">Instant</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Standard</span><span style="font-weight:500">W3C-VCDM 2.0</span></div>
+      </div>
+      <button class="btn btn-primary btn-sm" style="width:100%" hx-get="/portal/holder/request-form" hx-target="#main-content" hx-push-url="true">Request</button>
+    </div>
+
+    <!-- Card 2: Professional Certificate -->
+    <div class="card catalog-card" data-sector="education" data-name="Professional Certificate">
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.6rem">
+        <span style="font-size:1.2rem">&#128220;</span>
+        <div style="flex:1"><div style="font-weight:600;font-size:0.9rem">Professional Certificate</div></div>
+        <span class="tag tag-accent" style="font-size:0.65rem">Education</span>
+      </div>
+      <div style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:0.75rem">WeLearnTT</div>
+      <div style="font-size:0.78rem;display:flex;flex-direction:column;gap:0.3rem;margin-bottom:0.75rem">
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Requirements</span><span style="font-weight:500">Email + Enrollment ID</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Processing</span><span style="font-weight:500">1&ndash;3 days</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Standard</span><span style="font-weight:500">SD-JWT</span></div>
+      </div>
+      <button class="btn btn-primary btn-sm" style="width:100%" hx-get="/portal/holder/request-form" hx-target="#main-content" hx-push-url="true">Request</button>
+    </div>
+
+    <!-- Card 3: National Identity Card -->
+    <div class="card catalog-card" data-sector="identity" data-name="National Identity Card">
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.6rem">
+        <span style="font-size:1.2rem">&#128179;</span>
+        <div style="flex:1"><div style="font-weight:600;font-size:0.9rem">National Identity Card</div></div>
+        <span class="tag tag-info" style="font-size:0.65rem">Identity</span>
+      </div>
+      <div style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:0.75rem">Ministry of Digital Transformation (MDT)</div>
+      <div style="font-size:0.78rem;display:flex;flex-direction:column;gap:0.3rem;margin-bottom:0.75rem">
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Requirements</span><span style="font-weight:500">National ID + Biometric</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Processing</span><span style="font-weight:500">5&ndash;10 days</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Standard</span><span style="font-weight:500">W3C-VCDM 2.0</span></div>
+      </div>
+      <button class="btn btn-primary btn-sm" style="width:100%" hx-get="/portal/holder/request-form" hx-target="#main-content" hx-push-url="true">Request</button>
+    </div>
+
+    <!-- Card 4: Land Certificate -->
+    <div class="card catalog-card" data-sector="land" data-name="Land Certificate">
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.6rem">
+        <span style="font-size:1.2rem">&#127966;</span>
+        <div style="flex:1"><div style="font-weight:600;font-size:0.9rem">Land Certificate</div></div>
+        <span class="tag tag-warning" style="font-size:0.65rem">Land</span>
+      </div>
+      <div style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:0.75rem">Ministry of Agriculture</div>
+      <div style="font-size:0.78rem;display:flex;flex-direction:column;gap:0.3rem;margin-bottom:0.75rem">
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Requirements</span><span style="font-weight:500">Property ID + Owner verification</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Processing</span><span style="font-weight:500">7&ndash;14 days</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Standard</span><span style="font-weight:500">W3C-VCDM 2.0</span></div>
+      </div>
+      <button class="btn btn-primary btn-sm" style="width:100%" hx-get="/portal/holder/request-form" hx-target="#main-content" hx-push-url="true">Request</button>
+    </div>
+  </div>
+  {{end}}
+</div>
+
+<script>
+function filterCatalog(btn, sector) {
+  btn.parentElement.querySelectorAll('.btn').forEach(function(b) {
+    b.className = 'btn btn-sm btn-ghost';
+  });
+  btn.className = 'btn btn-sm btn-primary';
+  document.querySelectorAll('.catalog-card').forEach(function(card) {
+    if (sector === 'all' || card.getAttribute('data-sector') === sector) {
+      card.style.display = '';
+    } else {
+      card.style.display = 'none';
+    }
+  });
+}
+function searchCatalog(q) {
+  var query = q.toLowerCase();
+  document.querySelectorAll('.catalog-card').forEach(function(card) {
+    var name = (card.getAttribute('data-name') || '').toLowerCase();
+    card.style.display = name.indexOf(query) !== -1 ? '' : 'none';
+  });
+}
+</script>
+{{end}}

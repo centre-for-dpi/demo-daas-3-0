@@ -1,0 +1,59 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Channel Adaptors</h1><p>Configure delivery channels for credential issuance and verification.</p></div>
+
+  <div style="display:flex;flex-direction:column;gap:1rem">
+
+    <div class="card channel-card" style="display:flex;align-items:center;gap:1rem">
+      <div class="channel-icon" style="width:48px;height:48px;border-radius:12px;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0">&#128172;</div>
+      <div class="channel-info" style="flex:1">
+        <div style="font-weight:600;font-size:0.92rem">SMS Gateway</div>
+        <div style="font-size:0.78rem;color:var(--text-secondary)">Send credentials and verification links via SMS. Supports OTP confirmation.</div>
+        <span class="tag tag-accent" style="margin-top:0.25rem;font-size:0.7rem">Active</span>
+      </div>
+      <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer;flex-shrink:0"><input type="checkbox" checked style="opacity:0;width:0;height:0"><span style="position:absolute;inset:0;background:var(--color-accent);border-radius:12px;transition:0.3s"></span><span style="position:absolute;left:23px;top:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:0.3s"></span></label>
+    </div>
+
+    <div class="card channel-card" style="display:flex;align-items:center;gap:1rem">
+      <div class="channel-icon" style="width:48px;height:48px;border-radius:12px;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0">&#128241;</div>
+      <div class="channel-info" style="flex:1">
+        <div style="font-weight:600;font-size:0.92rem">USSD</div>
+        <div style="font-size:0.78rem;color:var(--text-secondary)">Feature phone credential access via USSD menus. No data connection required.</div>
+        <span class="tag tag-accent" style="margin-top:0.25rem;font-size:0.7rem">Active</span>
+      </div>
+      <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer;flex-shrink:0"><input type="checkbox" checked style="opacity:0;width:0;height:0"><span style="position:absolute;inset:0;background:var(--color-accent);border-radius:12px;transition:0.3s"></span><span style="position:absolute;left:23px;top:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:0.3s"></span></label>
+    </div>
+
+    <div class="card channel-card" style="display:flex;align-items:center;gap:1rem">
+      <div class="channel-icon" style="width:48px;height:48px;border-radius:12px;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0">&#128222;</div>
+      <div class="channel-info" style="flex:1">
+        <div style="font-weight:600;font-size:0.92rem">IVR Voice</div>
+        <div style="font-size:0.78rem;color:var(--text-secondary)">Interactive voice response for credential status checks and basic verification.</div>
+        <span class="tag" style="background:var(--color-info);color:#fff;margin-top:0.25rem;font-size:0.7rem">Beta</span>
+      </div>
+      <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer;flex-shrink:0"><input type="checkbox" style="opacity:0;width:0;height:0"><span style="position:absolute;inset:0;background:var(--border);border-radius:12px;transition:0.3s"></span><span style="position:absolute;left:3px;top:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:0.3s"></span></label>
+    </div>
+
+    <div class="card channel-card" style="display:flex;align-items:center;gap:1rem">
+      <div class="channel-icon" style="width:48px;height:48px;border-radius:12px;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0">&#128246;</div>
+      <div class="channel-info" style="flex:1">
+        <div style="font-weight:600;font-size:0.92rem">Bluetooth / NFC</div>
+        <div style="font-size:0.78rem;color:var(--text-secondary)">Proximity-based credential sharing via Bluetooth Low Energy and NFC tap.</div>
+        <span class="tag tag-accent" style="margin-top:0.25rem;font-size:0.7rem">Active</span>
+      </div>
+      <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer;flex-shrink:0"><input type="checkbox" checked style="opacity:0;width:0;height:0"><span style="position:absolute;inset:0;background:var(--color-accent);border-radius:12px;transition:0.3s"></span><span style="position:absolute;left:23px;top:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:0.3s"></span></label>
+    </div>
+
+    <div class="card channel-card" style="display:flex;align-items:center;gap:1rem">
+      <div class="channel-icon" style="width:48px;height:48px;border-radius:12px;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0">&#128438;</div>
+      <div class="channel-info" style="flex:1">
+        <div style="font-weight:600;font-size:0.92rem">Print &amp; Scan QR</div>
+        <div style="font-size:0.78rem;color:var(--text-secondary)">Generate printable credential cards with embedded QR codes for offline verification.</div>
+        <span class="tag tag-accent" style="margin-top:0.25rem;font-size:0.7rem">Active</span>
+      </div>
+      <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer;flex-shrink:0"><input type="checkbox" checked style="opacity:0;width:0;height:0"><span style="position:absolute;inset:0;background:var(--color-accent);border-radius:12px;transition:0.3s"></span><span style="position:absolute;left:23px;top:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:0.3s"></span></label>
+    </div>
+
+  </div>
+</div>
+{{end}}

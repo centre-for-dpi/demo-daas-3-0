@@ -1,0 +1,60 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div><h1>Schemas</h1><p>Browse, search, and version your credential schemas.</p></div>
+      <button class="btn btn-primary btn-sm" hx-get="/portal/issuer/schema-builder" hx-target="#main-content" hx-push-url="true">+ New Schema</button>
+    </div>
+  </div>
+
+  {{$dm := dataMap .Data}}
+  {{$schemas := index ($dm) "schemas"}}
+
+  {{$isReal := and .User (not .User.Demo)}}
+
+  {{if and $isReal (hasItems $schemas)}}
+  <!-- LIVE schemas created by this issuer -->
+  <div class="card" style="overflow-x:auto">
+    <table class="data-table">
+      <thead>
+        <tr><th>Schema ID</th><th>Format</th><th>Version</th><th>Fields</th><th>Created</th></tr>
+      </thead>
+      <tbody>
+        {{range $schemas}}
+        <tr>
+          <td style="font-weight:500"><code>{{.Name}}</code></td>
+          <td><span class="tag">{{.Format}}</span></td>
+          <td>{{.Version}}</td>
+          <td>{{len .Fields}}</td>
+          <td style="font-size:0.78rem;color:var(--text-tertiary)">{{.CreatedAt}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else if $isReal}}
+  <!-- REAL user, no schemas discovered -->
+  <div class="card" style="text-align:center;padding:3rem">
+    <div style="font-size:2rem;margin-bottom:0.75rem">&#128203;</div>
+    <h3 style="font-size:0.95rem;margin-bottom:0.5rem">No Credential Schemas</h3>
+    <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:1rem">The connected issuer backend has no discoverable schemas yet. Use the Schema Builder to define one, or configure credential types in your issuer backend.</p>
+    <button class="btn btn-primary btn-sm" hx-get="/portal/issuer/schema-builder" hx-target="#main-content" hx-push-url="true">Open Schema Builder</button>
+  </div>
+  {{else}}
+  <!-- MOCK schemas for demo users -->
+  <div class="card" style="overflow-x:auto">
+    <table class="data-table">
+      <thead>
+        <tr><th>Schema</th><th>Version</th><th>Fields</th><th>Standard</th><th>Status</th><th>Last Modified</th><th></th></tr>
+      </thead>
+      <tbody>
+        <tr><td style="font-weight:500"><code>bsc-degree-v2</code></td><td>2.0</td><td>12</td><td><span class="tag">W3C-VCDM 2.0</span></td><td><span class="tag tag-accent">Published</span></td><td style="font-size:0.78rem;color:var(--text-tertiary)">2026-03-20</td><td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem" hx-get="/portal/issuer/schema-builder" hx-target="#main-content" hx-push-url="true">Edit</button></td></tr>
+        <tr><td style="font-weight:500"><code>msc-degree-v1</code></td><td>1.0</td><td>14</td><td><span class="tag">W3C-VCDM 2.0</span></td><td><span class="tag tag-accent">Published</span></td><td style="font-size:0.78rem;color:var(--text-tertiary)">2026-04-06</td><td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem" hx-get="/portal/issuer/schema-builder" hx-target="#main-content" hx-push-url="true">Edit</button></td></tr>
+        <tr><td style="font-weight:500"><code>professional-cert-v2</code></td><td>2.1</td><td>9</td><td><span class="tag">SD-JWT</span></td><td><span class="tag tag-accent">Published</span></td><td style="font-size:0.78rem;color:var(--text-tertiary)">2026-03-28</td><td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem" hx-get="/portal/issuer/schema-builder" hx-target="#main-content" hx-push-url="true">Edit</button></td></tr>
+        <tr><td style="font-weight:500"><code>land-cert-v1</code></td><td>0.1</td><td>8</td><td><span class="tag">W3C-VCDM 2.0</span></td><td><span class="tag tag-warning">Draft</span></td><td style="font-size:0.78rem;color:var(--text-tertiary)">2026-04-07</td><td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem" hx-get="/portal/issuer/schema-builder" hx-target="#main-content" hx-push-url="true">Edit</button></td></tr>
+      </tbody>
+    </table>
+  </div>
+  {{end}}
+</div>
+{{end}}

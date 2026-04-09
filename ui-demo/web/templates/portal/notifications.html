@@ -1,0 +1,122 @@
+{{define "content"}}
+<div class="page">
+  <div class="page-header">
+    <h1>Notifications</h1>
+    <p>All events across issuance, verification, and storage modules.</p>
+  </div>
+
+  <div class="filter-bar">
+    <button class="filter-pill active">All</button>
+    <button class="filter-pill">Issuance</button>
+    <button class="filter-pill">Verification</button>
+    <button class="filter-pill">System</button>
+    <button class="btn btn-ghost btn-sm" style="margin-left:auto">Mark all read</button>
+  </div>
+
+  {{$dm := dataMap .Data}}
+  {{$notifs := index ($dm) "notifications"}}
+  {{$isReal := and .User (not .User.Demo)}}
+
+  {{if and $isReal (hasItems $notifs)}}
+  <!-- LIVE DATA -->
+  <div class="card">
+    <div class="notif-list">
+      {{range $notifs}}
+      <div class="notif-item{{if .Unread}} unread{{end}}">
+        <div class="notif-icon {{.Type}}">{{safeHTML .Icon}}</div>
+        <div class="notif-content">
+          <p>{{safeHTML .Text}}</p>
+          <div class="notif-time">{{.Time}}</div>
+        </div>
+        <div class="notif-actions"><button class="btn btn-ghost btn-sm" style="font-size:0.72rem">{{if .Action}}{{.Action}}{{else}}View{{end}}</button></div>
+      </div>
+      {{end}}
+    </div>
+  </div>
+
+  {{else if $isReal}}
+  <!-- REAL USER — no notification backend yet -->
+  <div class="card" style="text-align:center;padding:3rem 2rem">
+    <div style="font-size:2.5rem;margin-bottom:1rem">&#128276;</div>
+    <h3 style="font-size:1rem;margin-bottom:0.5rem">No new notifications</h3>
+    <p style="font-size:0.85rem;color:var(--text-secondary)">You're all caught up. Notifications will appear here when credentials are issued, shared, or verified.</p>
+  </div>
+
+  {{else}}
+  <!-- DEMO — show mock notifications filtered by role -->
+  <div class="card">
+    <div class="notif-list">
+
+      {{if or (eq .User.Role "holder") (eq .User.Role "admin")}}
+      <div class="notif-item unread">
+        <div class="notif-icon issuance">&#128196;</div>
+        <div class="notif-content">
+          <p>You <strong>received</strong> a new credential: <code>BSc Computer Science</code> from <strong>UWI</strong></p>
+          <div class="notif-time">2 minutes ago</div>
+        </div>
+        <div class="notif-actions"><button class="btn btn-ghost btn-sm" style="font-size:0.72rem">View</button></div>
+      </div>
+      <div class="notif-item unread">
+        <div class="notif-icon verification">&#10003;</div>
+        <div class="notif-content">
+          <p>You <strong>shared</strong> your credential with <strong>EmployTT</strong> &mdash; verification result: <strong style="color:var(--success)">VALID</strong></p>
+          <div class="notif-time">14 minutes ago</div>
+        </div>
+        <div class="notif-actions"><button class="btn btn-ghost btn-sm" style="font-size:0.72rem">View</button></div>
+      </div>
+      {{end}}
+
+      {{if or (eq .User.Role "issuer") (eq .User.Role "admin")}}
+      <div class="notif-item unread">
+        <div class="notif-icon issuance">&#128196;</div>
+        <div class="notif-content">
+          <p><strong>UWI</strong> batch issuance completed &mdash; 342 credentials issued via <code>bsc-degree-v2</code></p>
+          <div class="notif-time">2 minutes ago</div>
+        </div>
+        <div class="notif-actions"><button class="btn btn-ghost btn-sm" style="font-size:0.72rem">View</button></div>
+      </div>
+      <div class="notif-item unread">
+        <div class="notif-icon revocation">&#8856;</div>
+        <div class="notif-content">
+          <p><strong>UTT</strong> revoked credential <code>tt-utt-2024-4421</code> &mdash; reason: data correction</p>
+          <div class="notif-time">1 hour ago</div>
+        </div>
+        <div class="notif-actions"><button class="btn btn-ghost btn-sm" style="font-size:0.72rem">View</button></div>
+      </div>
+      {{end}}
+
+      {{if or (eq .User.Role "verifier") (eq .User.Role "admin")}}
+      <div class="notif-item unread">
+        <div class="notif-icon verification">&#10003;</div>
+        <div class="notif-content">
+          <p><strong>EmployTT</strong> verified credential for holder <code>816***245</code> &mdash; result: <strong style="color:var(--success)">VALID</strong></p>
+          <div class="notif-time">14 minutes ago</div>
+        </div>
+        <div class="notif-actions"><button class="btn btn-ghost btn-sm" style="font-size:0.72rem">View</button></div>
+      </div>
+      {{end}}
+
+      {{if eq .User.Role "admin"}}
+      <div class="notif-item unread">
+        <div class="notif-icon system">&#127963;</div>
+        <div class="notif-content">
+          <p><strong>Ministry of Agriculture</strong> onboarded as new issuer &mdash; pending schema configuration</p>
+          <div class="notif-time">3 hours ago</div>
+        </div>
+        <div class="notif-actions"><button class="btn btn-ghost btn-sm" style="font-size:0.72rem">Configure</button></div>
+      </div>
+      <div class="notif-item">
+        <div class="notif-icon system">&#9888;</div>
+        <div class="notif-content">
+          <p>47 credentials expiring within 30 days across 3 issuers</p>
+          <div class="notif-time">6 hours ago</div>
+        </div>
+        <div class="notif-actions"><button class="btn btn-ghost btn-sm" style="font-size:0.72rem">Review</button></div>
+      </div>
+      {{end}}
+
+    </div>
+  </div>
+  {{end}}
+</div>
+{{end}}

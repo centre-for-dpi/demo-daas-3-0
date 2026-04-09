@@ -1,0 +1,95 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Adaptor Registry</h1><p>Manage protocol adaptors connecting external credential systems.</p></div>
+
+  {{$isReal := and .User (not .User.Demo)}}
+  {{if $isReal}}
+  <!-- Stats (real) -->
+  <div class="stats-row">
+    <div class="card stat-card"><div class="stat-number">0</div><div class="stat-label">Connected</div></div>
+    <div class="card stat-card"><div class="stat-number" style="color:var(--color-accent)">0</div><div class="stat-label">Healthy</div></div>
+    <div class="card stat-card"><div class="stat-number" style="color:var(--color-warning)">0</div><div class="stat-label">Degraded</div></div>
+    <div class="card stat-card"><div class="stat-number">0</div><div class="stat-label">Exchanges</div></div>
+  </div>
+
+  <div class="card" style="padding:0;overflow-x:auto">
+    <table class="data-table">
+      <thead>
+        <tr><th>Adaptor</th><th>Protocol</th><th>Target System</th><th>Throughput</th><th>Error Rate</th><th>Last Sync</th><th>Status</th><th></th></tr>
+      </thead>
+      <tbody>
+        <tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--text-secondary)">No adaptors configured yet. Use <a href="/portal/trust/adaptor-config" hx-get="/portal/trust/adaptor-config" hx-target="#main-content" hx-push-url="true" style="color:var(--color-accent)">Adaptor Config</a> to connect an external credential system.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <!-- Stats (demo) -->
+  <div class="stats-row">
+    <div class="card stat-card"><div class="stat-number">5</div><div class="stat-label">Connected</div></div>
+    <div class="card stat-card"><div class="stat-number" style="color:var(--color-accent)">4</div><div class="stat-label">Healthy</div></div>
+    <div class="card stat-card"><div class="stat-number" style="color:var(--color-warning)">1</div><div class="stat-label">Degraded</div></div>
+    <div class="card stat-card"><div class="stat-number">12,847</div><div class="stat-label">Exchanges</div></div>
+  </div>
+
+  <div class="card" style="padding:0;overflow-x:auto">
+    <table class="data-table">
+      <thead>
+        <tr><th>Adaptor</th><th>Protocol</th><th>Target System</th><th>Throughput</th><th>Error Rate</th><th>Last Sync</th><th>Status</th><th></th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Inji Bridge</strong></td>
+          <td>OID4VCI</td>
+          <td>Inji Mobile</td>
+          <td>342/day</td>
+          <td>0.2%</td>
+          <td>2 min ago</td>
+          <td><span class="tag tag-accent">Healthy</span></td>
+          <td><button class="btn btn-sm btn-ghost" hx-get="/portal/trust/adaptor-config" hx-target="#main-content" hx-push-url="true">Config</button></td>
+        </tr>
+        <tr>
+          <td><strong>Credebl Connector</strong></td>
+          <td>DIDComm v2</td>
+          <td>Credebl Platform</td>
+          <td>187/day</td>
+          <td>0.1%</td>
+          <td>5 min ago</td>
+          <td><span class="tag tag-accent">Healthy</span></td>
+          <td><button class="btn btn-sm btn-ghost" hx-get="/portal/trust/adaptor-config" hx-target="#main-content" hx-push-url="true">Config</button></td>
+        </tr>
+        <tr>
+          <td><strong>Walt.id Bridge</strong></td>
+          <td>OID4VP</td>
+          <td>Walt.id SSI Kit</td>
+          <td>96/day</td>
+          <td>0.3%</td>
+          <td>8 min ago</td>
+          <td><span class="tag tag-accent">Healthy</span></td>
+          <td><button class="btn btn-sm btn-ghost" hx-get="/portal/trust/adaptor-config" hx-target="#main-content" hx-push-url="true">Config</button></td>
+        </tr>
+        <tr>
+          <td><strong>eSignet Auth Bridge</strong></td>
+          <td>OIDC</td>
+          <td>eSignet IdP</td>
+          <td>215/day</td>
+          <td>0.4%</td>
+          <td>3 min ago</td>
+          <td><span class="tag tag-accent">Healthy</span></td>
+          <td><button class="btn btn-sm btn-ghost" hx-get="/portal/trust/adaptor-config" hx-target="#main-content" hx-push-url="true">Config</button></td>
+        </tr>
+        <tr>
+          <td><strong>Jamaica NIDS Bridge</strong></td>
+          <td>DIDComm v2</td>
+          <td>Jamaica NIDS</td>
+          <td>7/day</td>
+          <td>4.8%</td>
+          <td>25 min ago</td>
+          <td><span class="tag tag-warning">Degraded</span></td>
+          <td><button class="btn btn-sm btn-ghost" hx-get="/portal/trust/adaptor-config" hx-target="#main-content" hx-push-url="true">Config</button></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  {{end}}
+</div>
+{{end}}

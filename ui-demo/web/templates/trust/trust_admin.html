@@ -1,0 +1,55 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Trust Registry Admin</h1><p>Review pending issuer applications and manage governance rules.</p></div>
+
+  <!-- Pending Review -->
+  {{$isReal := and .User (not .User.Demo)}}
+  {{if $isReal}}
+  <div class="card" style="border-left:3px solid var(--border)">
+    <div style="text-align:center;padding:1.5rem;color:var(--text-secondary)">
+      <div style="font-size:1.5rem;margin-bottom:0.5rem">&#128203;</div>
+      <p style="font-size:0.9rem;margin-bottom:0.25rem"><strong>No pending registrations</strong></p>
+      <p style="font-size:0.8rem">New issuer applications will appear here for review when submitted through the onboarding process.</p>
+    </div>
+  </div>
+  {{else}}
+  <div class="card" style="border-left:3px solid var(--color-warning)">
+    <h3 style="font-size:0.95rem;margin-bottom:0.75rem">Pending Review &mdash; Ministry of Agriculture</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;font-size:0.85rem;margin-bottom:1rem">
+      <div><span style="color:var(--text-secondary)">Organization:</span> Ministry of Agriculture, Land &amp; Fisheries</div>
+      <div><span style="color:var(--text-secondary)">Requesting:</span> Land Certificate Issuance</div>
+      <div><span style="color:var(--text-secondary)">DID:</span> <code style="font-size:0.78rem">did:web:agri.gov.tt:issuer</code></div>
+      <div><span style="color:var(--text-secondary)">Submitted:</span> 2026-03-18</div>
+    </div>
+    <div style="display:flex;gap:0.5rem">
+      <button class="btn btn-primary btn-sm" onclick="showToast('Approved','Ministry of Agriculture has been approved as a trusted issuer.')">Approve</button>
+      <button class="btn btn-secondary btn-sm" onclick="showToast('Info Requested','Request for additional documentation sent.')">Request Info</button>
+      <button class="btn btn-sm" style="background:var(--color-error);color:#fff" onclick="showToast('Rejected','Application has been rejected.')">Reject</button>
+    </div>
+  </div>
+  {{end}}
+
+  <!-- Governance Rules -->
+  <div class="card" style="margin-top:1.5rem">
+    <h3 style="font-size:0.95rem;margin-bottom:1rem">Governance Rules</h3>
+    <div style="display:flex;flex-direction:column;gap:1rem">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)">
+        <div><strong style="font-size:0.88rem">Auto-approve government issuers</strong><div style="font-size:0.78rem;color:var(--text-secondary)">Automatically approve issuers with a .gov.tt DID</div></div>
+        <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer"><input type="checkbox" style="opacity:0;width:0;height:0"><span style="position:absolute;inset:0;background:var(--border);border-radius:12px;transition:0.3s"></span><span style="position:absolute;left:3px;top:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:0.3s"></span></label>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)">
+        <div><strong style="font-size:0.88rem">Require DID verification</strong><div style="font-size:0.78rem;color:var(--text-secondary)">Verify DID document resolves before granting trust</div></div>
+        <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer"><input type="checkbox" checked style="opacity:0;width:0;height:0"><span style="position:absolute;inset:0;background:var(--color-accent);border-radius:12px;transition:0.3s"></span><span style="position:absolute;left:23px;top:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:0.3s"></span></label>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)">
+        <div><strong style="font-size:0.88rem">Require schema validation</strong><div style="font-size:0.78rem;color:var(--text-secondary)">Issuers must use published schemas from the registry</div></div>
+        <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer"><input type="checkbox" checked style="opacity:0;width:0;height:0"><span style="position:absolute;inset:0;background:var(--color-accent);border-radius:12px;transition:0.3s"></span><span style="position:absolute;left:23px;top:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:0.3s"></span></label>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0">
+        <div><strong style="font-size:0.88rem">Cross-jurisdiction recognition</strong><div style="font-size:0.78rem;color:var(--text-secondary)">Recognize issuers from CARICOM partner registries</div></div>
+        <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer"><input type="checkbox" style="opacity:0;width:0;height:0"><span style="position:absolute;inset:0;background:var(--border);border-radius:12px;transition:0.3s"></span><span style="position:absolute;left:3px;top:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:0.3s"></span></label>
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}

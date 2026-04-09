@@ -1,0 +1,34 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Review &amp; Sign</h1><p>Preview sample credentials from this batch before signing.</p></div>
+
+  {{$isReal := and .User (not .User.Demo)}}
+
+  {{if $isReal}}
+  <div class="card" style="text-align:center;padding:3rem">
+    <div style="font-size:2rem;margin-bottom:0.75rem">&#128221;</div>
+    <h3 style="font-size:0.95rem;margin-bottom:0.5rem">Batch Review</h3>
+    <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:1rem">Batch issuance is not yet connected to the backend. Use Single Issuance to issue credentials one at a time via the Walt.id API.</p>
+    <button class="btn btn-primary btn-sm" hx-get="/portal/issuer/single-issue" hx-target="#main-content" hx-push-url="true">Go to Single Issuance</button>
+  </div>
+  {{else}}
+
+  <div class="stats-row">
+    <div class="card stat-card"><div class="stat-number">342</div><div class="stat-label">Total Records</div></div>
+    <div class="card stat-card"><div class="stat-number">342</div><div class="stat-label">Valid</div></div>
+    <div class="card stat-card"><div class="stat-number">0</div><div class="stat-label">Errors</div></div>
+    <div class="card stat-card"><div class="stat-number">0</div><div class="stat-label">Duplicates</div></div>
+  </div>
+  <div class="card" style="margin-bottom:1.5rem">
+    <h3 style="font-size:0.9rem;margin-bottom:1rem">Sample Credentials (first 3)</h3>
+    <div class="cred-card"><span class="cred-icon">&#127891;</span><div class="cred-info"><div class="cred-info-title">Jane Doe &mdash; BSc Computer Science</div><div class="cred-info-sub">GPA 3.7 &middot; Graduated June 2025 &middot; ID: 816003245</div></div><span class="tag tag-accent">Valid</span></div>
+    <div class="cred-card"><span class="cred-icon">&#127891;</span><div class="cred-info"><div class="cred-info-title">Marcus Chen &mdash; BSc Mathematics</div><div class="cred-info-sub">GPA 3.4 &middot; Graduated June 2025 &middot; ID: 816003301</div></div><span class="tag tag-accent">Valid</span></div>
+    <div class="cred-card"><span class="cred-icon">&#127891;</span><div class="cred-info"><div class="cred-info-title">Anika Persad &mdash; BSc Biology</div><div class="cred-info-sub">GPA 3.9 &middot; Graduated June 2025 &middot; ID: 816003198</div></div><span class="tag tag-accent">Valid</span></div>
+  </div>
+  <div style="display:flex;gap:0.5rem;justify-content:flex-end">
+    <button class="btn btn-secondary btn-sm" hx-get="/portal/issuer/batch" hx-target="#main-content" hx-push-url="true">&larr; Back</button>
+    <button class="btn btn-primary" hx-get="/portal/issuer/dispatch" hx-target="#main-content" hx-push-url="true" onclick="setTimeout(function(){startDispatch()},500)">Sign &amp; Dispatch All (342)</button>
+  </div>
+  {{end}}
+</div>
+{{end}}

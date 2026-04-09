@@ -1,0 +1,91 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>My Requests</h1><p>Track the status of your credential issuance requests.</p></div>
+
+  {{if and .User (not .User.Demo)}}
+  <!-- LIVE DATA: No request-tracking API in Walt.id -->
+  <div class="card" style="text-align:center;padding:3rem">
+    <div style="font-size:2rem;margin-bottom:1rem">&#128203;</div>
+    <h3 style="font-size:0.95rem;margin-bottom:0.5rem">No pending requests</h3>
+    <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:1rem">When you submit a credential issuance request, its progress will be tracked here. You will see each step from submission through to delivery.</p>
+    <button class="btn btn-secondary btn-sm" hx-get="/portal/holder/catalog" hx-target="#main-content" hx-push-url="true">Browse Credential Catalog</button>
+  </div>
+
+  {{else}}
+  <!-- MOCK DATA (exploration mode) -->
+  <div style="display:flex;flex-direction:column;gap:1rem">
+    <!-- Request 1: BSc Degree Certificate -->
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem">
+        <span style="font-size:1.2rem">&#127891;</span>
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:0.9rem">BSc Degree Certificate</div>
+          <div style="font-size:0.72rem;color:var(--text-secondary)">University of the West Indies (UWI)</div>
+        </div>
+        <span class="tag tag-accent">Completed</span>
+      </div>
+
+      <!-- Timeline -->
+      <div style="display:flex;flex-direction:column;gap:0;margin-left:1rem;border-left:2px solid var(--color-accent);padding-left:1.25rem">
+        <div style="position:relative;padding-bottom:1rem">
+          <div style="position:absolute;left:-1.65rem;top:0.1rem;width:10px;height:10px;border-radius:50%;background:var(--color-accent)"></div>
+          <div style="font-weight:500;font-size:0.82rem">Submitted</div>
+          <div style="font-size:0.72rem;color:var(--text-tertiary)">2026-03-20 &middot; Request received by UWI</div>
+        </div>
+        <div style="position:relative;padding-bottom:1rem">
+          <div style="position:absolute;left:-1.65rem;top:0.1rem;width:10px;height:10px;border-radius:50%;background:var(--color-accent)"></div>
+          <div style="font-weight:500;font-size:0.82rem">Under Review</div>
+          <div style="font-size:0.72rem;color:var(--text-tertiary)">2026-03-21 &middot; Student records verified</div>
+        </div>
+        <div style="position:relative;padding-bottom:1rem">
+          <div style="position:absolute;left:-1.65rem;top:0.1rem;width:10px;height:10px;border-radius:50%;background:var(--color-accent)"></div>
+          <div style="font-weight:500;font-size:0.82rem">Approved</div>
+          <div style="font-size:0.72rem;color:var(--text-tertiary)">2026-03-21 &middot; Credential issued and signed</div>
+        </div>
+        <div style="position:relative;padding-bottom:0">
+          <div style="position:absolute;left:-1.65rem;top:0.1rem;width:10px;height:10px;border-radius:50%;background:var(--color-accent);box-shadow:0 0 0 3px rgba(var(--color-accent-rgb,46,139,87),0.2)"></div>
+          <div style="font-weight:600;font-size:0.82rem;color:var(--color-accent)">Credential Ready &mdash; Collected</div>
+          <div style="font-size:0.72rem;color:var(--text-tertiary)">2026-03-22 &middot; Stored in Mobile Wallet</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Request 2: Land Certificate -->
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem">
+        <span style="font-size:1.2rem">&#127966;</span>
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:0.9rem">Land Certificate</div>
+          <div style="font-size:0.72rem;color:var(--text-secondary)">Ministry of Agriculture</div>
+        </div>
+        <span class="tag tag-warning">Under Review</span>
+      </div>
+
+      <!-- Timeline -->
+      <div style="display:flex;flex-direction:column;gap:0;margin-left:1rem;border-left:2px solid var(--border);padding-left:1.25rem">
+        <div style="position:relative;padding-bottom:1rem">
+          <div style="position:absolute;left:-1.65rem;top:0.1rem;width:10px;height:10px;border-radius:50%;background:var(--color-accent)"></div>
+          <div style="font-weight:500;font-size:0.82rem">Submitted</div>
+          <div style="font-size:0.72rem;color:var(--text-tertiary)">2026-04-01 &middot; Request received</div>
+        </div>
+        <div style="position:relative;padding-bottom:1rem">
+          <div style="position:absolute;left:-1.65rem;top:0.1rem;width:10px;height:10px;border-radius:50%;background:var(--color-warning);box-shadow:0 0 0 3px rgba(var(--color-warning-rgb,200,150,0),0.2)"></div>
+          <div style="font-weight:600;font-size:0.82rem;color:var(--color-warning)">Under Review</div>
+          <div style="font-size:0.72rem;color:var(--text-tertiary)">2026-04-03 &middot; Property records being verified</div>
+        </div>
+        <div style="position:relative;padding-bottom:1rem">
+          <div style="position:absolute;left:-1.65rem;top:0.1rem;width:10px;height:10px;border-radius:50%;background:var(--border)"></div>
+          <div style="font-weight:500;font-size:0.82rem;color:var(--text-tertiary)">Approved</div>
+          <div style="font-size:0.72rem;color:var(--text-tertiary)">Pending</div>
+        </div>
+        <div style="position:relative;padding-bottom:0">
+          <div style="position:absolute;left:-1.65rem;top:0.1rem;width:10px;height:10px;border-radius:50%;background:var(--border)"></div>
+          <div style="font-weight:500;font-size:0.82rem;color:var(--text-tertiary)">Credential Ready</div>
+          <div style="font-size:0.72rem;color:var(--text-tertiary)">Pending</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {{end}}
+</div>
+{{end}}

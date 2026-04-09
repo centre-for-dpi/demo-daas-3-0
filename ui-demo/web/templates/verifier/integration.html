@@ -1,0 +1,161 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><div style="display:flex;align-items:center;justify-content:space-between"><div><h1>Integration Status</h1><p>API health, active integrations, and key management.</p></div></div></div>
+
+  {{$dm := dataMap .Data}}
+  {{$isReal := and .User (not .User.Demo)}}
+
+  {{if $isReal}}
+  <!-- ===== REAL USER: Show backend config and health ===== -->
+  <div class="stats-row">
+    <div class="card stat-card">
+      <div style="display:flex;align-items:center;gap:0.4rem"><span style="width:8px;height:8px;border-radius:50%;background:var(--color-accent);display:inline-block"></span><div class="stat-number" style="font-size:1rem">Connected</div></div>
+      <div class="stat-label">Walt.id Backend</div>
+    </div>
+    <div class="card stat-card"><div class="stat-number" style="font-size:0.85rem">{{if $dm}}{{mapStr $dm "backendType"}}{{else}}waltid{{end}}</div><div class="stat-label">Backend Type</div></div>
+    <div class="card stat-card"><div class="stat-number" style="font-size:0.85rem">{{if $dm}}{{mapStr $dm "transport"}}{{else}}direct{{end}}</div><div class="stat-label">Transport</div></div>
+  </div>
+
+  <div class="card" style="margin-bottom:1.25rem">
+    <h3 style="font-size:0.9rem;margin-bottom:1rem">Backend Endpoints</h3>
+    <div style="display:flex;flex-direction:column;gap:0">
+
+      <div style="display:flex;align-items:center;gap:1rem;padding:0.75rem 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:1.2rem">&#128272;</span>
+        <div style="flex:1">
+          <div style="font-weight:500;font-size:0.85rem">Verifier API</div>
+          <div style="font-size:0.75rem;color:var(--text-secondary);font-family:var(--font-mono)">{{if $dm}}{{mapStr $dm "verifierURL"}}{{else}}not configured{{end}}</div>
+        </div>
+        <span id="verifier-health" class="tag" style="font-size:0.65rem">Checking...</span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:1rem;padding:0.75rem 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:1.2rem">&#128196;</span>
+        <div style="flex:1">
+          <div style="font-weight:500;font-size:0.85rem">Issuer API</div>
+          <div style="font-size:0.75rem;color:var(--text-secondary);font-family:var(--font-mono)">{{if $dm}}{{mapStr $dm "issuerURL"}}{{else}}not configured{{end}}</div>
+        </div>
+        <span class="tag tag-accent" style="font-size:0.65rem">Configured</span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:1rem;padding:0.75rem 0">
+        <span style="font-size:1.2rem">&#128179;</span>
+        <div style="flex:1">
+          <div style="font-weight:500;font-size:0.85rem">Wallet API</div>
+          <div style="font-size:0.75rem;color:var(--text-secondary);font-family:var(--font-mono)">{{if $dm}}{{mapStr $dm "walletURL"}}{{else}}not configured{{end}}</div>
+        </div>
+        <span class="tag tag-accent" style="font-size:0.65rem">Configured</span>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Health check for verifier -->
+  <div class="card">
+    <h3 style="font-size:0.9rem;margin-bottom:0.75rem">API Health Check</h3>
+    <div style="display:flex;gap:0.5rem;align-items:center">
+      <button class="btn btn-primary btn-sm" id="health-check-btn" onclick="runHealthCheck()">Check Verifier API</button>
+      <span id="health-check-result" style="font-size:0.82rem;color:var(--text-secondary)"></span>
+    </div>
+  </div>
+
+  {{else}}
+  <!-- ===== DEMO USER: Mock integration data ===== -->
+  <div class="stats-row">
+    <div class="card stat-card">
+      <div style="display:flex;align-items:center;gap:0.4rem"><span style="width:8px;height:8px;border-radius:50%;background:var(--color-accent);display:inline-block"></span><div class="stat-number" style="font-size:1rem">Healthy</div></div>
+      <div class="stat-label">API Status</div>
+    </div>
+    <div class="card stat-card"><div class="stat-number">142ms</div><div class="stat-label">p50 Latency</div></div>
+    <div class="card stat-card"><div class="stat-number">99.98%</div><div class="stat-label">Uptime</div></div>
+    <div class="card stat-card"><div class="stat-number">2</div><div class="stat-label">Active Integrations</div></div>
+  </div>
+
+  <!-- Active Integrations -->
+  <div class="card" style="margin-bottom:1.25rem">
+    <h3 style="font-size:0.9rem;margin-bottom:1rem">Active Integrations</h3>
+    <div style="display:flex;flex-direction:column;gap:0">
+
+      <div style="display:flex;align-items:center;gap:1rem;padding:0.75rem 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:1.2rem">&#127760;</span>
+        <div style="flex:1"><div style="font-weight:500;font-size:0.85rem">Web Portal</div><div style="font-size:0.75rem;color:var(--text-secondary)">Browser-based verification portal</div></div>
+        <span style="font-size:0.78rem;color:var(--text-secondary)">847 verifications</span>
+        <span class="tag tag-accent" style="font-size:0.65rem">Active</span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:1rem;padding:0.75rem 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:1.2rem">&#128241;</span>
+        <div style="flex:1"><div style="font-weight:500;font-size:0.85rem">Mobile SDK &mdash; Android</div><div style="font-size:0.75rem;color:var(--text-secondary)">Native Android integration</div></div>
+        <span style="font-size:0.78rem;color:var(--text-secondary)">203 verifications</span>
+        <span class="tag tag-accent" style="font-size:0.65rem">Active</span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:1rem;padding:0.75rem 0">
+        <span style="font-size:1.2rem">&#128268;</span>
+        <div style="flex:1"><div style="font-weight:500;font-size:0.85rem">REST API</div><div style="font-size:0.75rem;color:var(--text-secondary)">Direct API integration</div></div>
+        <span style="font-size:0.78rem;color:var(--text-secondary)">1,204 calls/day</span>
+        <span class="tag tag-accent" style="font-size:0.65rem">Active</span>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- API Key Management -->
+  <div class="card">
+    <h3 style="font-size:0.9rem;margin-bottom:1rem">API Key Management</h3>
+    <div style="display:flex;flex-direction:column;gap:0.75rem">
+      <div>
+        <label style="font-size:0.82rem;font-weight:500;display:block;margin-bottom:0.35rem">Current API Key</label>
+        <div style="display:flex;gap:0.5rem">
+          <input type="text" class="form-input" readonly value="sk-employtt-verifier-****-****-****-7f3a" style="flex:1;font-size:0.78rem;font-family:var(--font-mono)">
+          <button class="btn btn-secondary btn-sm" onclick="showToast('Copied','API key copied to clipboard.')">Copy</button>
+          <button class="btn btn-ghost btn-sm" onclick="showToast('Rotated','New API key generated. Update your integrations.')">Rotate</button>
+        </div>
+      </div>
+      <div style="font-size:0.75rem;color:var(--text-tertiary)">Key created 2026-03-01 &middot; Last used 2 minutes ago &middot; Rate limit: 1,000 req/min</div>
+    </div>
+  </div>
+  {{end}}
+</div>
+
+<script>
+{{if $isReal}}
+function runHealthCheck() {
+  var btn = document.getElementById('health-check-btn');
+  var result = document.getElementById('health-check-result');
+  btn.disabled = true;
+  btn.textContent = 'Checking...';
+  result.textContent = '';
+
+  var start = Date.now();
+  fetch('/api/verifier/policies')
+  .then(function(r) {
+    var elapsed = Date.now() - start;
+    btn.disabled = false;
+    btn.textContent = 'Check Verifier API';
+    if (r.ok) {
+      result.innerHTML = '<span style="color:var(--color-accent);font-weight:500">Healthy</span> &mdash; ' + elapsed + 'ms response time';
+      document.getElementById('verifier-health').className = 'tag tag-accent';
+      document.getElementById('verifier-health').textContent = 'Healthy';
+    } else {
+      result.innerHTML = '<span style="color:var(--color-error);font-weight:500">Error</span> &mdash; HTTP ' + r.status;
+      document.getElementById('verifier-health').className = 'tag tag-error';
+      document.getElementById('verifier-health').textContent = 'Error';
+    }
+  })
+  .catch(function(err) {
+    btn.disabled = false;
+    btn.textContent = 'Check Verifier API';
+    result.innerHTML = '<span style="color:var(--color-error);font-weight:500">Unreachable</span> &mdash; ' + err.message;
+    document.getElementById('verifier-health').className = 'tag tag-error';
+    document.getElementById('verifier-health').textContent = 'Unreachable';
+  });
+}
+
+/* Auto-check health on page load */
+(function() {
+  setTimeout(runHealthCheck, 500);
+})();
+{{end}}
+</script>
+{{end}}

@@ -1,0 +1,16 @@
+{
+	auto_https off
+	admin off
+}
+
+:{$WALLET_BACKEND_PORT:7001} {
+    reverse_proxy http://wallet-api:{$WALLET_BACKEND_PORT:7001}
+}
+
+:{$ISSUER_API_PORT:7002} {
+    reverse_proxy http://issuer-api:{$ISSUER_API_PORT:7002}
+}
+
+:{$VERIFIER_API_PORT:7003} {
+    reverse_proxy http://verifier-api:{$VERIFIER_API_PORT:7003}
+}

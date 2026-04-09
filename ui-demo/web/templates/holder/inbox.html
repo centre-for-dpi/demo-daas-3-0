@@ -1,0 +1,73 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Verification Requests</h1><p>Incoming requests from verifiers &mdash; review and respond.</p></div>
+
+  {{if and .User (not .User.Demo)}}
+  <!-- LIVE DATA: No inbox/verification-request API in Walt.id -->
+  <div class="card" style="text-align:center;padding:3rem">
+    <div style="font-size:2rem;margin-bottom:1rem">&#128229;</div>
+    <h3 style="font-size:0.95rem;margin-bottom:0.5rem">No pending verification requests</h3>
+    <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:1rem">When a verifier sends you a credential verification request, it will appear here. You can review the requested claims and choose to share or decline.</p>
+    <button class="btn btn-secondary btn-sm" hx-get="/portal/holder/wallet" hx-target="#main-content" hx-push-url="true">Back to Wallet</button>
+  </div>
+
+  {{else}}
+  <!-- MOCK DATA (exploration mode) -->
+  <div style="display:flex;flex-direction:column;gap:1rem">
+    <!-- Request 1: EmployTT -->
+    <div class="card" style="border-left:3px solid var(--color-accent)">
+      <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem">
+        <div style="width:36px;height:36px;border-radius:50%;background:var(--color-accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:0.7rem">ET</div>
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:0.9rem">EmployTT</div>
+          <div style="font-size:0.72rem;color:var(--text-secondary)">Requesting BSc degree verification for job application #JA-2026-1847</div>
+        </div>
+        <span class="tag tag-info" style="font-size:0.65rem">New</span>
+      </div>
+
+      <div style="margin-bottom:0.75rem">
+        <div style="font-size:0.78rem;font-weight:500;margin-bottom:0.4rem;color:var(--text-secondary)">Requested Claims:</div>
+        <div style="display:flex;flex-wrap:wrap;gap:0.35rem">
+          <span class="tag" style="font-size:0.68rem">Name</span>
+          <span class="tag" style="font-size:0.68rem">Degree</span>
+          <span class="tag" style="font-size:0.68rem">Major</span>
+          <span class="tag" style="font-size:0.68rem">Graduation Date</span>
+          <span class="tag" style="font-size:0.68rem">Institution</span>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:0.5rem;justify-content:flex-end">
+        <button class="btn btn-ghost btn-sm" onclick="showToast('Declined','Request from EmployTT has been declined.')">Decline</button>
+        <button class="btn btn-primary btn-sm" hx-get="/portal/holder/disclosure" hx-target="#main-content" hx-push-url="true">Review &amp; Share</button>
+      </div>
+    </div>
+
+    <!-- Request 2: Bank of TT -->
+    <div class="card" style="border-left:3px solid var(--color-info)">
+      <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem">
+        <div style="width:36px;height:36px;border-radius:50%;background:var(--color-info);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:0.7rem">BT</div>
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:0.9rem">Bank of Trinidad &amp; Tobago</div>
+          <div style="font-size:0.72rem;color:var(--text-secondary)">Requesting identity verification for account opening</div>
+        </div>
+        <span class="tag tag-info" style="font-size:0.65rem">New</span>
+      </div>
+
+      <div style="margin-bottom:0.75rem">
+        <div style="font-size:0.78rem;font-weight:500;margin-bottom:0.4rem;color:var(--text-secondary)">Requested Claims:</div>
+        <div style="display:flex;flex-wrap:wrap;gap:0.35rem">
+          <span class="tag" style="font-size:0.68rem">Full Name</span>
+          <span class="tag" style="font-size:0.68rem">Date of Birth</span>
+          <span class="tag" style="font-size:0.68rem">National ID Number</span>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:0.5rem;justify-content:flex-end">
+        <button class="btn btn-ghost btn-sm" onclick="showToast('Declined','Request from Bank of TT has been declined.')">Decline</button>
+        <button class="btn btn-primary btn-sm" hx-get="/portal/holder/disclosure" hx-target="#main-content" hx-push-url="true">Review &amp; Share</button>
+      </div>
+    </div>
+  </div>
+  {{end}}
+</div>
+{{end}}

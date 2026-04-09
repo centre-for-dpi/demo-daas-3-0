@@ -1,0 +1,43 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Revocation Workflow</h1><p>Approve or submit a credential revocation. Requires confirmation.</p></div>
+
+  {{$dm := dataMap .Data}}
+  {{$cred := index ($dm) "credential"}}
+  {{$isReal := and .User (not .User.Demo)}}
+
+  <div class="card">
+    <div style="padding:1rem;background:var(--error-surface);border-radius:var(--radius-md);margin-bottom:1.5rem;font-size:0.85rem;color:var(--error)"><strong>Warning:</strong> Revoking a credential is permanent. The credential will fail all future verification checks. The holder will be notified.</div>
+
+    {{if and $isReal $cred}}
+    <!-- LIVE DATA: show real credential info -->
+    {{$pd := $cred.ParsedDocument}}
+    {{$subj := credSubject $pd}}
+    {{$typeName := credTypes $pd}}
+    <div class="form-group"><label class="form-label">Credential ID</label><input class="form-input" value="{{$cred.ID}}" readonly style="background:var(--bg-surface-alt)"></div>
+    <div class="form-group"><label class="form-label">Type</label><input class="form-input" value="{{$typeName}}" readonly style="background:var(--bg-surface-alt)"></div>
+    <div class="form-group"><label class="form-label">Subject Name</label><input class="form-input" value="{{mapStr $subj "name"}}" readonly style="background:var(--bg-surface-alt)"></div>
+    {{else if $isReal}}
+    <!-- REAL USER but no credential loaded -->
+    <div class="form-group"><label class="form-label">Credential ID</label><input class="form-input" placeholder="No credential specified" readonly style="background:var(--bg-surface-alt)"></div>
+    <div class="form-group"><label class="form-label">Holder</label><input class="form-input" placeholder="N/A" readonly style="background:var(--bg-surface-alt)"></div>
+    {{else}}
+    <!-- DEMO DATA -->
+    <div class="form-group"><label class="form-label">Credential ID</label><input class="form-input" value="tt-uwi-2025-bsc-00342" readonly style="background:var(--bg-surface-alt)"></div>
+    <div class="form-group"><label class="form-label">Holder</label><input class="form-input" value="Jane Doe" readonly style="background:var(--bg-surface-alt)"></div>
+    {{end}}
+
+    <div class="form-group"><label class="form-label">Reason for Revocation</label><select class="form-select"><option>Data correction</option><option>Fraudulent issuance</option><option>Holder request</option><option>Credential superseded</option><option>Other (specify below)</option></select></div>
+    <div class="form-group"><label class="form-label">Additional Notes</label><textarea class="form-textarea" placeholder="Provide details for the audit trail..."></textarea></div>
+    <div class="form-group"><label class="form-label">Approval Required From</label><select class="form-select"><option>None &mdash; immediate revocation (Issuer Admin)</option><option>Department Head approval</option><option>DPI Owner approval</option></select></div>
+    <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem">
+      <button class="btn btn-secondary btn-sm" hx-get="/portal/issuer/cred-detail{{if and $isReal $cred}}?id={{$cred.ID}}{{end}}" hx-target="#main-content" hx-push-url="true">Cancel</button>
+      {{if $isReal}}
+      <button class="btn btn-danger btn-sm" onclick="showToast('Not Available','Revocation is not available in this backend. Walt.id does not currently expose a revocation API.')">Confirm Revocation</button>
+      {{else}}
+      <button class="btn btn-danger btn-sm" hx-get="/portal/issuer/issued-creds" hx-target="#main-content" hx-push-url="true" onclick="showToast('Revoked','Credential revoked. Status list updated. Holder notified.')">Confirm Revocation</button>
+      {{end}}
+    </div>
+  </div>
+</div>
+{{end}}

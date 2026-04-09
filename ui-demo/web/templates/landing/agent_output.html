@@ -1,0 +1,64 @@
+{{define "content"}}
+<div class="agent-output-screen">
+  <div class="container">
+    <div class="output-header">
+      <div>
+        <div class="section-label">Agent Outputs</div>
+        <h2>Generated Documents</h2>
+      </div>
+      <div class="output-export-btns">
+        <button class="btn btn-secondary btn-sm">PPTX</button>
+        <button class="btn btn-secondary btn-sm">DOCX</button>
+        <button class="btn btn-secondary btn-sm">PDF</button>
+        <button class="btn btn-ghost btn-sm">MD</button>
+      </div>
+    </div>
+
+    <div class="output-type-tabs" style="margin-bottom:1.5rem">
+      <button class="output-type-tab active" onclick="switchOutputTab(this)">Country Proposal</button>
+      <button class="output-type-tab" onclick="switchOutputTab(this)">Pitch Deck</button>
+      <button class="output-type-tab" onclick="switchOutputTab(this)">Technical Scope</button>
+      <button class="output-type-tab" onclick="switchOutputTab(this)">Advisory Note</button>
+    </div>
+
+    <div class="output-preview">
+      <span class="output-preview-label" id="output-agent-label">Preview — Operations Agent</span>
+      <div class="output-doc">
+        <h2>Country Adoption Proposal: [Country Name]</h2>
+        <p>Verifiable Credentialing Infrastructure — DaaS Rollout</p>
+
+        <h3>Executive Summary</h3>
+        <p>[Country Name] seeks to establish a low-cost, high-trust digital ecosystem by enabling cryptographically signed, user-controlled credentials. The approach leverages modular, standards-based components for issuance, storage, and verification.</p>
+
+        <h3>Problem Statement</h3>
+        <p>The current credentialing processes rely on paper-based documents that are costly to verify, prone to fraud, and create administrative burdens for citizens and institutions alike.</p>
+
+        <h3>Proposed Solution</h3>
+        <p>Deploy a national verifiable credentials infrastructure following the DaaS framework, starting with [first use case] and scaling across a 24-week rollout. The infrastructure supports W3C-VCDM 2.0, multiple delivery formats, and self-service issuer onboarding.</p>
+
+        <h3>Success Criteria</h3>
+        <p>Credentials issued: [target] · Verification response time: &lt;2 seconds · Issuer onboarding time: &lt;1 hour · System uptime: 99.9%</p>
+      </div>
+    </div>
+
+    <div class="output-revision">
+      <input type="text" placeholder="Request revision: 'add budget section', 'change tone to formal', 'shorten to one page'...">
+      <button class="btn btn-primary btn-sm">Revise</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function switchOutputTab(btn) {
+  document.querySelectorAll('.output-type-tab').forEach(function(t) { t.classList.remove('active'); });
+  btn.classList.add('active');
+  var label = document.getElementById('output-agent-label');
+  var type = btn.textContent;
+  if (type.indexOf('Technical') >= 0 || type.indexOf('Advisory') >= 0) {
+    label.textContent = 'Preview — Technical Architect Agent';
+  } else {
+    label.textContent = 'Preview — Operations Agent';
+  }
+}
+</script>
+{{end}}

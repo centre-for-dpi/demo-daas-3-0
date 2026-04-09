@@ -1,0 +1,133 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Multi-Modal Rendering Preview</h1><p>Preview how credentials render across different delivery channels.</p></div>
+
+  {{$isReal := and .User (not .User.Demo)}}
+
+  {{if $isReal}}
+  <div class="card" style="text-align:center;padding:3rem">
+    <div style="font-size:2rem;margin-bottom:0.75rem">&#128247;</div>
+    <h3 style="font-size:0.95rem;margin-bottom:0.5rem">Multi-Modal Rendering</h3>
+    <p style="font-size:0.82rem;color:var(--text-secondary)">This tool previews how credentials render across SMS, print, voice, and wallet channels. Issue a credential first, then preview its rendering here.</p>
+  </div>
+  {{else}}
+  <div class="card" style="margin-bottom:1.5rem">
+    <div class="form-group" style="margin-bottom:0">
+      <label class="form-label">Select Credential</label>
+      <select class="form-input" onchange="switchRendering(this.value)" id="credSelect">
+        <option value="bsc-cs">BSc Computer Science &mdash; UWI</option>
+        <option value="national-id">National ID &mdash; MDT</option>
+      </select>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem" id="renderGrid">
+
+    <!-- Mobile Wallet Preview -->
+    <div class="card" style="padding:0;overflow:hidden">
+      <div style="padding:0.6rem 1rem;background:var(--bg-secondary);border-bottom:1px solid var(--border);font-weight:600;font-size:0.82rem">Mobile Wallet</div>
+      <div style="padding:1.25rem" id="preview-wallet">
+        <div style="background:linear-gradient(135deg,var(--color-accent),#1a6b4a);color:#fff;border-radius:12px;padding:1.25rem;font-size:0.85rem">
+          <div style="font-size:0.7rem;opacity:0.8;margin-bottom:0.5rem">VERIFIABLE CREDENTIAL</div>
+          <div style="font-size:1.1rem;font-weight:700" id="wallet-title">BSc Computer Science</div>
+          <div style="margin-top:0.75rem;font-size:0.8rem;opacity:0.9" id="wallet-holder">Kwame Nkrumah-Williams</div>
+          <div style="display:flex;justify-content:space-between;margin-top:1rem;font-size:0.75rem;opacity:0.8">
+            <span id="wallet-issuer">UWI &middot; 2026</span>
+            <span id="wallet-status">&#10003; Verified</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SMS Preview -->
+    <div class="card" style="padding:0;overflow:hidden">
+      <div style="padding:0.6rem 1rem;background:var(--bg-secondary);border-bottom:1px solid var(--border);font-weight:600;font-size:0.82rem">SMS</div>
+      <div style="padding:1.25rem" id="preview-sms">
+        <div style="background:var(--bg-secondary);border-radius:8px;padding:1rem;font-family:monospace;font-size:0.78rem;line-height:1.6;white-space:pre-wrap" id="sms-body">CREDENTIAL VERIFIED
+Type: BSc Computer Science
+Holder: K. Nkrumah-Williams
+Issuer: UWI
+Status: VALID
+Date: 2026-02-14
+Ref: VC-2026-00847
+Verify: https://verify.tt/vc/847</div>
+      </div>
+    </div>
+
+    <!-- Print PDF Preview -->
+    <div class="card" style="padding:0;overflow:hidden">
+      <div style="padding:0.6rem 1rem;background:var(--bg-secondary);border-bottom:1px solid var(--border);font-weight:600;font-size:0.82rem">Print PDF</div>
+      <div style="padding:1.25rem" id="preview-print">
+        <div style="border:2px solid var(--border);border-radius:8px;padding:1.25rem;text-align:center">
+          <div style="font-size:0.7rem;letter-spacing:2px;color:var(--text-tertiary);margin-bottom:0.5rem">REPUBLIC OF TRINIDAD &amp; TOBAGO</div>
+          <div style="font-size:1rem;font-weight:700" id="print-title">BSc Computer Science</div>
+          <div style="font-size:0.82rem;color:var(--text-secondary);margin:0.5rem 0" id="print-holder">Awarded to Kwame Nkrumah-Williams</div>
+          <div style="font-size:0.78rem;color:var(--text-secondary)" id="print-issuer">University of the West Indies &middot; February 2026</div>
+          <div style="margin-top:1rem;padding:0.75rem;background:var(--bg-secondary);border-radius:6px;display:inline-block">
+            <div style="width:80px;height:80px;background:var(--border);border-radius:4px;display:flex;align-items:center;justify-content:center;color:var(--text-tertiary)"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="3" height="3"/><rect x="5" y="5" width="3" height="3"/><rect x="16" y="5" width="3" height="3"/><rect x="5" y="16" width="3" height="3"/></svg></div>
+          </div>
+          <div style="font-size:0.65rem;color:var(--text-tertiary);margin-top:0.5rem" id="print-ref">VC-2026-00847</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- IVR Voice Script Preview -->
+    <div class="card" style="padding:0;overflow:hidden">
+      <div style="padding:0.6rem 1rem;background:var(--bg-secondary);border-bottom:1px solid var(--border);font-weight:600;font-size:0.82rem">IVR Voice Script</div>
+      <div style="padding:1.25rem" id="preview-ivr">
+        <div style="font-size:0.83rem;line-height:1.7;color:var(--text-secondary)" id="ivr-script">
+          <p><em>&ldquo;This is the Trinidad and Tobago Credential Verification Service.&rdquo;</em></p>
+          <p><em>&ldquo;Credential verified. Type: Bachelor of Science in Computer Science. Issued by: University of the West Indies. Holder: K. Nkrumah-Williams. Status: Valid. Issued February 2026.&rdquo;</em></p>
+          <p><em>&ldquo;To repeat, press 1. To verify another credential, press 2. To end, press 9.&rdquo;</em></p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+  {{end}}
+</div>
+
+<script>
+var renderingData = {
+  'bsc-cs': {
+    walletTitle: 'BSc Computer Science',
+    walletHolder: 'Kwame Nkrumah-Williams',
+    walletIssuer: 'UWI \u00b7 2026',
+    walletStatus: '\u2713 Verified',
+    sms: 'CREDENTIAL VERIFIED\nType: BSc Computer Science\nHolder: K. Nkrumah-Williams\nIssuer: UWI\nStatus: VALID\nDate: 2026-02-14\nRef: VC-2026-00847\nVerify: https://verify.tt/vc/847',
+    printTitle: 'BSc Computer Science',
+    printHolder: 'Awarded to Kwame Nkrumah-Williams',
+    printIssuer: 'University of the West Indies \u00b7 February 2026',
+    printRef: 'VC-2026-00847',
+    ivr: '<p><em>\u201cThis is the Trinidad and Tobago Credential Verification Service.\u201d</em></p><p><em>\u201cCredential verified. Type: Bachelor of Science in Computer Science. Issued by: University of the West Indies. Holder: K. Nkrumah-Williams. Status: Valid. Issued February 2026.\u201d</em></p><p><em>\u201cTo repeat, press 1. To verify another credential, press 2. To end, press 9.\u201d</em></p>'
+  },
+  'national-id': {
+    walletTitle: 'National ID Card',
+    walletHolder: 'Kwame Nkrumah-Williams',
+    walletIssuer: 'MDT \u00b7 2025',
+    walletStatus: '\u2713 Verified',
+    sms: 'CREDENTIAL VERIFIED\nType: National ID\nHolder: K. Nkrumah-Williams\nIssuer: MDT\nStatus: VALID\nDate: 2025-11-15\nRef: NID-2025-04412\nVerify: https://verify.tt/nid/4412',
+    printTitle: 'National Identification Card',
+    printHolder: 'Kwame Nkrumah-Williams',
+    printIssuer: 'Ministry of Digital Transformation \u00b7 November 2025',
+    printRef: 'NID-2025-04412',
+    ivr: '<p><em>\u201cThis is the Trinidad and Tobago Credential Verification Service.\u201d</em></p><p><em>\u201cCredential verified. Type: National Identification Card. Issued by: Ministry of Digital Transformation. Holder: K. Nkrumah-Williams. Status: Valid. Issued November 2025.\u201d</em></p><p><em>\u201cTo repeat, press 1. To verify another credential, press 2. To end, press 9.\u201d</em></p>'
+  }
+};
+
+function switchRendering(credId) {
+  var d = renderingData[credId];
+  if (!d) return;
+  document.getElementById('wallet-title').textContent = d.walletTitle;
+  document.getElementById('wallet-holder').textContent = d.walletHolder;
+  document.getElementById('wallet-issuer').textContent = d.walletIssuer;
+  document.getElementById('wallet-status').textContent = d.walletStatus;
+  document.getElementById('sms-body').textContent = d.sms;
+  document.getElementById('print-title').textContent = d.printTitle;
+  document.getElementById('print-holder').textContent = d.printHolder;
+  document.getElementById('print-issuer').textContent = d.printIssuer;
+  document.getElementById('print-ref').textContent = d.printRef;
+  document.getElementById('ivr-script').innerHTML = d.ivr;
+}
+</script>
+{{end}}

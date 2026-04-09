@@ -1,0 +1,82 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Review &amp; Approve</h1><p>Manage onboarding applications from issuers and verifiers. Approve, request changes, or reject.</p></div>
+  <div class="filter-bar" style="margin-bottom:1.5rem">
+    <button class="filter-pill active" onclick="filterApprovals(this,'all')">All</button>
+    <button class="filter-pill" onclick="filterApprovals(this,'pending')">Pending</button>
+    <button class="filter-pill" onclick="filterApprovals(this,'approved')">Approved</button>
+    <button class="filter-pill" onclick="filterApprovals(this,'rejected')">Rejected</button>
+  </div>
+  {{$isReal := and .User (not .User.Demo)}}
+  <div id="approval-list" style="display:flex;flex-direction:column;gap:1rem">
+    {{if $isReal}}
+    <div class="card" style="text-align:center;padding:2rem;color:var(--text-secondary)">
+      <div style="font-size:1.5rem;margin-bottom:0.5rem">&#128203;</div>
+      <p style="font-size:0.9rem;margin-bottom:0.25rem"><strong>No pending approvals</strong></p>
+      <p style="font-size:0.8rem">Onboarding applications from issuers and verifiers will appear here for review once submitted.</p>
+    </div>
+    {{else}}
+    <!-- Pending: Ministry of Health -->
+    <div class="card approval-item" data-status="pending">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:1rem">
+        <div>
+          <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem"><h3 style="font-size:0.95rem;margin:0">Ministry of Health</h3><span class="tag tag-warning" style="font-size:0.6rem">Pending</span><span class="tag" style="font-size:0.6rem">Issuer</span></div>
+          <p style="font-size:0.8rem;color:var(--text-secondary);margin:0">Birth Certificates, Vaccination Records &middot; Schema: <code style="font-size:0.75rem">health-cert-v1</code></p>
+        </div>
+        <span style="font-size:0.75rem;color:var(--text-tertiary)">Submitted 2 days ago</span>
+      </div>
+      <div style="display:flex;gap:1.5rem;margin-bottom:1rem;font-size:0.8rem;color:var(--text-secondary)">
+        <span>&#128202; Sandbox: <strong>12</strong> issuances</span>
+        <span>&#9989; <strong>8</strong> verifications</span>
+        <span>&#10060; <strong>0</strong> errors</span>
+      </div>
+      <div style="display:flex;gap:0.5rem;justify-content:flex-end">
+        <button class="btn btn-primary btn-sm" onclick="this.closest('.card').querySelector('.tag-warning').className='tag tag-accent';this.closest('.card').querySelector('.tag-warning,.tag-accent').textContent='Approved';showToast('Approved','Ministry of Health has been approved as an issuer.')">Approve</button>
+        <button class="btn btn-secondary btn-sm" onclick="showToast('Info Requested','Request for additional information sent to Ministry of Health.')">Request Info</button>
+        <button class="btn btn-secondary btn-sm" style="color:var(--error)" onclick="showToast('Rejected','Application has been rejected.')">Reject</button>
+      </div>
+    </div>
+
+    <!-- Pending: TT Chamber of Commerce -->
+    <div class="card approval-item" data-status="pending">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:1rem">
+        <div>
+          <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem"><h3 style="font-size:0.95rem;margin:0">TT Chamber of Commerce</h3><span class="tag tag-warning" style="font-size:0.6rem">Pending</span><span class="tag" style="font-size:0.6rem">Verifier</span></div>
+          <p style="font-size:0.8rem;color:var(--text-secondary);margin:0">Professional Certificates &middot; Verification of workforce credentials</p>
+        </div>
+        <span style="font-size:0.75rem;color:var(--text-tertiary)">Submitted 5 days ago</span>
+      </div>
+      <div style="display:flex;gap:0.5rem;justify-content:flex-end">
+        <button class="btn btn-primary btn-sm" onclick="showToast('Approved','TT Chamber of Commerce has been approved as a verifier.')">Approve</button>
+        <button class="btn btn-secondary btn-sm" style="color:var(--error)" onclick="showToast('Rejected','Application has been rejected.')">Reject</button>
+      </div>
+    </div>
+
+    <!-- Approved: UWI -->
+    <div class="card approval-item" data-status="approved" style="opacity:0.6">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between">
+        <div>
+          <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem"><h3 style="font-size:0.95rem;margin:0">University of the West Indies</h3><span class="tag tag-accent" style="font-size:0.6rem">Approved</span><span class="tag" style="font-size:0.6rem">Issuer</span></div>
+          <p style="font-size:0.8rem;color:var(--text-secondary);margin:0">Degree Certificates, Professional Certifications &middot; Approved 2026-03-15</p>
+        </div>
+        <span style="font-size:0.75rem;color:var(--text-tertiary)">Completed</span>
+      </div>
+    </div>
+    {{end}}
+  </div>
+</div>
+
+<script>
+function filterApprovals(btn, status) {
+  btn.parentElement.querySelectorAll('.filter-pill').forEach(function(f) { f.classList.remove('active'); });
+  btn.classList.add('active');
+  document.querySelectorAll('.approval-item').forEach(function(item) {
+    if (status === 'all' || item.dataset.status === status) {
+      item.style.display = '';
+    } else {
+      item.style.display = 'none';
+    }
+  });
+}
+</script>
+{{end}}

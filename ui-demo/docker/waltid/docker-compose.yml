@@ -1,0 +1,103 @@
+services:
+  postgres:
+    image: postgres:latest
+    healthcheck:
+      test: ["CMD", "pg_isready", "-q", "-U", "${POSTGRES_USER:-waltid}"]
+      interval: 5s
+      timeout: 1s
+      retries: 5
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-waltid}
+      POSTGRES_USER: ${POSTGRES_USER:-waltid}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-waltid}
+    volumes:
+      - wallet-db:/var/lib/postgresql
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      WALLET_BACKEND_PORT: ${WALTID_WALLET_PORT:-7001}
+      ISSUER_API_PORT: ${WALTID_ISSUER_PORT:-7002}
+      VERIFIER_API_PORT: ${WALTID_VERIFIER_PORT:-7003}
+    ports:
+      - "${WALTID_WALLET_PORT:-7001}:${WALTID_WALLET_PORT:-7001}"
+      - "${WALTID_ISSUER_PORT:-7002}:${WALTID_ISSUER_PORT:-7002}"
+      - "${WALTID_VERIFIER_PORT:-7003}:${WALTID_VERIFIER_PORT:-7003}"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+
+  issuer-api:
+    image: waltid/issuer-api:latest
+    depends_on:
+      - caddy
+    environment:
+      SERVICE_HOST: localhost
+      ISSUER_API_PORT: ${WALTID_ISSUER_PORT:-7002}
+    volumes:
+      - ./issuer-api/config:/waltid-issuer-api/config
+
+  verifier-api:
+    image: waltid/verifier-api:latest
+    depends_on:
+      - caddy
+    environment:
+      SERVICE_HOST: localhost
+      VERIFIER_API_PORT: ${WALTID_VERIFIER_PORT:-7003}
+    volumes:
+      - ./verifier-api/config:/waltid-verifier-api/config
+
+  wallet-api:
+    image: waltid/wallet-api:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+      caddy:
+        condition: service_started
+    environment:
+      SERVICE_HOST: localhost
+      WALLET_BACKEND_PORT: ${WALTID_WALLET_PORT:-7001}
+      DB_NAME: ${POSTGRES_DB:-waltid}
+      DB_USERNAME: ${POSTGRES_USER:-waltid}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-waltid}
+      POSTGRES_DB_HOST: postgres
+      POSTGRES_DB_PORT: 5432
+    extra_hosts:
+      - "localhost:host-gateway"
+    volumes:
+      - ./wallet-api/config:/waltid-wallet-api/config
+      - ./wallet-api/data:/waltid-wallet-api/data
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:latest
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HTTP_PORT: ${KEYCLOAK_PORT:-8180}
+    command: start-dev --http-port=${KEYCLOAK_PORT:-8180} --import-realm
+    ports:
+      - "${KEYCLOAK_PORT:-8180}:${KEYCLOAK_PORT:-8180}"
+    volumes:
+      - ./keycloak-realm.json:/opt/keycloak/data/import/vcplatform-realm.json
+
+  wso2is:
+    image: wso2/wso2is:7.0.0
+    ports:
+      - "${WSO2_PORT:-9443}:9443"
+    environment:
+      JAVA_OPTS: "-Xms512m -Xmx1024m"
+
+  libretranslate:
+    image: libretranslate/libretranslate:latest
+    ports:
+      - "${LIBRETRANSLATE_PORT:-5000}:5000"
+    environment:
+      LT_LOAD_ONLY: "en,es,fr,pt,hi,ar,zh,de"
+    volumes:
+      - lt-data:/home/libretranslate/.local
+
+volumes:
+  wallet-db:
+  lt-data:

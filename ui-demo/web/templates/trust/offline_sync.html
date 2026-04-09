@@ -1,0 +1,84 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Offline Sync Manager</h1><p>Manage cached trust data for offline credential verification.</p></div>
+
+  {{$isReal := and .User (not .User.Demo)}}
+
+  <!-- Cached Trust Data -->
+  <div class="card">
+    <h3 style="font-size:0.95rem;margin-bottom:1rem">Cached Trust Data</h3>
+    {{if $isReal}}
+    <div style="text-align:center;padding:2rem;color:var(--text-tertiary);font-size:0.85rem">No cached trust data yet. Configure sync settings below and click <strong>Sync Now</strong> to populate.</div>
+    {{else}}
+    <div style="display:flex;flex-direction:column;gap:0.5rem">
+
+      <div style="display:flex;align-items:center;gap:0.75rem;padding:0.65rem 0;border-bottom:1px solid var(--border)">
+        <span class="sync-dot" style="width:8px;height:8px;border-radius:50%;background:var(--color-accent);flex-shrink:0"></span>
+        <div style="flex:1"><strong style="font-size:0.88rem">Issuer Public Keys</strong><div style="font-size:0.75rem;color:var(--text-secondary)">7 issuers cached</div></div>
+        <span style="font-size:0.78rem;color:var(--text-secondary)">Updated 2m ago</span>
+        <span class="tag tag-accent" style="font-size:0.7rem">Fresh</span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:0.75rem;padding:0.65rem 0;border-bottom:1px solid var(--border)">
+        <span class="sync-dot" style="width:8px;height:8px;border-radius:50%;background:var(--color-accent);flex-shrink:0"></span>
+        <div style="flex:1"><strong style="font-size:0.88rem">Revocation Status Lists</strong><div style="font-size:0.75rem;color:var(--text-secondary)">7 lists cached</div></div>
+        <span style="font-size:0.78rem;color:var(--text-secondary)">Updated 2m ago</span>
+        <span class="tag tag-accent" style="font-size:0.7rem">Fresh</span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:0.75rem;padding:0.65rem 0;border-bottom:1px solid var(--border)">
+        <span class="sync-dot" style="width:8px;height:8px;border-radius:50%;background:var(--color-accent);flex-shrink:0"></span>
+        <div style="flex:1"><strong style="font-size:0.88rem">Credential Schemas</strong><div style="font-size:0.75rem;color:var(--text-secondary)">6 schemas cached</div></div>
+        <span style="font-size:0.78rem;color:var(--text-secondary)">Updated 5m ago</span>
+        <span class="tag tag-accent" style="font-size:0.7rem">Fresh</span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:0.75rem;padding:0.65rem 0;border-bottom:1px solid var(--border)">
+        <span class="sync-dot" style="width:8px;height:8px;border-radius:50%;background:var(--color-warning);flex-shrink:0"></span>
+        <div style="flex:1"><strong style="font-size:0.88rem">Trust Registry Snapshot</strong><div style="font-size:0.75rem;color:var(--text-secondary)">Full registry mirror</div></div>
+        <span style="font-size:0.78rem;color:var(--text-secondary)">Updated 25h ago</span>
+        <span class="tag tag-warning" style="font-size:0.7rem">Stale</span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:0.75rem;padding:0.65rem 0">
+        <span class="sync-dot" style="width:8px;height:8px;border-radius:50%;background:var(--text-tertiary);flex-shrink:0"></span>
+        <div style="flex:1"><strong style="font-size:0.88rem">X.509 Root Certificates</strong><div style="font-size:0.75rem;color:var(--text-secondary)">TLS trust anchors</div></div>
+        <span style="font-size:0.78rem;color:var(--text-secondary)">&mdash;</span>
+        <span class="tag" style="background:var(--bg-secondary);color:var(--text-tertiary);font-size:0.7rem">Not Cached</span>
+      </div>
+
+    </div>
+    {{end}}
+  </div>
+
+  <!-- Sync Settings -->
+  <div class="card" style="margin-top:1.5rem">
+    <h3 style="font-size:0.95rem;margin-bottom:1rem">Sync Settings</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+      <div class="form-group">
+        <label class="form-label">Sync Interval</label>
+        <select class="form-input">
+          <option>Every 5 minutes</option>
+          <option selected>Every 15 minutes</option>
+          <option>Every 30 minutes</option>
+          <option>Every hour</option>
+          <option>Manual only</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Staleness Threshold</label>
+        <select class="form-input">
+          <option>1 hour</option>
+          <option>6 hours</option>
+          <option selected>24 hours</option>
+          <option>7 days</option>
+        </select>
+      </div>
+    </div>
+    <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:0.5rem">
+      <button class="btn btn-secondary btn-sm" onclick="showToast('Syncing','Full trust data sync initiated...')">Sync Now</button>
+      <button class="btn btn-primary btn-sm" onclick="showToast('Saved','Sync settings updated.')">Save Settings</button>
+    </div>
+  </div>
+</div>
+{{end}}

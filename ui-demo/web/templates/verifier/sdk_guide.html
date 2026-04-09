@@ -1,0 +1,82 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><div style="display:flex;align-items:center;justify-content:space-between"><div><h1>SDK Integration Guide</h1><p>Quick-start code samples and API reference for verifier integration.</p></div></div></div>
+
+  <!-- Quick Start -->
+  <div class="card" style="margin-bottom:1.25rem">
+    <h3 style="font-size:0.9rem;margin-bottom:0.75rem">Quick Start</h3>
+    <div style="display:flex;gap:0.5rem;margin-bottom:1rem">
+      <button class="btn btn-sm btn-primary code-tab-btn" onclick="switchCodeTab(this,'javascript')">JavaScript</button>
+      <button class="btn btn-sm btn-ghost code-tab-btn" onclick="switchCodeTab(this,'python')">Python</button>
+      <button class="btn btn-sm btn-ghost code-tab-btn" onclick="switchCodeTab(this,'curl')">cURL</button>
+      <button class="btn btn-sm btn-ghost code-tab-btn" onclick="switchCodeTab(this,'go')">Go</button>
+    </div>
+    <pre id="code-sample" style="background:var(--bg-surface-alt);border-radius:var(--radius-md);padding:1rem 1.25rem;font-size:0.78rem;font-family:var(--font-mono);overflow-x:auto;line-height:1.6;color:var(--text-primary)"></pre>
+  </div>
+
+  <!-- API Endpoints -->
+  <div class="card" style="margin-bottom:1.25rem">
+    <h3 style="font-size:0.9rem;margin-bottom:1rem">API Endpoints</h3>
+    <div style="display:flex;flex-direction:column;gap:0">
+
+      <div style="display:flex;align-items:center;gap:1rem;padding:0.7rem 0;border-bottom:1px solid var(--border)">
+        <span class="tag tag-accent" style="font-size:0.65rem;min-width:48px;text-align:center">POST</span>
+        <code style="font-size:0.78rem;flex:1">/verify</code>
+        <span style="font-size:0.78rem;color:var(--text-secondary)">Submit a credential or VP token for verification</span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:1rem;padding:0.7rem 0;border-bottom:1px solid var(--border)">
+        <span class="tag tag-accent" style="font-size:0.65rem;min-width:48px;text-align:center">POST</span>
+        <code style="font-size:0.78rem;flex:1">/verify/presentation</code>
+        <span style="font-size:0.78rem;color:var(--text-secondary)">Verify a Verifiable Presentation (VP)</span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:1rem;padding:0.7rem 0;border-bottom:1px solid var(--border)">
+        <span class="tag tag-info" style="font-size:0.65rem;min-width:48px;text-align:center">GET</span>
+        <code style="font-size:0.78rem;flex:1">/request/{id}</code>
+        <span style="font-size:0.78rem;color:var(--text-secondary)">Retrieve a verification request by ID</span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:1rem;padding:0.7rem 0">
+        <span class="tag tag-info" style="font-size:0.65rem;min-width:48px;text-align:center">GET</span>
+        <code style="font-size:0.78rem;flex:1">/verify/{id}/result</code>
+        <span style="font-size:0.78rem;color:var(--text-secondary)">Get the result of a completed verification</span>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Test Endpoint -->
+  <div class="card">
+    <h3 style="font-size:0.9rem;margin-bottom:0.75rem">Test Endpoint</h3>
+    <div style="display:flex;gap:0.5rem">
+      <input type="text" class="form-input" readonly value="https://api.employtt.gov.tt/v1/verify" style="flex:1;font-size:0.78rem;font-family:var(--font-mono)">
+      <button class="btn btn-primary btn-sm" onclick="showToast('Response','200 OK — verification service is healthy.')">Test</button>
+    </div>
+  </div>
+</div>
+
+<script>
+var CODE_SAMPLES = {
+  javascript: 'const response = await fetch("https://api.employtt.gov.tt/v1/verify", {\n  method: "POST",\n  headers: {\n    "Authorization": "Bearer YOUR_API_KEY",\n    "Content-Type": "application/json"\n  },\n  body: JSON.stringify({\n    credential: vpToken,\n    purpose: "employment-verification",\n    trustedIssuers: ["did:web:uwi.edu:issuer"]\n  })\n});\n\nconst result = await response.json();\nconsole.log(result.overall); // "pass" | "fail"',
+  python: 'import requests\n\nresponse = requests.post(\n    "https://api.employtt.gov.tt/v1/verify",\n    headers={\n        "Authorization": "Bearer YOUR_API_KEY",\n        "Content-Type": "application/json"\n    },\n    json={\n        "credential": vp_token,\n        "purpose": "employment-verification",\n        "trustedIssuers": ["did:web:uwi.edu:issuer"]\n    }\n)\n\nresult = response.json()\nprint(result["overall"])  # "pass" | "fail"',
+  curl: 'curl -X POST https://api.employtt.gov.tt/v1/verify \\\n  -H "Authorization: Bearer YOUR_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d \'{\n    "credential": "eyJhbGciOiJFZERTQSIs...",\n    "purpose": "employment-verification",\n    "trustedIssuers": ["did:web:uwi.edu:issuer"]\n  }\'',
+  go: 'payload := map[string]interface{}{\n    "credential":     vpToken,\n    "purpose":        "employment-verification",\n    "trustedIssuers": []string{"did:web:uwi.edu:issuer"},\n}\nbody, _ := json.Marshal(payload)\n\nreq, _ := http.NewRequest("POST",\n    "https://api.employtt.gov.tt/v1/verify",\n    bytes.NewReader(body))\nreq.Header.Set("Authorization", "Bearer YOUR_API_KEY")\nreq.Header.Set("Content-Type", "application/json")\n\nresp, _ := http.DefaultClient.Do(req)\ndefer resp.Body.Close()\n\nvar result map[string]interface{}\njson.NewDecoder(resp.Body).Decode(&result)\nfmt.Println(result["overall"]) // "pass" | "fail"'
+};
+
+function switchCodeTab(btn, lang) {
+  var btns = document.querySelectorAll('.code-tab-btn');
+  for (var i = 0; i < btns.length; i++) {
+    btns[i].className = 'btn btn-sm btn-ghost code-tab-btn';
+  }
+  btn.className = 'btn btn-sm btn-primary code-tab-btn';
+  document.getElementById('code-sample').textContent = CODE_SAMPLES[lang] || '';
+}
+
+// Initialize with JavaScript sample
+(function() {
+  var el = document.getElementById('code-sample');
+  if (el) el.textContent = CODE_SAMPLES['javascript'];
+})();
+</script>
+{{end}}

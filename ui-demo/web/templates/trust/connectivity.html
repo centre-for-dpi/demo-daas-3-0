@@ -1,0 +1,129 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Connectivity Health</h1><p>Monitor channel availability, latency, and failure rates across all delivery channels.</p></div>
+
+  {{$isReal := and .User (not .User.Demo)}}
+  {{if $isReal}}
+  <!-- Backend connectivity status (real) -->
+  <div class="stats-row">
+    <div class="card stat-card"><div class="stat-number" style="font-size:1.1rem">Walt.id</div><div class="stat-label">Backend</div></div>
+    <div class="card stat-card"><div class="stat-number" style="color:var(--color-accent)">Connected</div><div class="stat-label">Status</div></div>
+    <div class="card stat-card"><div class="stat-number">1</div><div class="stat-label">Channels</div></div>
+    <div class="card stat-card"><div class="stat-number">--</div><div class="stat-label">Avg Latency</div></div>
+  </div>
+
+  <div class="card" style="padding:0;overflow-x:auto">
+    <table class="data-table">
+      <thead>
+        <tr><th>Channel</th><th>Availability</th><th>Latency</th><th>Failure Rate</th><th>Last Check</th><th>Status</th><th>Fallback</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Walt.id Backend (OID4VC)</strong></td>
+          <td>--</td>
+          <td>--</td>
+          <td>--</td>
+          <td>--</td>
+          <td><span class="tag tag-accent">Connected</span></td>
+          <td>--</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card" style="margin-top:1.5rem">
+    <h3 style="font-size:0.95rem;margin-bottom:1rem">Backend Endpoints</h3>
+    <div style="display:flex;flex-direction:column;gap:0.75rem;font-size:0.85rem">
+      {{$data := .Data}}
+      <div style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0;border-bottom:1px solid var(--border)">
+        <span style="width:8px;height:8px;border-radius:50%;background:var(--color-accent);display:inline-block;flex-shrink:0"></span>
+        <span style="min-width:120px;font-weight:500">Wallet API</span>
+        <code style="font-size:0.78rem;color:var(--text-secondary)">{{if and $data (index $data "walletURL")}}{{index $data "walletURL"}}{{else}}Not configured{{end}}</code>
+      </div>
+      <div style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0;border-bottom:1px solid var(--border)">
+        <span style="width:8px;height:8px;border-radius:50%;background:var(--color-accent);display:inline-block;flex-shrink:0"></span>
+        <span style="min-width:120px;font-weight:500">Issuer API</span>
+        <code style="font-size:0.78rem;color:var(--text-secondary)">{{if and $data (index $data "issuerURL")}}{{index $data "issuerURL"}}{{else}}Not configured{{end}}</code>
+      </div>
+      <div style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0">
+        <span style="width:8px;height:8px;border-radius:50%;background:var(--color-accent);display:inline-block;flex-shrink:0"></span>
+        <span style="min-width:120px;font-weight:500">Verifier API</span>
+        <code style="font-size:0.78rem;color:var(--text-secondary)">{{if and $data (index $data "verifierURL")}}{{index $data "verifierURL"}}{{else}}Not configured{{end}}</code>
+      </div>
+    </div>
+  </div>
+  {{else}}
+  <!-- Stats (demo) -->
+  <div class="stats-row">
+    <div class="card stat-card"><div class="stat-number">6</div><div class="stat-label">Channels</div></div>
+    <div class="card stat-card"><div class="stat-number" style="color:var(--color-accent)">99.2%</div><div class="stat-label">Availability</div></div>
+    <div class="card stat-card"><div class="stat-number">340ms</div><div class="stat-label">Avg Latency</div></div>
+    <div class="card stat-card"><div class="stat-number" style="color:var(--color-warning)">0.8%</div><div class="stat-label">Failure Rate</div></div>
+  </div>
+
+  <div class="card" style="padding:0;overflow-x:auto">
+    <table class="data-table">
+      <thead>
+        <tr><th>Channel</th><th>Availability</th><th>Latency</th><th>Failure Rate</th><th>Last Check</th><th>Status</th><th>Fallback</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Mobile Wallet</strong></td>
+          <td>99.8%</td>
+          <td>120ms</td>
+          <td>0.2%</td>
+          <td>30s ago</td>
+          <td><span class="tag tag-accent">Healthy</span></td>
+          <td>SMS</td>
+        </tr>
+        <tr>
+          <td><strong>SMS Gateway</strong></td>
+          <td>99.5%</td>
+          <td>280ms</td>
+          <td>0.5%</td>
+          <td>1m ago</td>
+          <td><span class="tag tag-accent">Healthy</span></td>
+          <td>USSD</td>
+        </tr>
+        <tr>
+          <td><strong>USSD</strong></td>
+          <td>99.1%</td>
+          <td>450ms</td>
+          <td>0.9%</td>
+          <td>2m ago</td>
+          <td><span class="tag tag-accent">Healthy</span></td>
+          <td>IVR</td>
+        </tr>
+        <tr>
+          <td><strong>IVR Voice</strong></td>
+          <td>96.3%</td>
+          <td>890ms</td>
+          <td>3.7%</td>
+          <td>5m ago</td>
+          <td><span class="tag tag-warning">Degraded</span></td>
+          <td>SMS</td>
+        </tr>
+        <tr>
+          <td><strong>Bluetooth / NFC</strong></td>
+          <td>99.9%</td>
+          <td>45ms</td>
+          <td>0.1%</td>
+          <td>15s ago</td>
+          <td><span class="tag tag-accent">Healthy</span></td>
+          <td>QR Code</td>
+        </tr>
+        <tr>
+          <td><strong>Print &amp; Scan QR</strong></td>
+          <td>100%</td>
+          <td>&mdash;</td>
+          <td>0%</td>
+          <td>&mdash;</td>
+          <td><span class="tag tag-accent" style="background:var(--bg-secondary);color:var(--text-secondary)">Always On</span></td>
+          <td>&mdash;</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  {{end}}
+</div>
+{{end}}

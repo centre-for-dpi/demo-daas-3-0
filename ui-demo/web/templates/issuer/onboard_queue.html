@@ -1,0 +1,46 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><div style="display:flex;align-items:center;justify-content:space-between"><div><h1>Onboarding Queue</h1><p>Pending, approved, and rejected issuer applications.</p></div><button class="btn btn-primary btn-sm" hx-get="/portal/issuer/onboard-form" hx-target="#main-content" hx-push-url="true">+ New Registration</button></div></div>
+  <div class="filter-bar">
+    <button class="filter-pill active" onclick="filterTable(this,'onboard-tbody','all')">All</button>
+    <button class="filter-pill" onclick="filterTable(this,'onboard-tbody','Pending')">Pending</button>
+    <button class="filter-pill" onclick="filterTable(this,'onboard-tbody','Approved')">Approved</button>
+    <button class="filter-pill" onclick="filterTable(this,'onboard-tbody','Rejected')">Rejected</button>
+    <input class="filter-search" placeholder="Search issuers...">
+  </div>
+  {{$isReal := and .User (not .User.Demo)}}
+  <div class="card" style="overflow-x:auto">
+    <table class="data-table">
+      <thead><tr><th>Organization</th><th>Submitted</th><th>Jurisdiction</th><th>Workflow</th><th>Status</th><th></th></tr></thead>
+      <tbody id="onboard-tbody">
+        {{if $isReal}}
+        <!-- Real user: no onboarding queue backend yet -->
+        <tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--text-tertiary);font-size:0.85rem">No onboarding applications yet. Click <strong>+ New Registration</strong> to submit the first one.</td></tr>
+        {{else}}
+        <!-- Demo data -->
+        <tr data-status="Pending"><td style="font-weight:500">Ministry of Agriculture</td><td style="font-size:0.78rem;color:var(--text-tertiary)">2026-04-07</td><td>Trinidad and Tobago</td><td>Manual</td><td><span class="tag tag-warning">Pending</span></td><td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem" hx-get="/portal/issuer/onboard-form" hx-target="#main-content" hx-push-url="true" onclick="showToast('Reviewing','Loaded Ministry of Agriculture application.')">Review</button></td></tr>
+        <tr data-status="Approved"><td style="font-weight:500">University of the West Indies</td><td style="font-size:0.78rem;color:var(--text-tertiary)">2026-03-15</td><td>Trinidad and Tobago</td><td>Hybrid</td><td><span class="tag tag-accent">Approved</span></td><td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem" hx-get="/portal/issuer/did-keys" hx-target="#main-content" hx-push-url="true">View</button></td></tr>
+        <tr data-status="Approved"><td style="font-weight:500">University of Trinidad &amp; Tobago</td><td style="font-size:0.78rem;color:var(--text-tertiary)">2026-03-12</td><td>Trinidad and Tobago</td><td>Auto</td><td><span class="tag tag-accent">Approved</span></td><td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem" hx-get="/portal/issuer/did-keys" hx-target="#main-content" hx-push-url="true">View</button></td></tr>
+        <tr data-status="Approved"><td style="font-weight:500">WeLearnTT</td><td style="font-size:0.78rem;color:var(--text-tertiary)">2026-03-10</td><td>Trinidad and Tobago</td><td>Manual</td><td><span class="tag tag-accent">Approved</span></td><td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem" hx-get="/portal/issuer/did-keys" hx-target="#main-content" hx-push-url="true">View</button></td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+function filterTable(btn, tbodyId, status) {
+  btn.parentElement.querySelectorAll('.filter-pill').forEach(function(f) { f.classList.remove('active'); });
+  btn.classList.add('active');
+  var tbody = document.getElementById(tbodyId);
+  if (!tbody) return;
+  tbody.querySelectorAll('tr').forEach(function(row) {
+    if (status === 'all' || row.dataset.status === status) {
+      row.style.display = '';
+    } else {
+      row.style.display = 'none';
+    }
+  });
+}
+</script>
+{{end}}

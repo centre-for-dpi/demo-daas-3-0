@@ -1,0 +1,97 @@
+{{define "chatbot"}}
+<button class="chatbot-trigger" id="chatbot-trigger" onclick="toggleChatbot()" title="Open assistant">&#128172;</button>
+<div class="chatbot-panel" id="chatbot-panel">
+  <div class="chatbot-header">
+    <div class="chatbot-header-info">
+      <div class="chatbot-avatar">VC</div>
+      <div class="chatbot-header-text">
+        <h3>VC Assistant</h3>
+        <p>Explore &middot; Decide &middot; Generate</p>
+      </div>
+    </div>
+    <button class="panel-close" onclick="toggleChatbot()">&#10005;</button>
+  </div>
+  <div class="chatbot-messages" id="chat-messages">
+    <div class="chat-msg bot">
+      Welcome. I can help you understand verifiable credentials, explore the platform, or generate documents for your team. What brings you here today?
+      <div class="chat-suggestions">
+        <button class="chat-suggestion" onclick="sendSuggestion(this)">What are VCs?</button>
+        <button class="chat-suggestion" onclick="sendSuggestion(this)">Help me choose a tier</button>
+        <button class="chat-suggestion" onclick="sendSuggestion(this)">Generate a pitch deck</button>
+        <button class="chat-suggestion" onclick="sendSuggestion(this)">Technical scope doc</button>
+      </div>
+    </div>
+  </div>
+  <div class="chatbot-input">
+    <input type="text" id="chat-input" placeholder="Ask anything about VCs..." onkeydown="if(event.key==='Enter')sendChat()">
+    <button class="chat-send" onclick="sendChat()">&#8594;</button>
+  </div>
+</div>
+
+<script>
+function toggleChatbot() {
+  var panel = document.getElementById('chatbot-panel');
+  var trigger = document.getElementById('chatbot-trigger');
+  panel.classList.toggle('open');
+  trigger.style.display = panel.classList.contains('open') ? 'none' : 'flex';
+}
+
+function openChatbot() {
+  var panel = document.getElementById('chatbot-panel');
+  var trigger = document.getElementById('chatbot-trigger');
+  panel.classList.add('open');
+  trigger.style.display = 'none';
+}
+
+function sendChat() {
+  var input = document.getElementById('chat-input');
+  var text = input.value.trim();
+  if (!text) return;
+
+  addChatMessage(text, 'user');
+  input.value = '';
+
+  setTimeout(function() {
+    var t = text.toLowerCase();
+
+    if (t.indexOf('pitch') >= 0 || t.indexOf('proposal') >= 0 || t.indexOf('brief') >= 0 || t.indexOf('adoption') >= 0) {
+      addChatMessage("I'll route this to the <strong>Operations & Program Management Agent</strong>. It sounds like you need a document for decision-makers. Let me gather some details \u2014 which country or region is this for, and what's the primary use case (identity, education, land, health)?", 'bot');
+    } else if (t.indexOf('technical') >= 0 || t.indexOf('scope') >= 0 || t.indexOf('spec') >= 0 || t.indexOf('integration') >= 0 || t.indexOf('architecture') >= 0) {
+      addChatMessage("I'll route this to the <strong>Technical Architect Agent</strong>. To generate the right document, I need to know: which components are in scope (issuance, verification, store, trust infra), and which DPG stack are you evaluating?", 'bot');
+    } else if (t.indexOf('tier') >= 0 || t.indexOf('package') >= 0 || t.indexOf('choose') >= 0 || t.indexOf('pricing') >= 0) {
+      addChatMessage("Let's figure out the right tier. A few questions: How many issuers will you onboard in the first 6 months? Do you need a mobile wallet, or is web-only sufficient? Do you require offline verification or cross-border interoperability?", 'bot');
+    } else if (t.indexOf('what are') >= 0 || t.indexOf('explain') >= 0 || t.indexOf('how do') >= 0) {
+      addChatMessage("Great question. Verifiable credentials are cryptographically signed digital documents \u2014 like a degree, ID, or land certificate \u2014 that the holder controls and any verifier can check instantly. Want me to walk you through the full explainer journey, or focus on a specific sector?", 'bot');
+    } else {
+      addChatMessage("I can help with that. To give you the best guidance, could you tell me: are you looking for <strong>strategic/program material</strong> (proposals, briefs, pitch decks) or <strong>technical guidance</strong> (specs, architecture advice, integration docs)?", 'bot');
+    }
+  }, 600);
+}
+
+function sendSuggestion(btn) {
+  var text = btn.textContent;
+  addChatMessage(text, 'user');
+
+  setTimeout(function() {
+    if (text.indexOf('What are') >= 0) {
+      addChatMessage("Verifiable credentials are cryptographically signed digital documents that prove themselves \u2014 no phone calls to the issuer, no office visits, no waiting. The holder controls the data and chooses what to share. Want me to take you through the <a href='/explainer'>interactive explainer</a>?", 'bot');
+    } else if (text.indexOf('tier') >= 0) {
+      addChatMessage("Let's find the right fit. How many credential issuers will your deployment support? And do your holders need a mobile wallet, or is web-based access sufficient for the first phase? You can also <a href='/tiers'>browse the tiers directly</a>.", 'bot');
+    } else if (text.indexOf('pitch') >= 0) {
+      addChatMessage("I'll route this to the <strong>Operations Agent</strong>. I need three things: the target country, the primary use case (education, identity, land, health), and the audience (minister, funder, inter-departmental). I'll generate a tailored pitch deck. See <a href='/agent-output'>generated documents</a>.", 'bot');
+    } else if (text.indexOf('Technical') >= 0) {
+      addChatMessage("I'll route this to the <strong>Technical Architect Agent</strong>. Tell me: which components are in scope (issuance, verification, store, trust infrastructure, interoperability), and any DPG stack preferences (Inji, Credebl, Walt.id, Quark.id)? See <a href='/agent-output'>generated documents</a>.", 'bot');
+    }
+  }, 600);
+}
+
+function addChatMessage(text, type) {
+  var container = document.getElementById('chat-messages');
+  var msg = document.createElement('div');
+  msg.className = 'chat-msg ' + type;
+  msg.innerHTML = text;
+  container.appendChild(msg);
+  container.scrollTop = container.scrollHeight;
+}
+</script>
+{{end}}

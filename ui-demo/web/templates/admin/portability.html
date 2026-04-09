@@ -1,0 +1,47 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Data Portability Console</h1><p>Export and import ecosystem data for backup, migration, or regulatory compliance.</p></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem">
+    <!-- Export -->
+    <div class="card">
+      <h3 style="margin-bottom:1rem;font-size:0.9rem">Export</h3>
+      <div class="form-group"><label class="form-label">Export Scope</label><select class="form-select"><option>Full Ecosystem</option><option>Single Issuer</option><option>Date Range</option><option>Schema-specific</option></select></div>
+      <div class="form-group"><label class="form-label">Format</label><select class="form-select"><option>JSON-LD (W3C Standard)</option><option>CSV</option><option>SQL Dump</option><option>Encrypted Archive (.enc)</option></select></div>
+      <div class="form-group" style="margin-bottom:0">
+        <label class="form-label">Include</label>
+        <div style="display:flex;flex-direction:column;gap:0.5rem;font-size:0.83rem">
+          <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer"><input type="checkbox" checked style="accent-color:var(--accent)"> Credential data</label>
+          <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer"><input type="checkbox" checked style="accent-color:var(--accent)"> Schemas</label>
+          <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer"><input type="checkbox" checked style="accent-color:var(--accent)"> Trust registry</label>
+          <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer"><input type="checkbox" checked style="accent-color:var(--accent)"> Audit trail</label>
+          <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer"><input type="checkbox" style="accent-color:var(--accent)"> User accounts</label>
+        </div>
+      </div>
+      <div style="margin-top:1.25rem">
+        {{$isReal := and .User (not .User.Demo)}}
+        {{if $isReal}}
+        <button class="btn btn-primary btn-sm" onclick="window.open('/api/wallet/export','_blank');showToast('Export','Opening credential export from the wallet API.')">Export from Wallet API</button>
+        <div style="margin-top:0.5rem;font-size:0.78rem;color:var(--text-secondary)">Exports credential data from the Walt.id wallet via <code>/api/wallet/export</code>.</div>
+        {{else}}
+        <button class="btn btn-primary btn-sm" onclick="showToast('Export Started','Your export is being prepared. You will be notified when the download is ready.')">Start Export</button>
+        {{end}}
+      </div>
+    </div>
+
+    <!-- Import -->
+    <div class="card">
+      <h3 style="margin-bottom:1rem;font-size:0.9rem">Import</h3>
+      <div style="border:2px dashed var(--border);border-radius:var(--radius-md);padding:2.5rem 1.5rem;text-align:center;margin-bottom:1rem;cursor:pointer" onclick="showToast('Upload','File picker would open here.')">
+        <div style="font-size:2rem;margin-bottom:0.5rem;color:var(--text-tertiary)">&#128194;</div>
+        <div style="font-size:0.88rem;font-weight:500;margin-bottom:0.25rem">Drop files here or click to browse</div>
+        <div style="font-size:0.78rem;color:var(--text-tertiary)">Supports .json, .csv, .sql, .enc files up to 500 MB</div>
+      </div>
+      <div class="form-group"><label class="form-label">Conflict Resolution</label><select class="form-select"><option>Skip duplicates</option><option>Overwrite existing</option><option>Create new version</option><option>Manual review</option></select></div>
+      <div style="background:var(--bg-surface-alt);border-radius:var(--radius-md);padding:0.85rem 1rem;font-size:0.8rem;color:var(--text-secondary);display:flex;align-items:flex-start;gap:0.5rem">
+        <span style="color:var(--accent);font-size:1rem;line-height:1">&#9432;</span>
+        <span><strong>Zero-loss validation:</strong> All imports are validated against schema definitions before committing. A dry-run report will be generated for your review before any data is written.</span>
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}

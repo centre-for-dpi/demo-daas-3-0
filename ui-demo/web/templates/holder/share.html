@@ -1,0 +1,187 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Share Credential</h1><p>Choose how to present or respond to a verification request.</p></div>
+
+  {{$dm := dataMap .Data}}
+  {{$creds := index ($dm) "credentials"}}
+
+  {{if and .User (not .User.Demo) $creds}}
+  <!-- LIVE DATA: label with real credential info -->
+  {{$first := index $creds 0}}
+  {{$pd := $first.ParsedDocument}}
+  {{$typeName := credTypes $pd}}
+  <div style="padding:0.75rem 1rem;background:var(--accent-surface);border-radius:var(--radius-md);margin-bottom:1.25rem;font-size:0.82rem;color:var(--accent)">Sharing credential: <strong>{{$typeName}}</strong> ({{$first.Format}})</div>
+  {{end}}
+
+  <!-- Mode toggle -->
+  <div class="auth-tabs" style="margin-bottom:1.25rem">
+    <button id="mode-present" class="auth-tab active" onclick="switchShareMode(this,'present')">I want to present</button>
+    <button id="mode-respond" class="auth-tab" onclick="switchShareMode(this,'respond')">Respond to a request</button>
+  </div>
+
+  <!-- MODE 1: Present -->
+  <div id="share-mode-present">
+    <div class="card" style="margin-bottom:1rem">
+      <h3 style="font-size:0.9rem;margin-bottom:1rem">Share Channel</h3>
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:0.75rem;margin-bottom:1rem">
+        <div class="card share-option selected" onclick="selectShare(this,'qr')" style="cursor:pointer;text-align:center;padding:0.85rem;border:2px solid var(--color-accent);background:var(--bg-surface-alt)">
+          <div style="margin-bottom:0.25rem"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="3" height="3"/><rect x="5" y="5" width="3" height="3"/><rect x="16" y="5" width="3" height="3"/><rect x="5" y="16" width="3" height="3"/></svg></div>
+          <div style="font-size:0.78rem;font-weight:500">QR Code</div>
+        </div>
+        <div class="card share-option" onclick="selectShare(this,'deeplink')" style="cursor:pointer;text-align:center;padding:0.85rem">
+          <div style="font-size:1.3rem;margin-bottom:0.25rem">&#128279;</div>
+          <div style="font-size:0.78rem;font-weight:500">Deep Link</div>
+        </div>
+        <div class="card share-option" onclick="selectShare(this,'bluetooth')" style="cursor:pointer;text-align:center;padding:0.85rem">
+          <div style="font-size:1.3rem;margin-bottom:0.25rem">&#128246;</div>
+          <div style="font-size:0.78rem;font-weight:500">Bluetooth</div>
+        </div>
+        <div class="card share-option" onclick="selectShare(this,'upload')" style="cursor:pointer;text-align:center;padding:0.85rem">
+          <div style="font-size:1.3rem;margin-bottom:0.25rem">&#128228;</div>
+          <div style="font-size:0.78rem;font-weight:500">File Upload</div>
+        </div>
+        <div class="card share-option" onclick="selectShare(this,'pdf')" style="cursor:pointer;text-align:center;padding:0.85rem">
+          <div style="font-size:1.3rem;margin-bottom:0.25rem">&#128438;</div>
+          <div style="font-size:0.78rem;font-weight:500">Print PDF</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- QR Preview -->
+    <div id="share-preview" class="card" style="text-align:center;padding:2rem">
+      <div id="preview-qr">
+        {{if and .User (not .User.Demo)}}
+        {{if hasItems $creds}}
+        <div class="qr-placeholder" style="margin:0 auto 1rem" id="qr-placeholder"><svg width="100" height="100" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="3" height="3"/><line x1="21" y1="14" x2="21" y2="14.01"/><line x1="21" y1="18" x2="21" y2="21"/><line x1="17" y1="18" x2="17" y2="18.01"/><line x1="14" y1="21" x2="14" y2="21.01"/><line x1="17" y1="21" x2="17" y2="21.01"/><rect x="5" y="5" width="3" height="3"/><rect x="16" y="5" width="3" height="3"/><rect x="5" y="16" width="3" height="3"/></svg></div>
+        <div style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:1rem">Generate a real OID4VP verification request to share your credential.</div>
+        <button class="btn btn-primary btn-sm" id="gen-share-btn" onclick="generateShareLink()">Generate Verification Request</button>
+        <div style="margin-top:0.5rem;font-size:0.72rem;color:var(--text-tertiary)">OID4VP protocol &middot; Expires in 5 minutes</div>
+        {{else}}
+        <div style="font-size:2rem;margin-bottom:0.75rem">&#128274;</div>
+        <div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.75rem">You have no credentials to share yet.</div>
+        <button class="btn btn-primary btn-sm" hx-get="/portal/holder/catalog" hx-target="#main-content" hx-push-url="true">Browse Credential Catalog</button>
+        {{end}}
+        {{else}}
+        <div class="qr-placeholder" style="margin:0 auto 1rem"><svg width="100" height="100" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="3" height="3"/><line x1="21" y1="14" x2="21" y2="14.01"/><line x1="21" y1="18" x2="21" y2="21"/><line x1="17" y1="18" x2="17" y2="18.01"/><line x1="14" y1="21" x2="14" y2="21.01"/><line x1="17" y1="21" x2="17" y2="21.01"/><rect x="5" y="5" width="3" height="3"/><rect x="16" y="5" width="3" height="3"/><rect x="5" y="16" width="3" height="3"/></svg></div>
+        <div style="font-size:0.82rem;color:var(--text-secondary)">Scan this QR code with a verifier app to receive the presentation.</div>
+        <div style="margin-top:0.5rem;font-size:0.72rem;color:var(--text-tertiary)">OID4VP protocol &middot; Expires in 5 minutes</div>
+        {{end}}
+      </div>
+      <div id="preview-deeplink" style="display:none">
+        <div style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:0.75rem">Share this link with the verifier:</div>
+        <code style="font-size:0.75rem;background:var(--bg-surface-alt);padding:0.5rem 1rem;border-radius:var(--radius-md);display:block;word-break:break-all">https://cdpi.tt/vp/present?token=eyJhbGci...Rk9E</code>
+        <button class="btn btn-sm btn-secondary" style="margin-top:0.75rem" onclick="showToast('Copied','Deep link copied to clipboard.')">Copy Link</button>
+      </div>
+      <div id="preview-bluetooth" style="display:none">
+        <div style="font-size:2rem;margin-bottom:0.5rem">&#128246;</div>
+        <div style="font-size:0.82rem;color:var(--text-secondary)">Searching for nearby devices...</div>
+        <div style="font-size:0.72rem;color:var(--text-tertiary);margin-top:0.25rem">Ensure Bluetooth is enabled on both devices.</div>
+      </div>
+      <div id="preview-upload" style="display:none">
+        <div style="font-size:2rem;margin-bottom:0.5rem">&#128228;</div>
+        <div style="font-size:0.82rem;color:var(--text-secondary)">Upload presentation file to a verifier portal.</div>
+        <button class="btn btn-sm btn-secondary" style="margin-top:0.75rem" onclick="showToast('Exported','VP file ready for upload.')">Export VP File</button>
+      </div>
+      <div id="preview-pdf" style="display:none">
+        <div style="font-size:2rem;margin-bottom:0.5rem">&#128438;</div>
+        <div style="font-size:0.82rem;color:var(--text-secondary)">Generate a signed PDF with embedded QR code for offline verification.</div>
+        <button class="btn btn-sm btn-secondary" style="margin-top:0.75rem" onclick="showToast('PDF Generated','Signed PDF downloaded.')">Download PDF</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODE 2: Respond -->
+  <div id="share-mode-respond" style="display:none">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+      <div class="card" style="text-align:center;padding:1.5rem">
+        <div style="font-size:2rem;margin-bottom:0.5rem">&#128247;</div>
+        <h4 style="font-size:0.88rem;margin-bottom:0.3rem">Scan QR Code</h4>
+        <div style="font-size:0.75rem;color:var(--text-secondary)">Point your camera at the verifier's QR code.</div>
+        <button class="btn btn-sm btn-secondary" style="margin-top:0.75rem" onclick="showToast('Camera','Camera access requested. Point at verifier QR.')">Open Camera</button>
+      </div>
+      <div class="card" style="text-align:center;padding:1.5rem">
+        <div style="font-size:2rem;margin-bottom:0.5rem">&#128279;</div>
+        <h4 style="font-size:0.88rem;margin-bottom:0.3rem">Paste Link</h4>
+        <div style="font-size:0.75rem;color:var(--text-secondary)">Paste an OID4VP request URL from the verifier.</div>
+        <input type="text" class="form-input" placeholder="openid4vp://authorize?..." style="font-size:0.75rem;margin-top:0.5rem;width:100%">
+        <button class="btn btn-sm btn-secondary" style="margin-top:0.5rem" onclick="simulateOID4VP()">Parse Request</button>
+      </div>
+    </div>
+
+    <!-- Parsed OID4VP request (hidden by default) -->
+    <div id="oid4vp-parsed" class="card" style="display:none;border-left:3px solid var(--color-accent)">
+      <h4 style="font-size:0.88rem;margin-bottom:0.5rem">Parsed OID4VP Request</h4>
+      <div style="font-size:0.8rem;display:flex;flex-direction:column;gap:0.3rem">
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Verifier</span><span style="font-weight:500">EmployTT</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Protocol</span><span>OID4VP</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Requested</span><span>BSc Degree &mdash; 5 claims</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Expires</span><span>5 minutes</span></div>
+      </div>
+      <div style="margin-top:0.75rem;text-align:right">
+        <button class="btn btn-primary btn-sm" hx-get="/portal/holder/disclosure" hx-target="#main-content" hx-push-url="true">Review Claims &amp; Respond</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function switchShareMode(btn, mode) {
+  document.getElementById('mode-present').classList.remove('active');
+  document.getElementById('mode-respond').classList.remove('active');
+  btn.classList.add('active');
+  document.getElementById('share-mode-present').style.display = mode === 'present' ? '' : 'none';
+  document.getElementById('share-mode-respond').style.display = mode === 'respond' ? '' : 'none';
+}
+
+function selectShare(el, method) {
+  el.parentElement.querySelectorAll('.share-option').forEach(function(c) {
+    c.classList.remove('selected');
+    c.style.border = '';
+    c.style.background = '';
+  });
+  el.classList.add('selected');
+  el.style.border = '2px solid var(--color-accent)';
+  el.style.background = 'var(--bg-surface-alt)';
+  var previews = ['qr','deeplink','bluetooth','upload','pdf'];
+  previews.forEach(function(p) {
+    var el = document.getElementById('preview-' + p);
+    if (el) el.style.display = p === method ? '' : 'none';
+  });
+}
+
+function simulateOID4VP() {
+  document.getElementById('oid4vp-parsed').style.display = '';
+  showToast('Parsed', 'OID4VP request parsed successfully.');
+}
+
+function generateShareLink() {
+  var btn = document.getElementById('gen-share-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Generating...'; }
+  fetch('/api/share/create-session', {method:'POST'})
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.error) {
+        if (btn) { btn.disabled = false; btn.textContent = 'Generate Verification Request'; }
+        showToast('Error', d.error);
+        return;
+      }
+      var preview = document.getElementById('share-preview');
+      var requestUrl = d.request_url || '';
+      var state = d.state || '';
+      preview.innerHTML = '<div style="text-align:center;padding:2rem">' +
+        '<p style="font-size:0.85rem;font-weight:500;margin-bottom:1rem;color:var(--accent)">Verification Request Created</p>' +
+        '<div style="padding:1rem;background:var(--bg-surface-alt);border-radius:var(--radius-md);font-family:var(--font-mono);font-size:0.72rem;word-break:break-all;margin-bottom:1rem;text-align:left">' + requestUrl + '</div>' +
+        '<button class="btn btn-primary btn-sm" onclick="navigator.clipboard.writeText(\'' + requestUrl.replace(/'/g, "\\'") + '\');showToast(\'Copied\',\'Link copied to clipboard\')">Copy Link</button>' +
+        '<span style="display:inline-block;width:0.5rem"></span>' +
+        '<button class="btn btn-secondary btn-sm" onclick="generateShareLink()">Regenerate</button>' +
+        '<p style="font-size:0.72rem;color:var(--text-tertiary);margin-top:0.75rem">State: ' + state + '</p>' +
+        '</div>';
+      showToast('Session Created', 'Verification request generated. Share the link with a verifier.');
+    })
+    .catch(function(e) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Generate Verification Request'; }
+      showToast('Error', e.message);
+    });
+}
+</script>
+{{end}}

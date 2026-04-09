@@ -1,0 +1,43 @@
+{{define "content"}}
+<div class="roles-screen">
+  <div class="container">
+    <div class="section-label">Production Portal</div>
+    <h2>Select your role</h2>
+    <p style="color:var(--text-secondary);margin-bottom:0.5rem;font-size:0.95rem">Each role opens the corresponding workspace. In production, this connects to your live backend.</p>
+
+    <div class="roles-grid">
+      <a class="card card-interactive role-card" href="/login?role=holder">
+        <span class="tag role-default">Default</span>
+        <span class="role-icon">&#128274;</span>
+        <h3>Holder / Wallet</h3>
+        <p>Receive, store, manage, and share your credentials. Control what you reveal.</p>
+        <span class="btn btn-primary btn-sm">Enter wallet</span>
+      </a>
+      <a class="card card-interactive role-card" href="/login?role=issuer">
+        <span class="role-icon">&#127963;</span>
+        <h3>Issuer</h3>
+        <p>Design schemas, issue credentials, manage revocation, onboard into the ecosystem.</p>
+        <span class="btn btn-secondary btn-sm">Enter issuer portal</span>
+      </a>
+      <a class="card card-interactive role-card" href="/login?role=verifier">
+        <span class="role-icon">&#10003;</span>
+        <h3>Verifier</h3>
+        <p>Build verification requests, validate presentations, manage trust policies.</p>
+        <span class="btn btn-secondary btn-sm">Enter verifier portal</span>
+      </a>
+      <a class="card card-interactive role-card" href="/login?role=auditor">
+        <span class="role-icon">&#128202;</span>
+        <h3>Auditor</h3>
+        <p>Read-only access to audit logs, compliance reports, and ecosystem metrics.</p>
+        <span class="btn btn-secondary btn-sm">Enter audit portal</span>
+      </a>
+      <a class="card card-interactive role-card" href="/login?role=admin">
+        <span class="role-icon">&#9881;</span>
+        <h3>Admin</h3>
+        <p>Platform configuration, RBAC, deployment settings, data portability.</p>
+        <span class="btn btn-secondary btn-sm">Enter admin portal</span>
+      </a>
+    </div>
+  </div>
+</div>
+{{end}}

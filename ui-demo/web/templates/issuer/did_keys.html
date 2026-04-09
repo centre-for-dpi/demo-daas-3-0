@@ -1,0 +1,43 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><div style="display:flex;align-items:center;justify-content:space-between"><div><h1>DID &amp; Key Manager</h1><p>Issuer DIDs created during the registration process.</p></div><button class="btn btn-primary btn-sm" hx-get="/portal/issuer/onboard-form" hx-target="#main-content" hx-push-url="true">+ Register New Issuer</button></div></div>
+
+  {{$isReal := and .User (not .User.Demo)}}
+  {{$dm := dataMap .Data}}
+  {{$issuerDIDs := index ($dm) "issuerDIDs"}}
+
+  {{if $isReal}}
+  <div class="card" style="overflow-x:auto">
+    <table class="data-table">
+      <thead><tr><th>Issuer DID</th><th>Key Type</th><th>Created</th><th></th></tr></thead>
+      <tbody>
+        {{if $issuerDIDs}}
+        {{range $issuerDIDs}}
+        <tr>
+          <td><code style="font-size:0.68rem;word-break:break-all">{{.DID}}</code></td>
+          <td>{{.KeyType}}</td>
+          <td style="font-size:0.78rem;color:var(--text-tertiary)">{{.CreatedAt}}</td>
+          <td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem" onclick="navigator.clipboard.writeText('{{.DID}}');showToast('Copied','Issuer DID copied')">Copy</button></td>
+        </tr>
+        {{end}}
+        {{else}}
+        <tr><td colspan="4" style="text-align:center;padding:2rem;color:var(--text-tertiary);font-size:0.85rem">No issuer DIDs yet. <a href="#" hx-get="/portal/issuer/onboard-form" hx-target="#main-content" hx-push-url="true" style="color:var(--accent)">Register a new issuer</a> to generate a DID+key pair.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+
+  {{else}}
+  <!-- DEMO mode -->
+  <div class="card" style="overflow-x:auto">
+    <table class="data-table">
+      <thead><tr><th>Identifier (DID)</th><th>Method</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        <tr><td><code style="font-size:0.75rem">did:web:uwi.edu:issuer</code></td><td>did:web</td><td><span class="tag tag-accent">Primary</span></td><td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem" onclick="showToast('Key Rotated','New key generated.')">Rotate</button></td></tr>
+        <tr><td><code style="font-size:0.75rem">did:key:z6Mkf5r...8Xv</code></td><td>did:key</td><td><span class="tag">Additional</span></td><td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem" onclick="showToast('Promoted','Backup key promoted.')">Promote</button></td></tr>
+      </tbody>
+    </table>
+  </div>
+  {{end}}
+</div>
+{{end}}

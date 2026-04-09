@@ -1,0 +1,43 @@
+{{define "content"}}
+<div class="page">
+  <div class="page-header">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <h1>User Directory</h1>
+        <p>All users across organizations. Search, filter, and manage access.</p>
+      </div>
+      <button class="btn btn-primary btn-sm">+ Add User</button>
+    </div>
+  </div>
+
+  {{$isReal := and .User (not .User.Demo)}}
+
+  <div class="filter-bar">
+    <button class="filter-pill active">All</button>
+    <button class="filter-pill">Super Admin</button>
+    <button class="filter-pill">Issuer Admin</button>
+    <button class="filter-pill">Credential Officer</button>
+    <button class="filter-pill">Auditor</button>
+    <input class="filter-search" type="text" placeholder="Search users...">
+  </div>
+  <div class="card" style="overflow-x:auto">
+    <table class="data-table">
+      <thead><tr><th>Name</th><th>Email</th><th>Organization</th><th>Role</th><th>Status</th><th>Last Active</th><th></th></tr></thead>
+      <tbody>
+        {{if $isReal}}
+        <!-- Real user: show current user only (no user directory API yet) -->
+        <tr><td style="font-weight:500">{{.User.Name}}</td><td><code style="font-size:0.78rem">{{.User.Name}}</code></td><td>&mdash;</td><td><span class="tag tag-accent">{{.User.Role}}</span></td><td><span class="tag tag-accent">Active</span></td><td style="font-size:0.78rem;color:var(--text-tertiary)">Now</td><td></td></tr>
+        {{else}}
+        <!-- Demo data -->
+        <tr><td style="font-weight:500">Mar&iacute;a Gonz&aacute;lez</td><td><code style="font-size:0.78rem">maria.gonzalez@mdt.gov</code></td><td>Min. Digital Transformation</td><td><span class="tag tag-accent">Super Admin</span></td><td><span class="tag tag-accent">Active</span></td><td style="font-size:0.78rem;color:var(--text-tertiary)">Just now</td><td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem">Edit</button></td></tr>
+        <tr><td style="font-weight:500">Dr. Keisha Williams</td><td><code style="font-size:0.78rem">k.williams@uwi.edu</code></td><td>University of the West Indies</td><td><span class="tag tag-info">Issuer Admin</span></td><td><span class="tag tag-accent">Active</span></td><td style="font-size:0.78rem;color:var(--text-tertiary)">1d ago</td><td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem">Edit</button></td></tr>
+        <tr><td style="font-weight:500">Ravi Sharma</td><td><code style="font-size:0.78rem">r.sharma@utt.edu</code></td><td>University of Trinidad &amp; Tobago</td><td><span class="tag tag-info">Issuer Admin</span></td><td><span class="tag tag-accent">Active</span></td><td style="font-size:0.78rem;color:var(--text-tertiary)">3d ago</td><td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem">Edit</button></td></tr>
+        <tr><td style="font-weight:500">Anika Baptiste</td><td><code style="font-size:0.78rem">a.baptiste@uwi.edu</code></td><td>University of the West Indies</td><td><span class="tag">Cred Officer</span></td><td><span class="tag tag-accent">Active</span></td><td style="font-size:0.78rem;color:var(--text-tertiary)">5h ago</td><td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem">Edit</button></td></tr>
+        <tr><td style="font-weight:500">Juana Mendez</td><td><code style="font-size:0.78rem">j.mendez@mg.gov</code></td><td>Ministry of Agriculture</td><td><span class="tag">Cred Officer</span></td><td><span class="tag tag-warning">Pending</span></td><td style="font-size:0.78rem;color:var(--text-tertiary)">Never</td><td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem">Edit</button></td></tr>
+        <tr><td style="font-weight:500">External Auditor</td><td><code style="font-size:0.78rem">audit@oversight.gov</code></td><td>National Audit Office</td><td><span class="tag tag-warning">Auditor</span></td><td><span class="tag tag-accent">Active</span></td><td style="font-size:0.78rem;color:var(--text-tertiary)">1w ago</td><td><button class="btn btn-ghost btn-sm" style="font-size:0.72rem">Edit</button></td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}

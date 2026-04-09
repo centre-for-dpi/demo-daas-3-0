@@ -1,0 +1,68 @@
+{{define "content"}}
+<div class="tiers-screen">
+  <div class="container">
+    <div class="section-label">Tiered Packages</div>
+    <h2>What do you need?</h2>
+    <p style="color:var(--text-secondary);margin-bottom:1rem;font-size:0.95rem">Each tier builds on the previous. Select based on your deployment scope and institutional capacity.</p>
+
+    <div class="tiers-grid">
+      <div class="card tier-card">
+        <div class="tier-inner">
+          <span class="tag" style="margin-bottom:0.75rem">Tier 1</span>
+          <div class="tier-name">Foundation</div>
+          <div class="tier-desc">Single use case, single issuer, basic issuance and verification. Ideal for pilots and proof-of-concept.</div>
+          <ul class="tier-features">
+            <li><span class="tier-check">&#10003;</span> Credential issuance (single + batch)</li>
+            <li><span class="tier-check">&#10003;</span> Basic verification portal</li>
+            <li><span class="tier-check">&#10003;</span> Web eLocker for holders</li>
+            <li><span class="tier-check">&#10003;</span> Single schema/template</li>
+            <li><span class="tier-check">&#10003;</span> QR + PDF output</li>
+            <li class="excluded"><span class="tier-check">—</span> Mobile wallet</li>
+            <li class="excluded"><span class="tier-check">—</span> Multi-issuer onboarding</li>
+            <li class="excluded"><span class="tier-check">—</span> Selective disclosure</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card tier-card recommended">
+        <div class="tier-inner">
+          <span class="tag tag-accent" style="margin-bottom:0.75rem">Tier 2</span>
+          <div class="tier-name">Ecosystem</div>
+          <div class="tier-desc">Multiple use cases, self-service issuer onboarding, mobile wallet, cross-sector deployment.</div>
+          <ul class="tier-features">
+            <li><span class="tier-check">&#10003;</span> Everything in Foundation</li>
+            <li><span class="tier-check">&#10003;</span> Self-service issuer onboarding</li>
+            <li><span class="tier-check">&#10003;</span> Mobile wallet (Inji or compliant)</li>
+            <li><span class="tier-check">&#10003;</span> Multiple schemas/templates</li>
+            <li><span class="tier-check">&#10003;</span> Selective disclosure (SD-JWT)</li>
+            <li><span class="tier-check">&#10003;</span> Trust registry</li>
+            <li><span class="tier-check">&#10003;</span> Analytics dashboards</li>
+            <li class="excluded"><span class="tier-check">—</span> Cross-DPG interoperability</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card tier-card">
+        <div class="tier-inner">
+          <span class="tag" style="margin-bottom:0.75rem">Tier 3</span>
+          <div class="tier-name">National Scale</div>
+          <div class="tier-desc">Full interoperability, multi-DPG bridging, last-mile channels, ZKP, agent-assisted flows.</div>
+          <ul class="tier-features">
+            <li><span class="tier-check">&#10003;</span> Everything in Ecosystem</li>
+            <li><span class="tier-check">&#10003;</span> Cross-DPG adaptor layer</li>
+            <li><span class="tier-check">&#10003;</span> Last-mile channels (SMS, USSD, IVR)</li>
+            <li><span class="tier-check">&#10003;</span> ZKP / AnonCreds support</li>
+            <li><span class="tier-check">&#10003;</span> Agent-assisted verification</li>
+            <li><span class="tier-check">&#10003;</span> Offline verification</li>
+            <li><span class="tier-check">&#10003;</span> Multi-tenancy</li>
+            <li><span class="tier-check">&#10003;</span> Schema harmonization tools</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:2rem;text-align:center">
+      <button class="btn btn-primary" onclick="if(typeof openChatbot==='function')openChatbot();else if(typeof toggleChatbot==='function')toggleChatbot()">Help me choose a tier</button>
+    </div>
+  </div>
+</div>
+{{end}}

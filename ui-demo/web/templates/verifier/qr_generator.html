@@ -1,0 +1,176 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><div style="display:flex;align-items:center;justify-content:space-between"><div><h1>QR / Deep Link Generator</h1><p>Generate a QR code or deep link for the verification request.</p></div><button class="btn btn-secondary btn-sm" hx-get="/portal/verifier/request-builder" hx-target="#main-content" hx-push-url="true">&larr; Edit Request</button></div></div>
+
+  {{$dm := dataMap .Data}}
+  {{$isReal := and .User (not .User.Demo)}}
+
+  {{if $isReal}}
+  <!-- ===== REAL USER: Fetch session data from API ===== -->
+  <div id="qr-loading" style="text-align:center;padding:3rem">
+    <div style="font-size:1.5rem;margin-bottom:0.75rem">&#9203;</div>
+    <div style="font-size:0.88rem;color:var(--text-secondary)">Loading session data...</div>
+  </div>
+
+  <div id="qr-no-state" style="display:none">
+    <div class="card" style="text-align:center;padding:2.5rem">
+      <div style="font-size:2rem;margin-bottom:0.75rem">&#128279;</div>
+      <div style="font-weight:500;font-size:0.95rem;margin-bottom:0.35rem">No verification session</div>
+      <div style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:1.25rem">Use the Request Builder to create a verification session first, or create one now.</div>
+      <button class="btn btn-primary btn-sm" id="qr-create-btn" onclick="qrCreateSession()">Create Session</button>
+      <div id="qr-create-error" style="display:none;margin-top:0.75rem;font-size:0.8rem;color:var(--color-error)"></div>
+    </div>
+  </div>
+
+  <div id="qr-content" style="display:none">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem">
+      <!-- Left column -->
+      <div style="display:flex;flex-direction:column;gap:1.25rem">
+        <div class="card">
+          <h3 style="font-size:0.9rem;margin-bottom:1rem">Session Details</h3>
+          <div style="font-size:0.82rem;display:flex;flex-direction:column;gap:0.5rem">
+            <div style="display:flex;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid var(--border)"><span style="color:var(--text-secondary)">State</span><code id="qr-state-display" style="font-size:0.75rem;word-break:break-all"></code></div>
+            <div style="display:flex;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid var(--border)"><span style="color:var(--text-secondary)">Protocol</span><span style="font-weight:500">OID4VP</span></div>
+            <div style="display:flex;justify-content:space-between;padding:0.4rem 0"><span style="color:var(--text-secondary)">Status</span><span id="qr-status" class="tag tag-accent" style="font-size:0.65rem">Active</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 style="font-size:0.9rem;margin-bottom:0.75rem">Deep Link</h3>
+          <div style="display:flex;gap:0.5rem">
+            <input type="text" class="form-input" id="qr-deeplink" readonly style="flex:1;font-size:0.75rem;font-family:var(--font-mono)">
+            <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('qr-deeplink').value);showToast('Copied','Deep link copied to clipboard.')">Copy</button>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:0.75rem">
+          <button class="btn btn-secondary btn-sm" onclick="var s=document.getElementById('qr-state-display').textContent;if(s)window.location.href='/portal/verifier/proof-detail?state='+encodeURIComponent(s)">Check Verification Result</button>
+        </div>
+      </div>
+
+      <!-- Right column -->
+      <div style="display:flex;flex-direction:column;gap:1.25rem">
+        <div class="card" style="display:flex;flex-direction:column;align-items:center;padding:2rem">
+          <div style="width:220px;height:220px;background:var(--bg-surface-alt);border:2px dashed var(--border);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:0.5rem;margin-bottom:1rem">
+            <span style="font-size:2.5rem">&#9641;</span>
+            <span style="font-size:0.78rem;color:var(--text-secondary);font-weight:500">OID4VP Request QR</span>
+            <span style="font-size:0.68rem;color:var(--text-tertiary)">Scan with wallet app</span>
+          </div>
+          <div style="display:flex;gap:0.75rem">
+            <button class="btn btn-secondary btn-sm" onclick="showToast('Downloaded','QR code SVG downloaded.')">Download SVG</button>
+            <button class="btn btn-ghost btn-sm" onclick="showToast('Print','Opening print dialog...')">Print</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {{else}}
+  <!-- ===== DEMO USER: Static mock data ===== -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem">
+    <!-- Left column -->
+    <div style="display:flex;flex-direction:column;gap:1.25rem">
+      <div class="card">
+        <h3 style="font-size:0.9rem;margin-bottom:1rem">Request Summary</h3>
+        <div style="font-size:0.82rem;display:flex;flex-direction:column;gap:0.5rem">
+          <div style="display:flex;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid var(--border)"><span style="color:var(--text-secondary)">Credential type</span><span style="font-weight:500">Education</span></div>
+          <div style="display:flex;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid var(--border)"><span style="color:var(--text-secondary)">Claims requested</span><span style="font-weight:500">Name, Degree, Major, Graduation Date, Institution</span></div>
+          <div style="display:flex;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid var(--border)"><span style="color:var(--text-secondary)">Trusted issuers</span><span style="font-weight:500">Any</span></div>
+          <div style="display:flex;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid var(--border)"><span style="color:var(--text-secondary)">Expires</span><span style="font-weight:500">15 min</span></div>
+          <div style="display:flex;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid var(--border)"><span style="color:var(--text-secondary)">Purpose</span><span style="font-weight:500">Job application</span></div>
+          <div style="display:flex;justify-content:space-between;padding:0.4rem 0"><span style="color:var(--text-secondary)">ZKP</span><span style="font-weight:500;color:var(--color-accent)">Accepted</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 style="font-size:0.9rem;margin-bottom:0.75rem">Deep Link</h3>
+        <div style="display:flex;gap:0.5rem">
+          <input type="text" class="form-input" readonly value="openid4vp://authorize?client_id=did:web:employtt.gov.tt&request_uri=https://employtt.gov.tt/oid4vp/req/abc123" style="flex:1;font-size:0.75rem;font-family:var(--font-mono)">
+          <button class="btn btn-secondary btn-sm" onclick="showToast('Copied','Deep link copied to clipboard.')">Copy</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right column -->
+    <div style="display:flex;flex-direction:column;gap:1.25rem">
+      <div class="card" style="display:flex;flex-direction:column;align-items:center;padding:2rem">
+        <div style="width:220px;height:220px;background:var(--bg-surface-alt);border:2px dashed var(--border);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:0.5rem;margin-bottom:1rem">
+          <span style="font-size:2.5rem">&#9641;</span>
+          <span style="font-size:0.78rem;color:var(--text-secondary);font-weight:500">OID4VP Request QR</span>
+          <span style="font-size:0.68rem;color:var(--text-tertiary)">220 &times; 220 px</span>
+        </div>
+        <div style="display:flex;gap:0.75rem">
+          <button class="btn btn-secondary btn-sm" onclick="showToast('Downloaded','QR code SVG downloaded.')">Download SVG</button>
+          <button class="btn btn-ghost btn-sm" onclick="showToast('Print','Opening print dialog...')">Print</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  {{end}}
+</div>
+
+<script>
+(function() {
+  var isReal = {{$isReal}};
+  if (!isReal) return;
+
+  var params = new URLSearchParams(window.location.search);
+  var state = params.get('state');
+
+  if (!state) {
+    document.getElementById('qr-loading').style.display = 'none';
+    document.getElementById('qr-no-state').style.display = '';
+    return;
+  }
+
+  // Fetch session data
+  fetch('/api/verifier/session/' + encodeURIComponent(state))
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    document.getElementById('qr-loading').style.display = 'none';
+    if (data.error) {
+      document.getElementById('qr-no-state').style.display = '';
+      return;
+    }
+    document.getElementById('qr-state-display').textContent = data.state || state;
+    document.getElementById('qr-deeplink').value = data.request_url || 'openid4vp://...';
+    document.getElementById('qr-content').style.display = '';
+  })
+  .catch(function() {
+    document.getElementById('qr-loading').style.display = 'none';
+    document.getElementById('qr-no-state').style.display = '';
+  });
+})();
+
+function qrCreateSession() {
+  var btn = document.getElementById('qr-create-btn');
+  btn.disabled = true;
+  btn.textContent = 'Creating...';
+  document.getElementById('qr-create-error').style.display = 'none';
+
+  fetch('/api/verifier/verify', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({credential_types: ['VerifiableCredential'], policies: ['signature']})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    btn.disabled = false;
+    btn.textContent = 'Create Session';
+    if (data.error) {
+      document.getElementById('qr-create-error').style.display = '';
+      document.getElementById('qr-create-error').textContent = data.error;
+      return;
+    }
+    // Reload page with state
+    window.location.href = '/portal/verifier/qr-generator?state=' + encodeURIComponent(data.state || '');
+  })
+  .catch(function(err) {
+    btn.disabled = false;
+    btn.textContent = 'Create Session';
+    document.getElementById('qr-create-error').style.display = '';
+    document.getElementById('qr-create-error').textContent = err.message;
+  });
+}
+</script>
+{{end}}

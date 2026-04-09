@@ -1,0 +1,301 @@
+{{define "content"}}
+<div class="page">
+  {{if and .User (eq .User.Role "admin")}}
+  <!-- Admin Dashboard -->
+  {{$adm := dataMap .Data}}
+  {{$admCreds := index ($adm) "credentials"}}
+  {{$admSchemas := index ($adm) "schemas"}}
+  {{$admCredCount := index ($adm) "credCount"}}
+  {{$admSchemaCount := index ($adm) "schemaCount"}}
+
+  {{if and .User (not .User.Demo)}}
+  <!-- LIVE admin dashboard -->
+  <div class="page-header">
+    <h1>Dashboard</h1>
+    <p>Ecosystem overview — connected to Walt.id backend.</p>
+  </div>
+  <div class="stats-row">
+    <div class="card stat-card"><div class="stat-number">{{$admCredCount}}</div><div class="stat-label">Credentials in Wallet</div></div>
+    <div class="card stat-card"><div class="stat-number">{{$admSchemaCount}}</div><div class="stat-label">Credential Schemas</div></div>
+  </div>
+  {{if hasItems $admSchemas}}
+  <div class="card" style="margin-bottom:1rem">
+    <h3 style="margin-bottom:1rem;font-size:0.9rem">Registered Schemas</h3>
+    <div style="display:flex;flex-direction:column;gap:0.6rem;font-size:0.8rem">
+      {{range $admSchemas}}
+      <div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0;border-bottom:1px solid var(--border)"><code style="font-size:0.75rem">{{.ID}}</code><span style="margin-left:auto" class="tag tag-accent">{{.Standard}}</span></div>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+  {{if hasItems $admCreds}}
+  <div class="card">
+    <h3 style="margin-bottom:1rem;font-size:0.9rem">Recent Credentials</h3>
+    <div style="display:flex;flex-direction:column;gap:0.6rem;font-size:0.8rem">
+      {{range $admCreds}}
+      {{$pd := .ParsedDocument}}
+      {{$subj := credSubject $pd}}
+      <div style="display:flex;align-items:center;gap:0.5rem"><span class="tag tag-accent" style="font-size:0.6rem">{{.Format}}</span><span>{{credTypes $pd}} — {{mapStr $subj "name"}}</span><span style="margin-left:auto;font-size:0.72rem;color:var(--text-tertiary)">{{.AddedOn}}</span></div>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+
+  {{else}}
+  <!-- DEMO admin dashboard -->
+  <div class="page-header">
+    <h1>Dashboard</h1>
+    <p>Ecosystem overview — credentials issued, verified, and stored across all workspaces.</p>
+  </div>
+  <div class="stats-row">
+    <div class="card stat-card"><div class="stat-number">24,831</div><div class="stat-label">Credentials Issued</div></div>
+    <div class="card stat-card"><div class="stat-number">12,456</div><div class="stat-label">Verifications</div></div>
+    <div class="card stat-card"><div class="stat-number">18,204</div><div class="stat-label">Active Holders</div></div>
+    <div class="card stat-card"><div class="stat-number">7</div><div class="stat-label">Active Issuers</div></div>
+    <div class="card stat-card"><div class="stat-number">99.97%</div><div class="stat-label">Uptime (30d)</div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:2fr 1fr;gap:1rem">
+    <div class="card">
+      <h3 style="margin-bottom:1rem;font-size:0.9rem">Credential Activity (30 days)</h3>
+      <div class="chart-bars" id="activity-chart"></div>
+      <div style="display:flex;justify-content:space-between;margin-top:0.5rem;font-size:0.68rem;color:var(--text-tertiary)"><span>Mar 8</span><span>Mar 15</span><span>Mar 22</span><span>Mar 29</span><span>Apr 5</span></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:1rem;font-size:0.9rem">Recent Events</h3>
+      <div style="display:flex;flex-direction:column;gap:0.6rem;font-size:0.8rem">
+        <div style="display:flex;align-items:center;gap:0.5rem"><span class="tag tag-accent" style="font-size:0.6rem">ISSUED</span><span>UWI batch (342 creds)</span><span style="margin-left:auto;font-size:0.72rem;color:var(--text-tertiary)">2m ago</span></div>
+        <div style="display:flex;align-items:center;gap:0.5rem"><span class="tag tag-info" style="font-size:0.6rem">VERIFIED</span><span>EmployTT verified BSc</span><span style="margin-left:auto;font-size:0.72rem;color:var(--text-tertiary)">14m ago</span></div>
+        <div style="display:flex;align-items:center;gap:0.5rem"><span class="tag tag-error" style="font-size:0.6rem">REVOKED</span><span>UTT revoked cert #4421</span><span style="margin-left:auto;font-size:0.72rem;color:var(--text-tertiary)">1h ago</span></div>
+        <div style="display:flex;align-items:center;gap:0.5rem"><span class="tag" style="font-size:0.6rem">ONBOARD</span><span>Min. of Agriculture joined</span><span style="margin-left:auto;font-size:0.72rem;color:var(--text-tertiary)">3h ago</span></div>
+        <div style="display:flex;align-items:center;gap:0.5rem"><span class="tag tag-warning" style="font-size:0.6rem">EXPIRED</span><span>47 credentials expiring</span><span style="margin-left:auto;font-size:0.72rem;color:var(--text-tertiary)">today</span></div>
+      </div>
+    </div>
+  </div>
+  {{end}}
+
+  {{else if and .User (eq .User.Role "issuer")}}
+  <!-- Issuer Dashboard -->
+  <div class="page-header">
+    <h1>Issuer Dashboard</h1>
+    <p>Your credential issuance activity, schemas, and status management.</p>
+  </div>
+
+  {{$idm := dataMap .Data}}
+  {{$schemas := index ($idm) "schemas"}}
+  {{$isRealIssuer := and .User (not .User.Demo)}}
+
+  {{if $isRealIssuer}}
+  <!-- LIVE DATA -->
+  <div class="stats-row">
+    <div class="card stat-card"><div class="stat-number">{{if hasItems $schemas}}{{len $schemas}}{{else}}0{{end}}</div><div class="stat-label">Active Schemas</div></div>
+  </div>
+  {{if hasItems $schemas}}
+  <div class="card">
+    <h3 style="margin-bottom:1rem;font-size:0.9rem">Your Schemas</h3>
+    <div style="display:flex;flex-direction:column;gap:0.6rem;font-size:0.8rem">
+      {{range $schemas}}
+      <div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0;border-bottom:1px solid var(--border)"><code style="font-size:0.75rem">{{.ID}}</code><span style="margin-left:auto" class="tag tag-accent">{{.Status}}</span></div>
+      {{end}}
+    </div>
+  </div>
+  {{else}}
+  <div class="card" style="text-align:center;padding:2.5rem">
+    <p style="font-size:0.9rem;color:var(--text-secondary);margin-bottom:1rem">No issuance activity yet. Create a schema and issue your first credential.</p>
+    <button class="btn btn-primary btn-sm" hx-get="/portal/issuer/schemas" hx-target="#main-content" hx-push-url="true">Open Issuer Workspace</button>
+  </div>
+  {{end}}
+  {{else}}
+  <!-- MOCK DATA (demo mode) -->
+  <div class="stats-row">
+    <div class="card stat-card"><div class="stat-number">4,218</div><div class="stat-label">Credentials Issued</div></div>
+    <div class="card stat-card"><div class="stat-number">342</div><div class="stat-label">Issued This Week</div></div>
+    <div class="card stat-card"><div class="stat-number">3</div><div class="stat-label">Active Schemas</div></div>
+    <div class="card stat-card"><div class="stat-number">5</div><div class="stat-label">Revocations</div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+    <div class="card">
+      <h3 style="margin-bottom:1rem;font-size:0.9rem">Recent Issuance</h3>
+      <div style="display:flex;flex-direction:column;gap:0.6rem;font-size:0.8rem">
+        <div style="display:flex;align-items:center;gap:0.5rem"><span class="tag tag-accent" style="font-size:0.6rem">BATCH</span><span>342 BSc degrees issued</span><span style="margin-left:auto;font-size:0.72rem;color:var(--text-tertiary)">2m ago</span></div>
+        <div style="display:flex;align-items:center;gap:0.5rem"><span class="tag tag-accent" style="font-size:0.6rem">SINGLE</span><span>MSc credential to holder:819***</span><span style="margin-left:auto;font-size:0.72rem;color:var(--text-tertiary)">1h ago</span></div>
+        <div style="display:flex;align-items:center;gap:0.5rem"><span class="tag tag-error" style="font-size:0.6rem">REVOKED</span><span>Cert #4421 — data correction</span><span style="margin-left:auto;font-size:0.72rem;color:var(--text-tertiary)">3h ago</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:1rem;font-size:0.9rem">Your Schemas</h3>
+      <div style="display:flex;flex-direction:column;gap:0.6rem;font-size:0.8rem">
+        <div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0;border-bottom:1px solid var(--border)"><code style="font-size:0.75rem">bsc-degree-v2</code><span style="margin-left:auto" class="tag tag-accent">Active</span></div>
+        <div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0;border-bottom:1px solid var(--border)"><code style="font-size:0.75rem">msc-degree-v1</code><span style="margin-left:auto" class="tag tag-accent">Active</span></div>
+        <div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0"><code style="font-size:0.75rem">professional-cert-v2</code><span style="margin-left:auto" class="tag tag-accent">Active</span></div>
+      </div>
+    </div>
+  </div>
+  {{end}}
+  <div style="text-align:center;padding:1.5rem 0">
+    <button class="btn btn-primary btn-sm" hx-get="/portal/issuer/schemas" hx-target="#main-content" hx-push-url="true">Open Issuer Workspace &rarr;</button>
+  </div>
+
+  {{else if and .User (eq .User.Role "holder")}}
+  <!-- Holder Dashboard -->
+  <div class="page-header">
+    <h1>My Wallet</h1>
+    <p>Your credentials, verification history, and sharing activity.</p>
+  </div>
+
+  {{$dm := dataMap .Data}}
+  {{$creds := index ($dm) "credentials"}}
+  {{$isReal := and .User (not .User.Demo)}}
+
+  {{if and $isReal (hasItems $creds)}}
+  <!-- LIVE DATA with credentials -->
+  <div class="stats-row">
+    <div class="card stat-card"><div class="stat-number">{{len $creds}}</div><div class="stat-label">Credentials Held</div></div>
+  </div>
+  <div class="card" style="margin-bottom:1rem">
+    <h3 style="margin-bottom:1rem;font-size:0.9rem">Your Credentials</h3>
+    <div style="display:flex;flex-direction:column;gap:0.75rem">
+      {{range $creds}}
+      {{$pd := .ParsedDocument}}
+      {{$subj := credSubject $pd}}
+      {{$typeName := credTypes $pd}}
+      <div style="display:flex;align-items:center;gap:1rem;padding:0.85rem;background:var(--bg-surface-alt);border-radius:var(--radius-md)">
+        <span style="font-size:1.4rem">&#128196;</span>
+        <div style="flex:1"><div style="font-weight:500;font-size:0.88rem">{{mapStr $subj "degree"}}{{mapStr $subj "certificate"}}{{mapStr $subj "name"}}</div><div style="font-size:0.75rem;color:var(--text-secondary)">{{$typeName}} &middot; {{.Format}}</div></div>
+        <span class="tag tag-accent">Active</span>
+      </div>
+      {{end}}
+    </div>
+  </div>
+
+  {{else if $isReal}}
+  <!-- REAL USER, EMPTY WALLET -->
+  <div class="stats-row">
+    <div class="card stat-card"><div class="stat-number">0</div><div class="stat-label">Credentials Held</div></div>
+  </div>
+  <div class="card" style="text-align:center;padding:2.5rem">
+    <div style="font-size:2rem;margin-bottom:0.75rem">&#128274;</div>
+    <p style="font-size:0.9rem;color:var(--text-secondary);margin-bottom:1rem">Your wallet is empty.</p>
+    <p style="font-size:0.82rem;color:var(--text-tertiary);margin-bottom:1.5rem">Retrieve a credential from the catalog or ask an issuer to send you one.</p>
+    <button class="btn btn-primary btn-sm" hx-get="/portal/holder/catalog" hx-target="#main-content" hx-push-url="true">Browse Credential Catalog</button>
+  </div>
+
+  {{else}}
+  <!-- DEMO MODE -->
+  <div class="stats-row">
+    <div class="card stat-card"><div class="stat-number">3</div><div class="stat-label">Credentials Held</div></div>
+    <div class="card stat-card"><div class="stat-number">7</div><div class="stat-label">Times Verified</div></div>
+    <div class="card stat-card"><div class="stat-number">2</div><div class="stat-label">Shared This Month</div></div>
+    <div class="card stat-card"><div class="stat-number">1</div><div class="stat-label">Expiring Soon</div></div>
+  </div>
+  <div class="card" style="margin-bottom:1rem">
+    <h3 style="margin-bottom:1rem;font-size:0.9rem">Your Credentials</h3>
+    <div style="display:flex;flex-direction:column;gap:0.75rem">
+      <div style="display:flex;align-items:center;gap:1rem;padding:0.85rem;background:var(--bg-surface-alt);border-radius:var(--radius-md)">
+        <span style="font-size:1.4rem">&#127891;</span>
+        <div style="flex:1"><div style="font-weight:500;font-size:0.88rem">BSc Computer Science</div><div style="font-size:0.75rem;color:var(--text-secondary)">University of the West Indies &middot; Issued Mar 2025</div></div>
+        <span class="tag tag-accent">Active</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:1rem;padding:0.85rem;background:var(--bg-surface-alt);border-radius:var(--radius-md)">
+        <span style="font-size:1.4rem">&#128220;</span>
+        <div style="flex:1"><div style="font-weight:500;font-size:0.88rem">Professional Certificate — Data Analytics</div><div style="font-size:0.75rem;color:var(--text-secondary)">WeLearnTT &middot; Issued Jan 2026</div></div>
+        <span class="tag tag-warning">Expiring</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:1rem;padding:0.85rem;background:var(--bg-surface-alt);border-radius:var(--radius-md)">
+        <span style="font-size:1.4rem">&#128179;</span>
+        <div style="flex:1"><div style="font-weight:500;font-size:0.88rem">National Identity Card</div><div style="font-size:0.75rem;color:var(--text-secondary)">Ministry of Digital Transformation &middot; Issued Nov 2025</div></div>
+        <span class="tag tag-accent">Active</span>
+      </div>
+    </div>
+  </div>
+  {{end}}
+  <div style="text-align:center;padding:1.5rem 0">
+    <button class="btn btn-primary btn-sm" hx-get="/portal/holder/wallet" hx-target="#main-content" hx-push-url="true">Open Holder Wallet &rarr;</button>
+  </div>
+
+  {{else if and .User (eq .User.Role "verifier")}}
+  <!-- Verifier Dashboard -->
+  <div class="page-header">
+    <h1>Verification Dashboard</h1>
+    <p>Incoming presentations, verification results, and trust policy status.</p>
+  </div>
+  {{if and .User (not .User.Demo)}}
+  <div class="stats-row">
+    <div class="card stat-card"><div class="stat-number">0</div><div class="stat-label">Verifications (30d)</div></div>
+    <div class="card stat-card"><div class="stat-number">&mdash;</div><div class="stat-label">Pass Rate</div></div>
+    <div class="card stat-card"><div class="stat-number">&mdash;</div><div class="stat-label">Avg Latency</div></div>
+  </div>
+  <div class="card" style="text-align:center;padding:2.5rem">
+    <p style="font-size:0.9rem;color:var(--text-secondary);margin-bottom:1rem">No verifications yet. Create a verification request to get started.</p>
+    <button class="btn btn-primary btn-sm" hx-get="/portal/verifier/request-builder" hx-target="#main-content" hx-push-url="true">+ New Verification Request</button>
+  </div>
+  {{else}}
+  <div class="stats-row">
+    <div class="card stat-card"><div class="stat-number">1,247</div><div class="stat-label">Verifications (30d)</div></div>
+    <div class="card stat-card"><div class="stat-number">98.2%</div><div class="stat-label">Pass Rate</div></div>
+    <div class="card stat-card"><div class="stat-number">0.3s</div><div class="stat-label">Avg Latency</div></div>
+    <div class="card stat-card"><div class="stat-number">3</div><div class="stat-label">Trusted Issuers</div></div>
+  </div>
+  <div class="card">
+    <h3 style="margin-bottom:1rem;font-size:0.9rem">Recent Verifications</h3>
+    <div style="display:flex;flex-direction:column;gap:0.6rem;font-size:0.8rem">
+      <div style="display:flex;align-items:center;gap:0.5rem"><span class="tag tag-accent" style="font-size:0.6rem">VALID</span><span>BSc degree — holder <code>816***245</code></span><span style="margin-left:auto;font-size:0.72rem;color:var(--text-tertiary)">14m ago</span></div>
+      <div style="display:flex;align-items:center;gap:0.5rem"><span class="tag tag-error" style="font-size:0.6rem">EXPIRED</span><span>Professional cert — holder <code>702***118</code></span><span style="margin-left:auto;font-size:0.72rem;color:var(--text-tertiary)">8h ago</span></div>
+      <div style="display:flex;align-items:center;gap:0.5rem"><span class="tag tag-accent" style="font-size:0.6rem">VALID</span><span>National ID — holder <code>903***221</code></span><span style="margin-left:auto;font-size:0.72rem;color:var(--text-tertiary)">1d ago</span></div>
+      <div style="display:flex;align-items:center;gap:0.5rem"><span class="tag tag-accent" style="font-size:0.6rem">VALID</span><span>MSc degree — holder <code>816***891</code></span><span style="margin-left:auto;font-size:0.72rem;color:var(--text-tertiary)">1d ago</span></div>
+    </div>
+  </div>
+  {{end}}
+  <div style="text-align:center;padding:1.5rem 0">
+    <button class="btn btn-primary btn-sm" hx-get="/portal/verifier/dashboard" hx-target="#main-content" hx-push-url="true">Open Verifier Workspace &rarr;</button>
+  </div>
+
+  {{else if and .User (eq .User.Role "auditor")}}
+  <!-- Auditor Dashboard -->
+  <div class="page-header">
+    <h1>Audit Overview</h1>
+    <p>Read-only summary of ecosystem activity, compliance, and anomalies.</p>
+  </div>
+  {{if and .User (not .User.Demo)}}
+  <div class="stats-row">
+    <div class="card stat-card"><div class="stat-number">&mdash;</div><div class="stat-label">Total Credentials</div></div>
+    <div class="card stat-card"><div class="stat-number">&mdash;</div><div class="stat-label">Total Verifications</div></div>
+    <div class="card stat-card"><div class="stat-number">&mdash;</div><div class="stat-label">Revocations</div></div>
+  </div>
+  <div class="card" style="text-align:center;padding:2.5rem">
+    <p style="font-size:0.9rem;color:var(--text-secondary)">Audit data will populate as credentials are issued and verified through the platform.</p>
+  </div>
+  {{else}}
+  <div class="stats-row">
+    <div class="card stat-card"><div class="stat-number">24,831</div><div class="stat-label">Total Credentials</div></div>
+    <div class="card stat-card"><div class="stat-number">12,456</div><div class="stat-label">Total Verifications</div></div>
+    <div class="card stat-card"><div class="stat-number">23</div><div class="stat-label">Revocations</div></div>
+    <div class="card stat-card"><div class="stat-number">3</div><div class="stat-label">Failed Verifications (7d)</div></div>
+  </div>
+  <div class="card">
+    <h3 style="margin-bottom:0.5rem;font-size:0.9rem">Compliance Notes</h3>
+    <p style="font-size:0.83rem;color:var(--text-secondary)">All issuer trust registries synced. No unresolved security alerts. 47 credentials expiring within 30 days — issuers notified. Last penetration test: 2026-03-15.</p>
+  </div>
+  {{end}}
+
+  {{else}}
+  <!-- Fallback -->
+  <div class="page-header">
+    <h1>Dashboard</h1>
+    <p>Welcome to the credential management portal.</p>
+  </div>
+  {{end}}
+</div>
+
+<script>
+(function() {
+  var chart = document.getElementById('activity-chart');
+  if (!chart) return;
+  for (var i = 0; i < 30; i++) {
+    var bar = document.createElement('div');
+    bar.className = 'chart-bar';
+    bar.style.height = (20 + Math.random() * 80) + '%';
+    chart.appendChild(bar);
+  }
+})();
+</script>
+{{end}}

@@ -1,0 +1,196 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Retrieve Credentials</h1><p>Authenticate with an issuer to retrieve and store your credential.</p></div>
+
+  {{$dm := dataMap .Data}}
+  {{$dids := index ($dm) "dids"}}
+  {{$schemas := index ($dm) "schemas"}}
+  {{$isReal := and .User (not .User.Demo)}}
+
+  {{if $isReal}}
+  <!-- LIVE DATA from Walt.id -->
+  {{if hasItems $dids}}
+  <div class="card" style="margin-bottom:1rem">
+    <h3 style="font-size:0.9rem;margin-bottom:1rem">Your DIDs</h3>
+    <div style="display:flex;flex-direction:column;gap:0.5rem">
+      {{range $dids}}
+      <div style="display:flex;align-items:flex-start;gap:0.75rem;padding:0.75rem;background:var(--bg-surface-alt);border-radius:var(--radius-md)">
+        <span style="font-size:1.2rem;flex-shrink:0">&#128273;</span>
+        <div style="flex:1;min-width:0">
+          {{if .Alias}}<div style="font-weight:500;font-size:0.85rem">{{.Alias}}</div>{{end}}
+          <code style="font-size:0.68rem;color:var(--text-tertiary);word-break:break-all">{{.DID}}</code>
+        </div>
+        {{if .Default}}<span class="tag tag-accent" style="font-size:0.6rem;flex-shrink:0">Default</span>{{end}}
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+
+  <div class="card" style="margin-bottom:1rem">
+    <h3 style="font-size:0.9rem;margin-bottom:1rem">Issuer / Credential Type</h3>
+    <select id="schema-select" class="form-input" style="width:100%;margin-bottom:0">
+      <option value="">Select Credential Type...</option>
+      {{if hasItems $schemas}}
+      {{range $schemas}}
+      <option value="{{.ID}}">{{.Name}} (v{{.Version}}) &mdash; {{.Standard}}</option>
+      {{end}}
+      {{else}}
+      <option value="" disabled>No credential types available</option>
+      {{end}}
+    </select>
+  </div>
+
+  <div class="card" style="margin-bottom:1rem">
+    <h3 style="font-size:0.9rem;margin-bottom:1rem">Verification Details</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+      <div>
+        <label class="form-label">Your Name</label>
+        <input type="text" name="name" class="form-input" placeholder="e.g. Jane Doe" value="{{.User.Name}}" style="width:100%">
+      </div>
+      <div>
+        <label class="form-label">Verification Date</label>
+        <input type="date" class="form-input" style="width:100%">
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:1.5rem">
+    <h3 style="font-size:0.9rem;margin-bottom:1rem">Storage Preference</h3>
+    <select class="form-input" style="width:100%">
+      <option value="mobile">Mobile Wallet</option>
+      <option value="cloud">Cloud eLocker</option>
+      <option value="local">Local Device</option>
+      <option value="download">Download Only</option>
+    </select>
+  </div>
+
+  {{if not (hasItems $dids)}}
+  <div style="padding:0.75rem 1rem;background:var(--warning-surface);border-radius:var(--radius-md);margin-bottom:1rem;font-size:0.82rem;color:var(--text-secondary)">
+    <strong>No wallet token available.</strong> Sign in via SSO (Keycloak or WSO2) to link your wallet, then retrieve credentials.
+  </div>
+  {{end}}
+
+  <div style="text-align:right">
+    <button class="btn btn-primary" id="retrieve-btn" onclick="retrieveCredential()" {{if not (hasItems $dids)}}disabled title="Sign in via SSO to enable"{{end}}>Authenticate &amp; Retrieve</button>
+  </div>
+
+  {{else}}
+  <!-- MOCK DATA (exploration mode) -->
+  <div class="card" style="margin-bottom:1rem">
+    <h3 style="font-size:0.9rem;margin-bottom:1rem">Issuer</h3>
+    <select class="form-input" style="width:100%;margin-bottom:0">
+      <option value="">Select Issuer...</option>
+      <option value="uwi">University of the West Indies (UWI)</option>
+      <option value="utt">University of Trinidad and Tobago (UTT)</option>
+      <option value="welearn">WeLearnTT</option>
+      <option value="mdt">Ministry of Digital Transformation (MDT)</option>
+      <option value="minag">Ministry of Agriculture</option>
+    </select>
+  </div>
+
+  <div class="card" style="margin-bottom:1rem">
+    <h3 style="font-size:0.9rem;margin-bottom:1rem">Authentication Method</h3>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.75rem">
+      <div class="card auth-method-card selected" onclick="selectRetrieveAuth(this)" style="cursor:pointer;text-align:center;padding:1rem;border:2px solid var(--color-accent);background:var(--bg-surface-alt)">
+        <div style="font-size:1.4rem;margin-bottom:0.3rem">&#128273;</div>
+        <div style="font-size:0.82rem;font-weight:500">Knowledge</div>
+        <div style="font-size:0.7rem;color:var(--text-tertiary)">Student ID + Date</div>
+      </div>
+      <div class="card auth-method-card" onclick="selectRetrieveAuth(this)" style="cursor:pointer;text-align:center;padding:1rem">
+        <div style="font-size:1.4rem;margin-bottom:0.3rem">&#128241;</div>
+        <div style="font-size:0.82rem;font-weight:500">OTP</div>
+        <div style="font-size:0.7rem;color:var(--text-tertiary)">One-time passcode</div>
+      </div>
+      <div class="card auth-method-card" onclick="selectRetrieveAuth(this)" style="cursor:pointer;text-align:center;padding:1rem">
+        <div style="font-size:1.4rem;margin-bottom:0.3rem">&#128406;</div>
+        <div style="font-size:0.82rem;font-weight:500">Biometric</div>
+        <div style="font-size:0.7rem;color:var(--text-tertiary)">Fingerprint scan</div>
+      </div>
+      <div class="card auth-method-card" onclick="selectRetrieveAuth(this)" style="cursor:pointer;text-align:center;padding:1rem">
+        <div style="font-size:1.4rem;margin-bottom:0.3rem">&#128247;</div>
+        <div style="font-size:0.82rem;font-weight:500">Face</div>
+        <div style="font-size:0.7rem;color:var(--text-tertiary)">Facial recognition</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:1rem">
+    <h3 style="font-size:0.9rem;margin-bottom:1rem">Verification Details</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+      <div>
+        <label class="form-label">Student ID</label>
+        <input type="text" class="form-input" placeholder="e.g. 816003245" style="width:100%">
+      </div>
+      <div>
+        <label class="form-label">Graduation Date</label>
+        <input type="date" class="form-input" style="width:100%">
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:1.5rem">
+    <h3 style="font-size:0.9rem;margin-bottom:1rem">Storage Preference</h3>
+    <select class="form-input" style="width:100%">
+      <option value="mobile">Mobile Wallet</option>
+      <option value="cloud">Cloud eLocker</option>
+      <option value="local">Local Device</option>
+      <option value="download">Download Only</option>
+    </select>
+  </div>
+
+  <div style="text-align:right">
+    <button class="btn btn-primary" onclick="showToast('Retrieving','Authenticating with issuer... credential will appear in your wallet shortly.')">Authenticate &amp; Retrieve</button>
+  </div>
+  {{end}}
+</div>
+
+<script>
+function selectRetrieveAuth(el) {
+  el.parentElement.querySelectorAll('.auth-method-card').forEach(function(c) {
+    c.classList.remove('selected');
+    c.style.border = '';
+    c.style.background = '';
+  });
+  el.classList.add('selected');
+  el.style.border = '2px solid var(--color-accent)';
+  el.style.background = 'var(--bg-surface-alt)';
+}
+
+function retrieveCredential() {
+  var schemaSelect = document.getElementById('schema-select');
+  var configId = schemaSelect ? schemaSelect.value : '';
+  if (!configId) {
+    showToast('Required', 'Please select a credential type first.');
+    if (schemaSelect) schemaSelect.style.borderColor = 'var(--error)';
+    return;
+  }
+  var nameInput = document.querySelector('[name=name]');
+  var holderName = nameInput ? nameInput.value.trim() : '';
+  if (!holderName) {
+    showToast('Required', 'Please enter your name.');
+    if (nameInput) nameInput.style.borderColor = 'var(--error)';
+    return;
+  }
+  var btn = document.getElementById('retrieve-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Issuing...'; }
+  fetch('/api/credential/issue-and-claim', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({configId: configId, claims: {name: holderName}})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Authenticate & Retrieve'; }
+    if (d.error) { showToast('Error', d.error); return; }
+    showToast('Credential Issued', 'Credential issued and stored in your wallet.');
+    htmx.ajax('GET', '/portal/holder/wallet', {target: '#main-content', swap: 'innerHTML'});
+    history.pushState(null, '', '/portal/holder/wallet');
+  })
+  .catch(function(e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Authenticate & Retrieve'; }
+    showToast('Error', e.message);
+  });
+}
+</script>
+{{end}}

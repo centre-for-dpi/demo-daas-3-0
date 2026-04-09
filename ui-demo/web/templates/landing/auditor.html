@@ -1,0 +1,66 @@
+{{define "content"}}
+<div class="auditor-screen">
+  <div class="container">
+    <div class="section-label">Auditor Portal — Read Only</div>
+    <h2 style="margin-bottom:2rem">Ecosystem Audit Dashboard</h2>
+
+    <div class="audit-metrics">
+      <div class="card audit-metric">
+        <div class="stat-number">24,831</div>
+        <div class="stat-label">Credentials Issued</div>
+      </div>
+      <div class="card audit-metric">
+        <div class="stat-number">12,456</div>
+        <div class="stat-label">Verifications</div>
+      </div>
+      <div class="card audit-metric">
+        <div class="stat-number">7</div>
+        <div class="stat-label">Active Issuers</div>
+      </div>
+      <div class="card audit-metric">
+        <div class="stat-number">23</div>
+        <div class="stat-label">Revocations</div>
+      </div>
+    </div>
+
+    <div class="card audit-timeline">
+      <h3 style="margin-bottom:1rem; font-size:0.95rem">Recent Activity</h3>
+      <div class="audit-entry">
+        <span class="audit-time">2026-04-07 14:32</span>
+        <span class="audit-event"><span class="audit-actor">UWI</span> <span class="audit-action">issued credential to</span> <span class="audit-target">holder:816***245</span></span>
+        <span class="audit-result pass">ISSUED</span>
+      </div>
+      <div class="audit-entry">
+        <span class="audit-time">2026-04-07 14:28</span>
+        <span class="audit-event"><span class="audit-actor">EmployTT</span> <span class="audit-action">verified credential from</span> <span class="audit-target">holder:816***245</span></span>
+        <span class="audit-result pass">VALID</span>
+      </div>
+      <div class="audit-entry">
+        <span class="audit-time">2026-04-07 13:55</span>
+        <span class="audit-event"><span class="audit-actor">UTT</span> <span class="audit-action">revoked credential</span> <span class="audit-target">cred:tt-utt-2024-***</span></span>
+        <span class="audit-result fail">REVOKED</span>
+      </div>
+      <div class="audit-entry">
+        <span class="audit-time">2026-04-07 13:41</span>
+        <span class="audit-event"><span class="audit-actor">WeLearnTT</span> <span class="audit-action">batch issued 342 credentials via</span> <span class="audit-target">schema:professional-cert-v2</span></span>
+        <span class="audit-result pass">BATCH OK</span>
+      </div>
+      <div class="audit-entry">
+        <span class="audit-time">2026-04-07 12:18</span>
+        <span class="audit-event"><span class="audit-actor">System</span> <span class="audit-action">issuer onboarded:</span> <span class="audit-target">Ministry of Agriculture</span></span>
+        <span class="audit-result pass">ONBOARDED</span>
+      </div>
+      <div class="audit-entry">
+        <span class="audit-time">2026-04-07 11:02</span>
+        <span class="audit-event"><span class="audit-actor">Bank of TT</span> <span class="audit-action">verification failed for</span> <span class="audit-target">holder:702***118</span></span>
+        <span class="audit-result fail">EXPIRED</span>
+      </div>
+    </div>
+
+    <div style="margin-top:1.5rem;display:flex;gap:0.5rem">
+      <button class="btn btn-secondary btn-sm">Export Audit Package (CSV)</button>
+      <button class="btn btn-ghost btn-sm">Export Compliance Report (PDF)</button>
+    </div>
+  </div>
+</div>
+{{end}}

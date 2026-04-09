@@ -1,0 +1,76 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Agent-Assisted Mode</h1><p>Configure consent capture and role-based access for field agents operating on behalf of credential holders.</p></div>
+
+  <!-- Consent Capture Methods -->
+  <div class="card">
+    <h3 style="font-size:0.95rem;margin-bottom:1rem">Consent Capture Methods</h3>
+    <div style="display:flex;flex-direction:column;gap:0.75rem">
+
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)">
+        <div><strong style="font-size:0.88rem">Digital Signature</strong><div style="font-size:0.78rem;color:var(--text-secondary)">Holder signs consent on agent device</div></div>
+        <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer"><input type="checkbox" checked style="opacity:0;width:0;height:0"><span style="position:absolute;inset:0;background:var(--color-accent);border-radius:12px;transition:0.3s"></span><span style="position:absolute;left:23px;top:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:0.3s"></span></label>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)">
+        <div><strong style="font-size:0.88rem">OTP Confirmation</strong><div style="font-size:0.78rem;color:var(--text-secondary)">One-time password sent to holder's phone</div></div>
+        <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer"><input type="checkbox" checked style="opacity:0;width:0;height:0"><span style="position:absolute;inset:0;background:var(--color-accent);border-radius:12px;transition:0.3s"></span><span style="position:absolute;left:23px;top:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:0.3s"></span></label>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)">
+        <div><strong style="font-size:0.88rem">Biometric Capture</strong><div style="font-size:0.78rem;color:var(--text-secondary)">Fingerprint or facial recognition consent</div></div>
+        <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer"><input type="checkbox" checked style="opacity:0;width:0;height:0"><span style="position:absolute;inset:0;background:var(--color-accent);border-radius:12px;transition:0.3s"></span><span style="position:absolute;left:23px;top:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:0.3s"></span></label>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)">
+        <div><strong style="font-size:0.88rem">Verbal Consent (Recorded)</strong><div style="font-size:0.78rem;color:var(--text-secondary)">Voice recording of holder consent with transcript</div></div>
+        <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer"><input type="checkbox" style="opacity:0;width:0;height:0"><span style="position:absolute;inset:0;background:var(--border);border-radius:12px;transition:0.3s"></span><span style="position:absolute;left:3px;top:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:0.3s"></span></label>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--border)">
+        <div><strong style="font-size:0.88rem">Witness Attestation</strong><div style="font-size:0.78rem;color:var(--text-secondary)">Third-party witness signs alongside holder</div></div>
+        <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer"><input type="checkbox" style="opacity:0;width:0;height:0"><span style="position:absolute;inset:0;background:var(--border);border-radius:12px;transition:0.3s"></span><span style="position:absolute;left:3px;top:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:0.3s"></span></label>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0">
+        <div><strong style="font-size:0.88rem">Paper Form (Scanned)</strong><div style="font-size:0.78rem;color:var(--text-secondary)">Physical consent form photographed and uploaded</div></div>
+        <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer"><input type="checkbox" checked style="opacity:0;width:0;height:0"><span style="position:absolute;inset:0;background:var(--color-accent);border-radius:12px;transition:0.3s"></span><span style="position:absolute;left:23px;top:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:0.3s"></span></label>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Agent RBAC -->
+  <div class="card" style="margin-top:1.5rem">
+    <h3 style="font-size:0.95rem;margin-bottom:1rem">Agent Role-Based Access Control</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+      <div class="form-group">
+        <label class="form-label">Default Agent Role</label>
+        <select class="form-input">
+          <option>Field Agent (Limited)</option>
+          <option selected>Agent (Standard)</option>
+          <option>Senior Agent (Extended)</option>
+          <option>Supervisor (Full)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Max Actions per Session</label>
+        <input type="number" class="form-input" value="25">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Identity Verification Required</label>
+      <select class="form-input">
+        <option>None</option>
+        <option selected>Agent PIN</option>
+        <option>Biometric (Agent)</option>
+        <option>Two-Factor</option>
+      </select>
+    </div>
+  </div>
+
+  <div style="display:flex;justify-content:flex-end;margin-top:1.5rem">
+    <button class="btn btn-primary btn-sm" onclick="showToast('Saved','Agent mode configuration saved.')">Save Configuration</button>
+  </div>
+</div>
+{{end}}

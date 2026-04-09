@@ -1,0 +1,131 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div><h1>My Credentials</h1><p>All credentials in your wallet. Tap any card to view details, share, or export.</p></div>
+      <button class="btn btn-primary btn-sm" hx-get="/portal/holder/retrieval" hx-target="#main-content" hx-push-url="true">+ Retrieve Credential</button>
+    </div>
+  </div>
+
+  {{$dm := dataMap .Data}}
+  {{$creds := index ($dm) "credentials"}}
+  {{$isReal := and .User (not .User.Demo)}}
+
+  {{if and $isReal (hasItems $creds)}}
+  <!-- ===== REAL USER WITH CREDENTIALS ===== -->
+  <div class="stats-row">
+    <div class="card stat-card"><div class="stat-number">{{len $creds}}</div><div class="stat-label">Credentials Held</div></div>
+  </div>
+  <div class="filter-bar">
+    <button class="filter-pill active" onclick="filterCreds(this,'all')">All</button>
+    <input class="filter-search" placeholder="Search credentials..." oninput="searchCreds(this.value)">
+  </div>
+  <div class="cred-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1rem">
+    {{range $creds}}
+    {{$pd := .ParsedDocument}}
+    {{$subj := credSubject $pd}}
+    {{$typeName := credTypes $pd}}
+    <div class="card card-interactive cred-wallet-card" data-status="active" data-name="{{mapStr $subj "name"}} {{mapStr $subj "degree"}}" style="cursor:pointer" hx-get="/portal/holder/cred-detail?id={{.ID}}" hx-target="#main-content" hx-push-url="true">
+      <div class="cred-wallet-header" style="background:var(--accent);padding:1rem">
+        <div style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.06em;opacity:0.75;margin-bottom:0.4rem;color:white">{{$typeName}}</div>
+        <div style="font-family:var(--font-display);font-size:1rem;font-weight:400;color:white">{{mapStr $subj "degree"}}{{mapStr $subj "certificate"}}{{mapStr $subj "name"}}</div>
+        <div style="font-size:0.78rem;opacity:0.8;color:white">{{mapStr $subj "university"}}{{mapStr $subj "institution"}}</div>
+      </div>
+      <div style="padding:0.75rem 1rem">
+        {{range $k, $v := $subj}}
+          {{if and (ne $k "id") (ne $k "name") (ne $k "degree") (ne $k "university") (ne $k "institution") (ne $k "certificate")}}
+          <div style="display:flex;justify-content:space-between;padding:0.3rem 0;font-size:0.8rem">
+            <span style="color:var(--text-tertiary)">{{$k}}</span><span>{{$v}}</span>
+          </div>
+          {{end}}
+        {{end}}
+        <div style="display:flex;justify-content:space-between;padding:0.3rem 0;font-size:0.8rem">
+          <span style="color:var(--text-tertiary)">Format</span><span class="tag tag-accent" style="font-size:0.6rem">{{.Format}}</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:0.35rem;padding:0.6rem 1rem;border-top:1px solid var(--border)" onclick="event.stopPropagation()">
+        <button class="btn btn-ghost btn-sm" style="font-size:0.72rem;flex:1" hx-get="/portal/holder/share" hx-target="#main-content" hx-push-url="true">Share</button>
+        <button class="btn btn-ghost btn-sm" style="font-size:0.72rem;flex:1" hx-get="/portal/holder/export" hx-target="#main-content" hx-push-url="true">Export</button>
+      </div>
+    </div>
+    {{end}}
+  </div>
+
+  {{else if $isReal}}
+  <!-- ===== REAL USER, EMPTY WALLET ===== -->
+  <div class="stats-row">
+    <div class="card stat-card"><div class="stat-number">0</div><div class="stat-label">Credentials Held</div></div>
+  </div>
+  <div class="card" style="text-align:center;padding:3rem">
+    <div style="font-size:2rem;margin-bottom:1rem">&#128274;</div>
+    <p style="font-size:0.9rem;color:var(--text-secondary);margin-bottom:1rem">No credentials in your wallet yet.</p>
+    <p style="font-size:0.82rem;color:var(--text-tertiary);margin-bottom:1.5rem">Browse the credential catalog to request your first credential, or ask an issuer to send you one.</p>
+    <button class="btn btn-primary btn-sm" hx-get="/portal/holder/catalog" hx-target="#main-content" hx-push-url="true">Browse Credential Catalog</button>
+  </div>
+
+  {{else}}
+  <!-- ===== DEMO USER: MOCK DATA ===== -->
+  <div class="stats-row">
+    <div class="card stat-card"><div class="stat-number">3</div><div class="stat-label">Held</div></div>
+    <div class="card stat-card"><div class="stat-number">7</div><div class="stat-label">Verified</div></div>
+    <div class="card stat-card"><div class="stat-number">2</div><div class="stat-label">Shared</div></div>
+    <div class="card stat-card"><div class="stat-number">1</div><div class="stat-label">Expiring</div></div>
+  </div>
+  <div class="filter-bar">
+    <button class="filter-pill active" onclick="filterCreds(this,'all')">All</button>
+    <button class="filter-pill" onclick="filterCreds(this,'active')">Active</button>
+    <button class="filter-pill" onclick="filterCreds(this,'expiring')">Expiring</button>
+    <input class="filter-search" placeholder="Search credentials...">
+  </div>
+  <div class="cred-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1rem">
+    <div class="card card-interactive cred-wallet-card" data-status="active" style="cursor:pointer" hx-get="/portal/holder/cred-detail" hx-target="#main-content" hx-push-url="true">
+      <div class="cred-wallet-header" style="background:var(--accent);padding:1rem;color:white">
+        <div style="font-size:0.65rem;text-transform:uppercase;opacity:0.75;margin-bottom:0.4rem">UniversityDegree</div>
+        <div style="font-family:var(--font-display);font-size:1rem">BSc Computer Science</div>
+        <div style="font-size:0.78rem;opacity:0.8">University of the West Indies</div>
+      </div>
+      <div style="padding:0.75rem 1rem;font-size:0.8rem">
+        <div style="display:flex;justify-content:space-between;padding:0.3rem 0"><span style="color:var(--text-tertiary)">Issued</span><span>June 2025</span></div>
+        <div style="display:flex;justify-content:space-between;padding:0.3rem 0"><span style="color:var(--text-tertiary)">Status</span><span class="tag tag-accent">Active</span></div>
+      </div>
+      <div style="display:flex;gap:0.35rem;padding:0.6rem 1rem;border-top:1px solid var(--border)" onclick="event.stopPropagation()">
+        <button class="btn btn-ghost btn-sm" style="font-size:0.72rem;flex:1" hx-get="/portal/holder/share" hx-target="#main-content" hx-push-url="true">Share</button>
+        <button class="btn btn-ghost btn-sm" style="font-size:0.72rem;flex:1" hx-get="/portal/holder/export" hx-target="#main-content" hx-push-url="true">Export</button>
+      </div>
+    </div>
+    <div class="card card-interactive cred-wallet-card" data-status="expiring" style="cursor:pointer" hx-get="/portal/holder/cred-detail" hx-target="#main-content" hx-push-url="true">
+      <div class="cred-wallet-header" style="background:var(--warning);padding:1rem;color:white">
+        <div style="font-size:0.65rem;text-transform:uppercase;opacity:0.75;margin-bottom:0.4rem">ProfessionalCertificate</div>
+        <div style="font-family:var(--font-display);font-size:1rem">Data Analytics</div>
+        <div style="font-size:0.78rem;opacity:0.8">WeLearnTT</div>
+      </div>
+      <div style="padding:0.75rem 1rem;font-size:0.8rem">
+        <div style="display:flex;justify-content:space-between;padding:0.3rem 0"><span style="color:var(--text-tertiary)">Expires</span><span style="color:var(--warning)">May 2026</span></div>
+        <div style="display:flex;justify-content:space-between;padding:0.3rem 0"><span style="color:var(--text-tertiary)">Status</span><span class="tag tag-warning">Expiring</span></div>
+      </div>
+      <div style="display:flex;gap:0.35rem;padding:0.6rem 1rem;border-top:1px solid var(--border)" onclick="event.stopPropagation()">
+        <button class="btn btn-ghost btn-sm" style="font-size:0.72rem;flex:1" hx-get="/portal/holder/share" hx-target="#main-content" hx-push-url="true">Share</button>
+        <button class="btn btn-ghost btn-sm" style="font-size:0.72rem;flex:1" hx-get="/portal/holder/export" hx-target="#main-content" hx-push-url="true">Export</button>
+      </div>
+    </div>
+  </div>
+  {{end}}
+</div>
+
+<script>
+function filterCreds(btn, status) {
+  document.querySelectorAll('.filter-pill').forEach(function(f) { f.classList.remove('active'); });
+  btn.classList.add('active');
+  document.querySelectorAll('.cred-wallet-card').forEach(function(c) {
+    c.style.display = (status === 'all' || c.dataset.status === status) ? '' : 'none';
+  });
+}
+function searchCreds(q) {
+  var query = q.toLowerCase();
+  document.querySelectorAll('.cred-wallet-card').forEach(function(c) {
+    var name = (c.dataset.name || '').toLowerCase();
+    c.style.display = name.indexOf(query) !== -1 ? '' : 'none';
+  });
+}
+</script>
+{{end}}

@@ -1,0 +1,30 @@
+{{define "content"}}
+<div class="page">
+  <div class="page-header">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <h1>Roles &amp; Access Control</h1>
+        <p>Four minimum roles, extensible per deployment. Assign permissions by module.</p>
+      </div>
+      <button class="btn btn-primary btn-sm">+ Add Role</button>
+    </div>
+  </div>
+  <div class="card" style="overflow-x:auto">
+    <table class="perm-matrix">
+      <thead><tr><th style="width:200px">Permission</th><th>Super Admin</th><th>Issuer Admin</th><th>Cred Officer</th><th>Auditor</th></tr></thead>
+      <tbody>
+        <tr><td>Platform settings</td><td class="perm-check">&#10003;</td><td class="perm-deny">&mdash;</td><td class="perm-deny">&mdash;</td><td class="perm-deny">&mdash;</td></tr>
+        <tr><td>Manage RBAC</td><td class="perm-check">&#10003;</td><td class="perm-deny">&mdash;</td><td class="perm-deny">&mdash;</td><td class="perm-deny">&mdash;</td></tr>
+        <tr><td>Manage users</td><td class="perm-check">&#10003;</td><td class="perm-check">&#10003;</td><td class="perm-deny">&mdash;</td><td class="perm-deny">&mdash;</td></tr>
+        <tr><td>Schema management</td><td class="perm-check">&#10003;</td><td class="perm-check">&#10003;</td><td class="perm-deny">&mdash;</td><td class="perm-deny">&mdash;</td></tr>
+        <tr><td>Issue credentials</td><td class="perm-check">&#10003;</td><td class="perm-check">&#10003;</td><td class="perm-check">&#10003;</td><td class="perm-deny">&mdash;</td></tr>
+        <tr><td>Revoke credentials</td><td class="perm-check">&#10003;</td><td class="perm-check">&#10003;</td><td class="perm-deny">&mdash;</td><td class="perm-deny">&mdash;</td></tr>
+        <tr><td>View audit logs</td><td class="perm-check">&#10003;</td><td class="perm-check">&#10003;</td><td class="perm-deny">&mdash;</td><td class="perm-check">&#10003;</td></tr>
+        <tr><td>Export data</td><td class="perm-check">&#10003;</td><td class="perm-deny">&mdash;</td><td class="perm-deny">&mdash;</td><td class="perm-check">&#10003;</td></tr>
+        <tr><td>Trust registry config</td><td class="perm-check">&#10003;</td><td class="perm-deny">&mdash;</td><td class="perm-deny">&mdash;</td><td class="perm-deny">&mdash;</td></tr>
+        <tr><td>Deployment config</td><td class="perm-check">&#10003;</td><td class="perm-deny">&mdash;</td><td class="perm-deny">&mdash;</td><td class="perm-deny">&mdash;</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}

@@ -1,0 +1,112 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Multi-Format Export</h1><p>Export your credential in various formats for offline or cross-system use.</p></div>
+
+  {{$dm := dataMap .Data}}
+  {{$creds := index ($dm) "credentials"}}
+  {{$isReal := and .User (not .User.Demo)}}
+
+  {{if and $isReal (hasItems $creds)}}
+  <!-- LIVE DATA: real user with credentials -->
+  <!-- Credential selector -->
+  <div style="margin-bottom:1.25rem">
+    <label class="form-label">Select Credential</label>
+    <select class="form-input" style="width:100%;max-width:400px">
+      {{range $creds}}
+      {{$pd := .ParsedDocument}}
+      {{$typeName := credTypes $pd}}
+      {{$subj := credSubject $pd}}
+      <option value="{{.ID}}">{{$typeName}} &mdash; {{mapStr $subj "university"}}{{mapStr $subj "institution"}}{{mapStr $subj "name"}}</option>
+      {{end}}
+    </select>
+  </div>
+
+  <!-- Export format grid -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:1rem">
+    <!-- Signed PDF -->
+    <div class="card" style="cursor:pointer;text-align:center;padding:1.5rem;transition:border 0.15s" onclick="showToast('Exported','Signed PDF with embedded QR code downloaded.')" onmouseover="this.style.borderColor='var(--color-accent)'" onmouseout="this.style.borderColor=''">
+      <div style="font-size:2rem;margin-bottom:0.5rem">&#128196;</div>
+      <h4 style="font-size:0.9rem;margin-bottom:0.25rem">Signed PDF with QR</h4>
+      <div style="font-size:0.75rem;color:var(--text-secondary)">Human-readable document with embedded cryptographic QR for verification.</div>
+    </div>
+
+    <!-- JSON — real download for authenticated users -->
+    <div class="card" style="cursor:pointer;text-align:center;padding:1.5rem;transition:border 0.15s" onclick="window.location.href='/api/wallet/export'" onmouseover="this.style.borderColor='var(--color-accent)'" onmouseout="this.style.borderColor=''">
+      <div style="font-size:2rem;margin-bottom:0.5rem">&#123;&#125;</div>
+      <h4 style="font-size:0.9rem;margin-bottom:0.25rem">JSON (W3C-VCDM)</h4>
+      <div style="font-size:0.75rem;color:var(--text-secondary)">Machine-readable W3C Verifiable Credential Data Model 2.0 format.</div>
+    </div>
+
+    <!-- XML -->
+    <div class="card" style="cursor:pointer;text-align:center;padding:1.5rem;transition:border 0.15s" onclick="showToast('Exported','XML credential file downloaded.')" onmouseover="this.style.borderColor='var(--color-accent)'" onmouseout="this.style.borderColor=''">
+      <div style="font-size:2rem;margin-bottom:0.5rem">&lt;/&gt;</div>
+      <h4 style="font-size:0.9rem;margin-bottom:0.25rem">XML</h4>
+      <div style="font-size:0.75rem;color:var(--text-secondary)">Structured XML format for legacy system integration and archiving.</div>
+    </div>
+
+    <!-- QR Code SVG -->
+    <div class="card" style="cursor:pointer;text-align:center;padding:1.5rem;transition:border 0.15s" onclick="showToast('Exported','QR Code SVG file downloaded.')" onmouseover="this.style.borderColor='var(--color-accent)'" onmouseout="this.style.borderColor=''">
+      <div style="font-size:2rem;margin-bottom:0.5rem">&#9641;</div>
+      <h4 style="font-size:0.9rem;margin-bottom:0.25rem">QR Code (SVG)</h4>
+      <div style="font-size:0.75rem;color:var(--text-secondary)">Scalable QR code containing the full signed credential payload.</div>
+    </div>
+  </div>
+
+  {{else if $isReal}}
+  <!-- REAL USER BUT EMPTY — no credentials to export -->
+  <div class="card" style="text-align:center;padding:3rem 2rem">
+    <div style="font-size:2.5rem;margin-bottom:1rem">&#128230;</div>
+    <h3 style="font-size:1rem;margin-bottom:0.5rem">No credentials to export</h3>
+    <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:1.5rem">Your wallet is empty. Retrieve credentials first, then export them in various formats.</p>
+    <button class="btn btn-primary btn-sm" hx-get="/portal/holder/retrieval" hx-target="#main-content" hx-push-url="true">Retrieve Credentials</button>
+  </div>
+
+  {{else}}
+  <!-- DEMO — show mock data -->
+  <!-- Credential selector -->
+  <div style="margin-bottom:1.25rem">
+    <label class="form-label">Select Credential</label>
+    <select class="form-input" style="width:100%;max-width:400px">
+      <option value="bsc">BSc Computer Science &mdash; UWI</option>
+      <option value="cert">Professional Certificate &mdash; WeLearnTT</option>
+      <option value="nid">National Identity Card &mdash; MDT</option>
+    </select>
+  </div>
+
+  <!-- Export format grid -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:1rem">
+    <!-- Signed PDF -->
+    <div class="card" style="cursor:pointer;text-align:center;padding:1.5rem;transition:border 0.15s" onclick="showToast('Exported','Signed PDF with embedded QR code downloaded.')" onmouseover="this.style.borderColor='var(--color-accent)'" onmouseout="this.style.borderColor=''">
+      <div style="font-size:2rem;margin-bottom:0.5rem">&#128196;</div>
+      <h4 style="font-size:0.9rem;margin-bottom:0.25rem">Signed PDF with QR</h4>
+      <div style="font-size:0.75rem;color:var(--text-secondary)">Human-readable document with embedded cryptographic QR for verification.</div>
+    </div>
+
+    <!-- JSON -->
+    <div class="card" style="cursor:pointer;text-align:center;padding:1.5rem;transition:border 0.15s" onclick="showToast('Exported','W3C-VCDM 2.0 JSON credential downloaded.')" onmouseover="this.style.borderColor='var(--color-accent)'" onmouseout="this.style.borderColor=''">
+      <div style="font-size:2rem;margin-bottom:0.5rem">&#123;&#125;</div>
+      <h4 style="font-size:0.9rem;margin-bottom:0.25rem">JSON (W3C-VCDM)</h4>
+      <div style="font-size:0.75rem;color:var(--text-secondary)">Machine-readable W3C Verifiable Credential Data Model 2.0 format.</div>
+    </div>
+
+    <!-- XML -->
+    <div class="card" style="cursor:pointer;text-align:center;padding:1.5rem;transition:border 0.15s" onclick="showToast('Exported','XML credential file downloaded.')" onmouseover="this.style.borderColor='var(--color-accent)'" onmouseout="this.style.borderColor=''">
+      <div style="font-size:2rem;margin-bottom:0.5rem">&lt;/&gt;</div>
+      <h4 style="font-size:0.9rem;margin-bottom:0.25rem">XML</h4>
+      <div style="font-size:0.75rem;color:var(--text-secondary)">Structured XML format for legacy system integration and archiving.</div>
+    </div>
+
+    <!-- QR Code SVG -->
+    <div class="card" style="cursor:pointer;text-align:center;padding:1.5rem;transition:border 0.15s" onclick="showToast('Exported','QR Code SVG file downloaded.')" onmouseover="this.style.borderColor='var(--color-accent)'" onmouseout="this.style.borderColor=''">
+      <div style="font-size:2rem;margin-bottom:0.5rem">&#9641;</div>
+      <h4 style="font-size:0.9rem;margin-bottom:0.25rem">QR Code (SVG)</h4>
+      <div style="font-size:0.75rem;color:var(--text-secondary)">Scalable QR code containing the full signed credential payload.</div>
+    </div>
+  </div>
+  {{end}}
+
+  <div style="margin-top:1.5rem;text-align:center">
+    <button class="btn btn-ghost btn-sm" hx-get="/portal/holder/wallet" hx-target="#main-content" hx-push-url="true">&larr; Back to Wallet</button>
+  </div>
+</div>
+{{end}}
