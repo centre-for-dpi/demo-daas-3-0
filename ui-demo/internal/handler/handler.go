@@ -24,8 +24,9 @@ type IssuerDIDEntry struct {
 type CredentialSchema struct {
 	ID        string            `json:"id"`
 	Name      string            `json:"name"`
+	ConfigID  string            `json:"configId"`  // Backend credential configuration ID
 	Version   string            `json:"version"`
-	Format    string            `json:"format"`    // jwt_vc_json, ldp_vc, sdjwt_vc, etc.
+	Format    string            `json:"format"`    // jwt_vc_json, sdjwt_vc, ldp_vc, mso_mdoc
 	Standard  string            `json:"standard"`  // W3C-VCDM 2.0, SD-JWT, etc.
 	Fields    []SchemaField     `json:"fields"`
 	CreatedAt string            `json:"createdAt"`
@@ -178,6 +179,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 		}
 		mux.Handle("GET /portal/holder/wallet", holderAccess(h.HolderWallet))
 		mux.Handle("GET /portal/holder/cred-detail", holderAccess(h.HolderCredDetail))
+		mux.Handle("GET /portal/holder/claim", holderAccess(h.HolderClaim))
 		mux.Handle("GET /portal/holder/retrieval", holderAccess(h.HolderRetrieval))
 		mux.Handle("GET /portal/holder/dependents", holderAccess(h.HolderDependents))
 		mux.Handle("GET /portal/holder/inbox", holderAccess(h.HolderInbox))
@@ -196,6 +198,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 		verifierAccess := func(fn http.HandlerFunc) http.Handler {
 			return middleware.AuthRequired(middleware.RequireRole("admin", "verifier")(http.HandlerFunc(fn)))
 		}
+		mux.Handle("GET /portal/verifier/verify", verifierAccess(h.VerifierVerify))
 		mux.Handle("GET /portal/verifier/request-builder", verifierAccess(h.VerifierRequestBuilder))
 		mux.Handle("GET /portal/verifier/qr-generator", verifierAccess(h.VerifierQRGenerator))
 		mux.Handle("GET /portal/verifier/portal", verifierAccess(h.VerifierPortal))
@@ -252,12 +255,15 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /api/wallet/dids", auth(h.APIWalletDIDs))
 	mux.Handle("GET /api/wallet/export", auth(h.APIExportCredentialJSON))
 	mux.Handle("POST /api/wallet/dids/create", auth(h.APICreateDID))
-	mux.Handle("POST /api/credential/issue-and-claim", auth(h.APIIssueAndClaim))
+	mux.Handle("POST /api/credential/issue", auth(h.APIIssueCredentialOffer))
+	mux.Handle("POST /api/wallet/claim-offer", auth(h.APIWalletClaimOffer))
 	mux.Handle("POST /api/share/create-session", auth(h.APICreateShareSession))
 	mux.Handle("GET /api/schemas", auth(h.APISchemas))
 	mux.Handle("POST /api/schemas/create", auth(h.APICreateSchema))
 	mux.Handle("GET /api/schemas/list", auth(h.APIListSchemas))
 	mux.Handle("GET /api/verifier/policies", auth(h.APIPolicies))
+	mux.Handle("GET /api/credential-types", auth(h.APIListCredentialConfigs))
+	mux.Handle("POST /api/credential-types/register", auth(h.APIRegisterCredentialType))
 	mux.HandleFunc("POST /api/translate", h.APITranslate)
 	mux.HandleFunc("GET /api/translate/config", h.APITranslationConfig)
 }

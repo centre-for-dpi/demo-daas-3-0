@@ -44,12 +44,64 @@
       <button class="btn btn-primary btn-sm" id="issue-btn" onclick="issueCredential()">Sign &amp; Issue</button>
     </div>
   </div>
+
+  <!-- OID4VCI Offer Result (shown after issuance) -->
+  <div class="card" id="offer-result" style="display:none;margin-top:1.25rem;border-left:3px solid var(--color-accent)">
+    <h3 style="font-size:0.9rem;margin-bottom:1rem">Credential Offer Created</h3>
+    <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:1rem">Share the OID4VCI offer with the holder. They must accept it into their wallet.</p>
+
+    <!-- Delivery options -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem;margin-bottom:1.25rem">
+      <div class="card" style="text-align:center;padding:1rem;cursor:pointer;border:2px solid var(--color-accent);background:var(--bg-surface-alt)" onclick="selectDelivery('link')">
+        <div style="font-size:1.3rem;margin-bottom:0.25rem">&#128279;</div>
+        <div style="font-size:0.78rem;font-weight:500">Copy Link</div>
+      </div>
+      <div class="card" style="text-align:center;padding:1rem;cursor:pointer" onclick="selectDelivery('qr')">
+        <div style="font-size:1.3rem;margin-bottom:0.25rem"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="3" height="3"/></svg></div>
+        <div style="font-size:0.78rem;font-weight:500">QR Code</div>
+      </div>
+      <div class="card" style="text-align:center;padding:1rem;cursor:pointer" onclick="selectDelivery('claim')">
+        <div style="font-size:1.3rem;margin-bottom:0.25rem">&#128229;</div>
+        <div style="font-size:0.78rem;font-weight:500">Claim to My Wallet</div>
+      </div>
+    </div>
+
+    <!-- Link panel -->
+    <div id="delivery-link">
+      <label class="form-label">OID4VCI Offer URL</label>
+      <code id="offer-url-display" style="font-size:0.7rem;display:block;background:var(--bg-surface-alt);padding:0.75rem;border-radius:var(--radius-md);word-break:break-all;max-height:120px;overflow-y:auto"></code>
+      <div style="display:flex;align-items:center;gap:0.75rem;margin-top:0.75rem">
+        <button class="btn btn-sm btn-primary" onclick="navigator.clipboard.writeText(document.getElementById('offer-url-display').textContent);showToast('Copied','OID4VCI offer URL copied to clipboard')">Copy Link</button>
+        <span style="font-size:0.72rem;color:var(--text-tertiary)">The holder pastes this into their wallet to accept the credential.</span>
+      </div>
+    </div>
+
+    <!-- QR panel -->
+    <div id="delivery-qr" style="display:none;text-align:center">
+      <div style="padding:2rem;background:var(--bg-surface-alt);border-radius:var(--radius-md);display:inline-block">
+        <div style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:0.75rem">Scan with a wallet app</div>
+        <div id="qr-canvas" style="margin:0 auto"></div>
+        <p style="font-size:0.72rem;color:var(--text-tertiary);margin-top:0.75rem">OID4VCI credential offer</p>
+      </div>
+    </div>
+
+    <!-- Direct claim panel -->
+    <div id="delivery-claim" style="display:none">
+      <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:0.75rem">Accept this credential directly into your linked wallet.</p>
+      <button class="btn btn-primary btn-sm" id="claim-btn" onclick="claimOffer()">Accept into My Wallet</button>
+      <div id="claim-status" style="display:none;margin-top:0.75rem;padding:0.5rem 0.75rem;border-radius:var(--radius-sm);font-size:0.82rem"></div>
+    </div>
+
+    <div style="margin-top:1rem;font-size:0.72rem;color:var(--text-tertiary)">
+      Issuer DID: <code id="offer-issuer-did" style="font-size:0.68rem;word-break:break-all"></code>
+    </div>
+  </div>
 </div>
 
 {{if $isReal}}
 <!-- Embed schema field definitions as JSON for JS to use -->
 <script id="schema-data" type="application/json">
-{{if hasItems $schemas}}[{{range $i, $s := $schemas}}{{if $i}},{{end}}{"id":"{{$s.ID}}","name":"{{$s.Name}}","format":"{{$s.Format}}","fields":[{{range $j, $f := $s.Fields}}{{if $j}},{{end}}{"name":"{{$f.Name}}","type":"{{$f.Type}}","required":{{$f.Required}}}{{end}}]}{{end}}]{{else}}[]{{end}}
+{{if hasItems $schemas}}[{{range $i, $s := $schemas}}{{if $i}},{{end}}{"id":"{{$s.ID}}","name":"{{$s.Name}}","configId":"{{$s.ConfigID}}","format":"{{$s.Format}}","fields":[{{range $j, $f := $s.Fields}}{{if $j}},{{end}}{"name":"{{$f.Name}}","type":"{{$f.Type}}","required":{{$f.Required}}}{{end}}]}{{end}}]{{else}}[]{{end}}
 </script>
 {{end}}
 
@@ -107,6 +159,85 @@ function renderFieldInput(field) {
   return '<div class="form-group"><label class="form-label">' + label + req + '</label><input class="form-input" type="' + inputType + '"' + step + ' data-claim="' + field.name + '" placeholder="' + (placeholder || label) + '"></div>';
 }
 
+var _currentOfferUrl = '';
+
+function showOfferResult(offerUrl, issuerDid) {
+  _currentOfferUrl = offerUrl;
+  document.getElementById('offer-url-display').textContent = offerUrl;
+  document.getElementById('offer-issuer-did').textContent = issuerDid || '';
+  document.getElementById('offer-result').style.display = '';
+  document.getElementById('offer-result').scrollIntoView({behavior:'smooth', block:'nearest'});
+  selectDelivery('link');
+  showToast('Credential Offer Created', 'Share the OID4VCI offer with the holder.');
+}
+
+function selectDelivery(mode) {
+  document.getElementById('delivery-link').style.display = mode === 'link' ? '' : 'none';
+  document.getElementById('delivery-qr').style.display = mode === 'qr' ? '' : 'none';
+  document.getElementById('delivery-claim').style.display = mode === 'claim' ? '' : 'none';
+  // Highlight selected card
+  var cards = document.getElementById('offer-result').querySelectorAll('.card');
+  cards.forEach(function(c, i) {
+    var modes = ['link','qr','claim'];
+    if (modes[i] === mode) {
+      c.style.border = '2px solid var(--color-accent)';
+      c.style.background = 'var(--bg-surface-alt)';
+    } else {
+      c.style.border = '';
+      c.style.background = '';
+    }
+  });
+  // Generate QR code when switching to QR mode
+  if (mode === 'qr' && _currentOfferUrl && typeof qrcode !== 'undefined') {
+    var canvas = document.getElementById('qr-canvas');
+    canvas.innerHTML = '';
+    var qr = qrcode(0, 'L');
+    qr.addData(_currentOfferUrl);
+    qr.make();
+    canvas.innerHTML = qr.createSvgTag(4, 0);
+  }
+}
+
+function claimOffer() {
+  if (!_currentOfferUrl) return;
+  var btn = document.getElementById('claim-btn');
+  var status = document.getElementById('claim-status');
+  btn.disabled = true;
+  btn.textContent = 'Claiming...';
+  status.style.display = 'none';
+
+  fetch('/api/wallet/claim-offer', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({offerUrl: _currentOfferUrl})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    btn.disabled = false;
+    btn.textContent = 'Accept into My Wallet';
+    if (d.error) {
+      status.style.display = '';
+      status.style.background = 'var(--error-surface)';
+      status.style.color = 'var(--error)';
+      status.textContent = d.error;
+      return;
+    }
+    status.style.display = '';
+    status.style.background = 'var(--accent-surface)';
+    status.style.color = 'var(--accent)';
+    status.textContent = 'Credential accepted into your wallet.';
+    showToast('Claimed', 'Credential is now in your wallet.');
+  })
+  .catch(function(e) {
+    btn.disabled = false;
+    btn.textContent = 'Accept into My Wallet';
+    status.style.display = '';
+    status.style.background = 'var(--error-surface)';
+    status.style.color = 'var(--error)';
+    status.textContent = e.message;
+  });
+}
+
 function issueCredential() {
   {{if $isReal}}
   var schemaId = document.getElementById('issue-schema').value;
@@ -131,21 +262,32 @@ function issueCredential() {
   var identifier = document.getElementById('issue-identifier').value.trim();
   if (identifier) claims['id'] = identifier;
 
+  // Find the schema's configId and format
+  var configId = schemaId;
+  var format = 'sdjwt_vc';
+  for (var i = 0; i < schemaFieldDefs.length; i++) {
+    if (schemaFieldDefs[i].id === schemaId) {
+      configId = schemaFieldDefs[i].configId || schemaId;
+      format = schemaFieldDefs[i].format || 'sdjwt_vc';
+      break;
+    }
+  }
+
   var btn = document.getElementById('issue-btn');
   btn.disabled = true;
   btn.textContent = 'Issuing...';
 
-  fetch('/api/credential/issue-and-claim', {
+  fetch('/api/credential/issue', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({configId: schemaId, claims: claims})
+    body: JSON.stringify({configId: configId, format: format, claims: claims})
   })
   .then(function(r) { return r.json(); })
   .then(function(d) {
     btn.disabled = false;
     btn.textContent = 'Sign & Issue';
     if (d.error) { showToast('Error', d.error); return; }
-    showToast('Issued', 'Credential issued and claimed into wallet.');
+    showOfferResult(d.offerUrl, d.issuerDid);
   })
   .catch(function(e) {
     btn.disabled = false;

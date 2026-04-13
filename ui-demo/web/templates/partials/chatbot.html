@@ -80,7 +80,7 @@ function sendSuggestion(btn) {
     } else if (text.indexOf('pitch') >= 0) {
       addChatMessage("I'll route this to the <strong>Operations Agent</strong>. I need three things: the target country, the primary use case (education, identity, land, health), and the audience (minister, funder, inter-departmental). I'll generate a tailored pitch deck. See <a href='/agent-output'>generated documents</a>.", 'bot');
     } else if (text.indexOf('Technical') >= 0) {
-      addChatMessage("I'll route this to the <strong>Technical Architect Agent</strong>. Tell me: which components are in scope (issuance, verification, store, trust infrastructure, interoperability), and any DPG stack preferences (Inji, Credebl, Walt.id, Quark.id)? See <a href='/agent-output'>generated documents</a>.", 'bot');
+      addChatMessage("I'll route this to the <strong>Technical Architect Agent</strong>. Tell me: which components are in scope (issuance, verification, store, trust infrastructure, interoperability), and any DPG stack preferences (Inji, Credebl, backend, Quark.id)? See <a href='/agent-output'>generated documents</a>.", 'bot');
     }
   }, 600);
 }

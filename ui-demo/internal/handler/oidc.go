@@ -119,7 +119,7 @@ func (h *Handler) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 
 	role := saved.Role
 
-	// Link SSO identity to Walt.id wallet.
+	// Link SSO identity to backend wallet.
 	// Use a deterministic password based on email so it's consistent across all SSO providers.
 	walletToken := ""
 	if userInfo.Email != "" {

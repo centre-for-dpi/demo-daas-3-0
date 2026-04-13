@@ -20,7 +20,7 @@
   <!-- ===== REAL USER: Show policies from API ===== -->
   <div class="card" style="margin-bottom:1.25rem">
     <h3 style="font-size:0.9rem;margin-bottom:1rem">Verification Policies (from API)</h3>
-    <div style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:1rem">These policies are fetched from the Walt.id verifier API and can be used for both online and offline verification.</div>
+    <div style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:1rem">These policies are fetched from the backend verifier API and can be used for both online and offline verification.</div>
     <div style="display:flex;flex-direction:column;gap:0">
       {{if $dm}}{{$policies := mapGet $dm "policies"}}
       {{if $policies}}

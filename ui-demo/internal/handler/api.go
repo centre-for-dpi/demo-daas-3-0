@@ -38,6 +38,7 @@ func (h *Handler) APIIssueCredential(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		KeyType  string         `json:"keyType"`
 		ConfigID string         `json:"configId"`
+		Format   string         `json:"format"`
 		Claims   map[string]any `json:"claims"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -45,7 +46,11 @@ func (h *Handler) APIIssueCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.ConfigID == "" {
-		req.ConfigID = "UniversityDegree_jwt_vc_json"
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "configId required"})
+		return
+	}
+	if req.Format == "" {
+		req.Format = "sdjwt_vc"
 	}
 
 	// Onboard issuer (in production, this would be cached)
@@ -55,7 +60,7 @@ func (h *Handler) APIIssueCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	offerURL, err := h.stores.Issuer.IssueCredential(r.Context(), issuer, req.ConfigID, req.Claims)
+	offerURL, err := h.stores.Issuer.IssueCredential(r.Context(), issuer, req.ConfigID, req.Format, req.Claims)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -150,11 +155,11 @@ func (h *Handler) APIWalletClaim(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "claimed"})
 }
 
-// APIWalletPresent handles POST /api/wallet/present — presents credential to verifier.
+// APIWalletPresent handles POST /api/wallet/present — presents credential to verifier via OID4VP.
 func (h *Handler) APIWalletPresent(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
 	if user == nil || !user.HasBackendAuth() {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no backend auth"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "sign in via SSO to link your wallet"})
 		return
 	}
 
@@ -163,16 +168,28 @@ func (h *Handler) APIWalletPresent(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
+	if req.PresentationRequest == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "presentationRequest (OID4VP URL) required"})
+		return
+	}
 
 	wallets, err := h.stores.Wallet.GetWallets(r.Context(), user.WalletToken)
 	if err != nil || len(wallets) == 0 {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "no wallet"})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "no wallet found"})
 		return
+	}
+
+	// Auto-fill holder DID if not provided
+	if req.DID == "" {
+		dids, err := h.stores.Wallet.ListDIDs(r.Context(), user.WalletToken, wallets[0].ID)
+		if err == nil && len(dids) > 0 {
+			req.DID = dids[0].DID
+		}
 	}
 
 	err = h.stores.Wallet.PresentCredential(r.Context(), user.WalletToken, wallets[0].ID, req)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "presentation failed: " + err.Error()})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "presented"})
@@ -266,17 +283,18 @@ func (h *Handler) APICreateDID(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]string{"did": did})
 }
 
-// APIIssueAndClaim handles POST /api/credential/issue-and-claim — onboards an issuer,
-// issues a credential, and claims it into the holder's wallet in one step.
-func (h *Handler) APIIssueAndClaim(w http.ResponseWriter, r *http.Request) {
+// APIIssueCredentialOffer handles POST /api/credential/issue — creates an OID4VCI offer.
+// Returns the offer URL for the holder to claim (via QR code, deep link, or direct push).
+func (h *Handler) APIIssueCredentialOffer(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
-	if user == nil || !user.HasBackendAuth() {
+	if user == nil || user.Demo {
 		writeJSON(w, 401, map[string]string{"error": "unauthorized"})
 		return
 	}
 
 	var req struct {
 		ConfigID string         `json:"configId"`
+		Format   string         `json:"format"`
 		Claims   map[string]any `json:"claims"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -284,39 +302,70 @@ func (h *Handler) APIIssueAndClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.ConfigID == "" {
-		req.ConfigID = "UniversityDegree_jwt_vc_json"
+		writeJSON(w, 400, map[string]string{"error": "configId required — create a schema first"})
+		return
+	}
+	if req.Format == "" {
+		req.Format = "sdjwt_vc"
 	}
 	if req.Claims == nil {
 		req.Claims = map[string]any{"name": user.Name}
 	}
 
-	// Step 1: Onboard issuer
+	// Onboard issuer (creates ephemeral DID+key for this issuance)
 	issuer, err := h.stores.Issuer.OnboardIssuer(r.Context(), "secp256r1")
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": "onboard: " + err.Error()})
 		return
 	}
 
-	// Step 2: Issue credential
-	offerURL, err := h.stores.Issuer.IssueCredential(r.Context(), issuer, req.ConfigID, req.Claims)
+	// Issue credential → returns OID4VCI offer URL
+	offerURL, err := h.stores.Issuer.IssueCredential(r.Context(), issuer, req.ConfigID, req.Format, req.Claims)
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": "issue: " + err.Error()})
 		return
 	}
 
-	// Step 3: Claim in wallet
-	wallets, err := h.stores.Wallet.GetWallets(r.Context(), user.WalletToken)
-	if err != nil || len(wallets) == 0 {
-		writeJSON(w, 500, map[string]string{"error": "no wallet"})
-		return
-	}
-	err = h.stores.Wallet.ClaimCredential(r.Context(), user.WalletToken, wallets[0].ID, offerURL)
-	if err != nil {
-		writeJSON(w, 500, map[string]string{"error": "claim: " + err.Error()})
+	writeJSON(w, 200, map[string]any{
+		"status":    "offer_created",
+		"offerUrl":  offerURL,
+		"issuerDid": issuer.IssuerDID,
+	})
+}
+
+// APIWalletClaimOffer handles POST /api/wallet/claim-offer — holder claims an OID4VCI offer.
+func (h *Handler) APIWalletClaimOffer(w http.ResponseWriter, r *http.Request) {
+	user := middleware.GetUser(r.Context())
+	if user == nil || !user.HasBackendAuth() {
+		writeJSON(w, 401, map[string]string{"error": "unauthorized — sign in via SSO to link your wallet"})
 		return
 	}
 
-	writeJSON(w, 200, map[string]string{"status": "issued_and_claimed", "issuerDid": issuer.IssuerDID})
+	var req struct {
+		OfferURL string `json:"offerUrl"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "invalid request"})
+		return
+	}
+	if req.OfferURL == "" {
+		writeJSON(w, 400, map[string]string{"error": "offerUrl required"})
+		return
+	}
+
+	wallets, err := h.stores.Wallet.GetWallets(r.Context(), user.WalletToken)
+	if err != nil || len(wallets) == 0 {
+		writeJSON(w, 500, map[string]string{"error": "no wallet found"})
+		return
+	}
+
+	err = h.stores.Wallet.ClaimCredential(r.Context(), user.WalletToken, wallets[0].ID, req.OfferURL)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "claim failed: " + err.Error()})
+		return
+	}
+
+	writeJSON(w, 200, map[string]string{"status": "claimed"})
 }
 
 // APICreateShareSession handles POST /api/share/create-session — creates an OID4VP
@@ -344,6 +393,7 @@ func (h *Handler) APICreateSchema(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ID       string `json:"id"`
 		Name     string `json:"name"`
+		ConfigID string `json:"configId"` // Backend credential configuration ID
 		Version  string `json:"version"`
 		Format   string `json:"format"`
 		Standard string `json:"standard"`
@@ -357,8 +407,8 @@ func (h *Handler) APICreateSchema(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"error": "invalid request"})
 		return
 	}
-	if req.ID == "" || req.Format == "" {
-		writeJSON(w, 400, map[string]string{"error": "id and format are required"})
+	if req.ID == "" || req.ConfigID == "" {
+		writeJSON(w, 400, map[string]string{"error": "id and credential configuration are required"})
 		return
 	}
 
@@ -370,6 +420,7 @@ func (h *Handler) APICreateSchema(w http.ResponseWriter, r *http.Request) {
 	schema := CredentialSchema{
 		ID:       req.ID,
 		Name:     req.Name,
+		ConfigID: req.ConfigID,
 		Version:  req.Version,
 		Format:   req.Format,
 		Standard: req.Standard,

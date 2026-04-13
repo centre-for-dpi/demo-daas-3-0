@@ -10,7 +10,7 @@
   <div class="stats-row">
     <div class="card stat-card">
       <div style="display:flex;align-items:center;gap:0.4rem"><span style="width:8px;height:8px;border-radius:50%;background:var(--color-accent);display:inline-block"></span><div class="stat-number" style="font-size:1rem">Connected</div></div>
-      <div class="stat-label">Walt.id Backend</div>
+      <div class="stat-label">backend Backend</div>
     </div>
     <div class="card stat-card"><div class="stat-number" style="font-size:0.85rem">{{if $dm}}{{mapStr $dm "backendType"}}{{else}}waltid{{end}}</div><div class="stat-label">Backend Type</div></div>
     <div class="card stat-card"><div class="stat-number" style="font-size:0.85rem">{{if $dm}}{{mapStr $dm "transport"}}{{else}}direct{{end}}</div><div class="stat-label">Transport</div></div>
@@ -107,7 +107,7 @@
       <div>
         <label style="font-size:0.82rem;font-weight:500;display:block;margin-bottom:0.35rem">Current API Key</label>
         <div style="display:flex;gap:0.5rem">
-          <input type="text" class="form-input" readonly value="sk-employtt-verifier-****-****-****-7f3a" style="flex:1;font-size:0.78rem;font-family:var(--font-mono)">
+          <input type="text" class="form-input" readonly value="sk-verifier-****-****-****-7f3a" style="flex:1;font-size:0.78rem;font-family:var(--font-mono)">
           <button class="btn btn-secondary btn-sm" onclick="showToast('Copied','API key copied to clipboard.')">Copy</button>
           <button class="btn btn-ghost btn-sm" onclick="showToast('Rotated','New API key generated. Update your integrations.')">Rotate</button>
         </div>

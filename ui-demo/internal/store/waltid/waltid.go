@@ -2,8 +2,12 @@ package waltid
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"os"
+	"os/exec"
+	"strings"
 	"time"
 
 	"vcplatform/internal/model"
@@ -235,16 +239,66 @@ func (s *issuerStore) OnboardIssuer(ctx context.Context, keyType string) (*model
 	return &model.OnboardIssuerResult{IssuerKey: result.IssuerKey, IssuerDID: result.IssuerDID}, nil
 }
 
-func (s *issuerStore) IssueCredential(ctx context.Context, issuer *model.OnboardIssuerResult, configID string, claims map[string]any) (string, error) {
+func (s *issuerStore) IssueCredential(ctx context.Context, issuer *model.OnboardIssuerResult, configID, format string, claims map[string]any) (string, error) {
+	// Build credentialData with proper W3C structure
+	credData := map[string]any{
+		"@context": []string{
+			"https://www.w3.org/2018/credentials/v1",
+		},
+		"type":              []string{"VerifiableCredential"},
+		"credentialSubject": claims,
+	}
+
+	// For SD-JWT, add vct claim
+	if format == "sdjwt_vc" || format == "sd-jwt" {
+		credData["vct"] = configID
+	}
+
 	body := map[string]any{
 		"issuerKey":                 json.RawMessage(issuer.IssuerKey),
 		"issuerDid":                 issuer.IssuerDID,
 		"credentialConfigurationId": configID,
-		"credentialData": map[string]any{
-			"credentialSubject": claims,
-		},
+		"credentialData":            credData,
 	}
-	resp, code, err := s.issuer.Do(ctx, "POST", "/openid4vc/jwt/issue", body)
+
+	isSdJwt := format == "sdjwt_vc" || format == "sd-jwt" || strings.Contains(configID, "sd-jwt") || strings.Contains(configID, "sd_jwt")
+
+	if isSdJwt {
+		// SD-JWT uses JWT-style timestamps
+		body["mapping"] = map[string]any{
+			"id":  "<uuid>",
+			"iat": "<timestamp-seconds>",
+			"nbf": "<timestamp-seconds>",
+			"exp": "<timestamp-in-seconds:365d>",
+		}
+		// Add selective disclosure for all claim fields
+		sdFields := map[string]any{}
+		for k := range claims {
+			sdFields[k] = map[string]any{"sd": true}
+		}
+		body["selectiveDisclosure"] = map[string]any{"fields": sdFields}
+	} else {
+		// W3C JWT uses issuanceDate/expirationDate + issuer object
+		body["mapping"] = map[string]any{
+			"id":             "<uuid>",
+			"issuanceDate":   "<timestamp>",
+			"expirationDate": "<timestamp-in:365d>",
+			"issuer": map[string]any{
+				"id": "<issuerDid>",
+			},
+			"credentialSubject": map[string]any{
+				"id": "<subjectDid>",
+			},
+		}
+	}
+
+	// Choose endpoint based on format
+	endpoint := "/openid4vc/sdjwt/issue"
+	if !isSdJwt {
+		endpoint = "/openid4vc/jwt/issue"
+	}
+
+	resp, code, err := s.issuer.Do(ctx, "POST", endpoint, body)
 	if err != nil {
 		return "", err
 	}
@@ -254,11 +308,11 @@ func (s *issuerStore) IssueCredential(ctx context.Context, issuer *model.Onboard
 	return string(resp), nil
 }
 
-func (s *issuerStore) IssueBatch(ctx context.Context, issuer *model.OnboardIssuerResult, configID string, records []map[string]any) (*model.BatchResult, error) {
+func (s *issuerStore) IssueBatch(ctx context.Context, issuer *model.OnboardIssuerResult, configID, format string, records []map[string]any) (*model.BatchResult, error) {
 	issued := 0
 	var offerURLs []string
 	for _, claims := range records {
-		offer, err := s.IssueCredential(ctx, issuer, configID, claims)
+		offer, err := s.IssueCredential(ctx, issuer, configID, format, claims)
 		if err != nil {
 			continue
 		}
@@ -272,6 +326,95 @@ func (s *issuerStore) IssueBatch(ctx context.Context, issuer *model.OnboardIssue
 		BatchID:   fmt.Sprintf("batch-%d", time.Now().Unix()),
 		OfferURLs: offerURLs,
 	}, nil
+}
+
+func (s *issuerStore) ListCredentialConfigs(ctx context.Context) ([]model.CredentialConfig, error) {
+	// Walt.id built-in credential configurations
+	return []model.CredentialConfig{
+		{ID: "UniversityDegree_jwt_vc_json", Name: "University Degree", Category: "Education", Format: "jwt_vc_json"},
+		{ID: "OpenBadgeCredential_jwt_vc_json", Name: "Open Badge", Category: "Education", Format: "jwt_vc_json"},
+		{ID: "EducationalID_jwt_vc_json", Name: "Educational ID", Category: "Education", Format: "jwt_vc_json"},
+		{ID: "VerifiableId_jwt_vc_json", Name: "Verifiable ID", Category: "Identity", Format: "jwt_vc_json"},
+		{ID: "NaturalPersonVerifiableID_jwt_vc_json", Name: "Natural Person ID", Category: "Identity", Format: "jwt_vc_json"},
+		{ID: "eID_jwt_vc_json", Name: "eID", Category: "Identity", Format: "jwt_vc_json"},
+		{ID: "IdentityCredential_jwt_vc_json", Name: "Identity Credential", Category: "Identity", Format: "jwt_vc_json"},
+		{ID: "PassportCh_jwt_vc_json", Name: "Passport (CH)", Category: "Identity", Format: "jwt_vc_json"},
+		{ID: "BankId_jwt_vc_json", Name: "Bank ID", Category: "Finance", Format: "jwt_vc_json"},
+		{ID: "KycChecksCredential_jwt_vc_json", Name: "KYC Checks", Category: "Finance", Format: "jwt_vc_json"},
+		{ID: "KycCredential_jwt_vc_json", Name: "KYC Credential", Category: "Finance", Format: "jwt_vc_json"},
+		{ID: "KycDataCredential_jwt_vc_json", Name: "KYC Data", Category: "Finance", Format: "jwt_vc_json"},
+		{ID: "MortgageEligibility_jwt_vc_json", Name: "Mortgage Eligibility", Category: "Finance", Format: "jwt_vc_json"},
+		{ID: "TaxReceipt_jwt_vc_json", Name: "Tax Receipt", Category: "Finance", Format: "jwt_vc_json"},
+		{ID: "PND91Credential_jwt_vc_json", Name: "PND91", Category: "Finance", Format: "jwt_vc_json"},
+		{ID: "VaccinationCertificate_jwt_vc_json", Name: "Vaccination Certificate", Category: "Health", Format: "jwt_vc_json"},
+		{ID: "Iso18013DriversLicenseCredential_jwt_vc_json", Name: "Drivers License (ISO)", Category: "Transport", Format: "jwt_vc_json"},
+		{ID: "Visa_jwt_vc_json", Name: "Visa", Category: "Travel", Format: "jwt_vc_json"},
+		{ID: "BoardingPass_jwt_vc_json", Name: "Boarding Pass", Category: "Travel", Format: "jwt_vc_json"},
+		{ID: "AlpsTourReservation_jwt_vc_json", Name: "Alps Tour Reservation", Category: "Travel", Format: "jwt_vc_json"},
+		{ID: "HotelReservation_jwt_vc_json", Name: "Hotel Reservation", Category: "Travel", Format: "jwt_vc_json"},
+		{ID: "PortableDocumentA1_jwt_vc_json", Name: "Portable Document A1", Category: "Legal", Format: "jwt_vc_json"},
+		{ID: "LegalPerson_jwt_vc_json", Name: "Legal Person", Category: "Legal", Format: "jwt_vc_json"},
+		{ID: "LegalRegistrationNumber_jwt_vc_json", Name: "Legal Registration Number", Category: "Legal", Format: "jwt_vc_json"},
+		{ID: "WalletHolderCredential_jwt_vc_json", Name: "Wallet Holder", Category: "Infrastructure", Format: "jwt_vc_json"},
+		{ID: "DataspaceParticipantCredential_jwt_vc_json", Name: "Dataspace Participant", Category: "Infrastructure", Format: "jwt_vc_json"},
+		{ID: "GaiaXTermsAndConditions_jwt_vc_json", Name: "Gaia-X T&C", Category: "Infrastructure", Format: "jwt_vc_json"},
+		{ID: "identity_credential_vc+sd-jwt", Name: "Identity Credential (SD-JWT)", Category: "Identity", Format: "vc+sd-jwt"},
+		{ID: "org.iso.18013.5.1.mDL", Name: "Mobile Drivers License", Category: "Transport", Format: "mso_mdoc"},
+	}, nil
+}
+
+func (s *issuerStore) RegisterCredentialType(ctx context.Context, typeName, displayName, description, format string) (string, error) {
+	configID := typeName + "_" + strings.ReplaceAll(format, "+", "_")
+
+	// Build HOCON entry for Walt.id
+	var hocon string
+	if format == "vc+sd-jwt" || format == "sdjwt_vc" {
+		hocon = fmt.Sprintf(`
+    "%s" = {
+        format = "vc+sd-jwt"
+        cryptographic_binding_methods_supported = ["jwk"]
+        credential_signing_alg_values_supported = ["ES256", "EdDSA"]
+        vct = "%s"
+        display = [{ name = "%s", description = "%s", locale = "en-US" }]
+    }`, configID, typeName, displayName, description)
+	} else {
+		hocon = fmt.Sprintf(`
+    "%s" = {
+        format = "jwt_vc_json"
+        cryptographic_binding_methods_supported = ["did"]
+        credential_signing_alg_values_supported = ["EdDSA", "ES256"]
+        credential_definition = { type = ["VerifiableCredential", "%s"] }
+        display = [{ name = "%s", description = "%s", locale = "en-US" }]
+    }`, configID, typeName, displayName, description)
+	}
+
+	// Write to the mounted config file
+	configPath := "docker/waltid/issuer-api/config/credential-issuer-metadata.conf"
+	existing, _ := os.ReadFile(configPath)
+	var content string
+	if len(existing) == 0 {
+		content = fmt.Sprintf("supportedCredentialTypes {\n%s\n}\n", hocon)
+	} else {
+		cs := string(existing)
+		closingIdx := strings.LastIndex(cs, "}")
+		if closingIdx < 0 {
+			content = fmt.Sprintf("supportedCredentialTypes {\n%s\n%s\n}\n", cs, hocon)
+		} else {
+			content = cs[:closingIdx] + hocon + "\n" + cs[closingIdx:]
+		}
+	}
+	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
+		return "", fmt.Errorf("write config: %w", err)
+	}
+
+	// Restart the issuer container
+	cmd := exec.Command("docker", "restart", "waltid-issuer-api-1")
+	cmd.Dir = "docker/waltid"
+	if out, err := cmd.CombinedOutput(); err != nil {
+		fmt.Printf("credtype: container restart failed: %s %v\n", string(out), err)
+	}
+
+	return configID, nil
 }
 
 // ========== VerifierStore ==========
@@ -322,6 +465,9 @@ func (s *verifierStore) GetSessionResult(ctx context.Context, state string) (*mo
 	var session struct {
 		ID                 string `json:"id"`
 		VerificationResult *bool  `json:"verificationResult"`
+		TokenResponse      *struct {
+			VPToken string `json:"vp_token"`
+		} `json:"tokenResponse"`
 	}
 	if err := json.Unmarshal(resp, &session); err != nil {
 		return nil, err
@@ -333,14 +479,88 @@ func (s *verifierStore) GetSessionResult(ctx context.Context, state string) (*mo
 	if session.VerificationResult != nil && *session.VerificationResult {
 		result.Checks = []model.CheckResult{
 			{Name: "Signature", Status: "pass", Summary: "Cryptographic signature valid"},
-			{Name: "Proof Chain", Status: "pass", Summary: "Proof chain valid"},
-			{Name: "Certificate Path", Status: "pass", Summary: "Certificate path valid"},
-			{Name: "Revocation", Status: "pass", Summary: "Not revoked"},
-			{Name: "Expiry", Status: "pass", Summary: "Not expired"},
 			{Name: "Schema", Status: "pass", Summary: "Schema compliant"},
+		}
+
+		// Decode the VP token to extract credential claims
+		if session.TokenResponse != nil && session.TokenResponse.VPToken != "" {
+			extractCredentialClaims(session.TokenResponse.VPToken, result)
 		}
 	}
 	return result, nil
+}
+
+// extractCredentialClaims decodes a JWT/SD-JWT VP token and extracts the credential subject.
+func extractCredentialClaims(vpToken string, result *model.VerifyResult) {
+	// SD-JWT format: header.payload.signature~disclosure1~disclosure2...
+	// JWT format: header.payload.signature
+	// Split off disclosures first
+	token := vpToken
+	if idx := strings.Index(token, "~"); idx > 0 {
+		token = token[:idx]
+	}
+
+	// Decode the JWT payload (second part)
+	parts := strings.SplitN(token, ".", 3)
+	if len(parts) < 2 {
+		return
+	}
+
+	// Base64url decode the payload (RawURLEncoding = no padding)
+	decoded, err := base64Decode(parts[1])
+	if err != nil {
+		return
+	}
+
+	var claims map[string]any
+	if err := json.Unmarshal(decoded, &claims); err != nil {
+		return
+	}
+
+	// Extract credential type
+	if vct, ok := claims["vct"].(string); ok {
+		result.CredentialType = vct
+	}
+
+	// Extract issuer
+	if iss, ok := claims["iss"].(string); ok {
+		result.IssuerDID = iss
+	}
+
+	// Extract holder from cnf.jwk.kid or sub
+	if cnf, ok := claims["cnf"].(map[string]any); ok {
+		if jwk, ok := cnf["jwk"].(map[string]any); ok {
+			if kid, ok := jwk["kid"].(string); ok {
+				result.HolderDID = kid
+			}
+		}
+	}
+	if sub, ok := claims["sub"].(string); ok && result.HolderDID == "" {
+		result.HolderDID = sub
+	}
+
+	// Extract timestamps
+	if iat, ok := claims["iat"].(float64); ok {
+		result.IssuedAt = time.Unix(int64(iat), 0).Format("2006-01-02 15:04")
+	}
+	if exp, ok := claims["exp"].(float64); ok {
+		result.ExpiresAt = time.Unix(int64(exp), 0).Format("2006-01-02 15:04")
+	}
+
+	// Extract credentialSubject
+	if cs, ok := claims["credentialSubject"].(map[string]any); ok {
+		result.Claims = cs
+	}
+	// Also check vc.credentialSubject (W3C JWT format)
+	if vc, ok := claims["vc"].(map[string]any); ok {
+		if cs, ok := vc["credentialSubject"].(map[string]any); ok {
+			result.Claims = cs
+		}
+	}
+}
+
+func base64Decode(s string) ([]byte, error) {
+	return base64.RawURLEncoding.DecodeString(s)
 }
 
 func (s *verifierStore) ListPolicies(ctx context.Context) (map[string]string, error) {

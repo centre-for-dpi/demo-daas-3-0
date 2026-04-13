@@ -8,7 +8,7 @@
   {{$isReal := and .User (not .User.Demo)}}
 
   {{if $isReal}}
-  <!-- LIVE DATA from Walt.id -->
+  <!-- LIVE DATA from backend -->
   {{if hasItems $dids}}
   <div class="card" style="margin-bottom:1rem">
     <h3 style="font-size:0.9rem;margin-bottom:1rem">Your DIDs</h3>
@@ -173,17 +173,30 @@ function retrieveCredential() {
     return;
   }
   var btn = document.getElementById('retrieve-btn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Issuing...'; }
-  fetch('/api/credential/issue-and-claim', {
+  if (btn) { btn.disabled = true; btn.textContent = 'Retrieving...'; }
+
+  // Step 1: Issue credential offer
+  fetch('/api/credential/issue', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({configId: configId, claims: {name: holderName}})
+    body: JSON.stringify({configId: configId, format: 'sdjwt_vc', claims: {name: holderName}})
   })
   .then(function(r) { return r.json(); })
   .then(function(d) {
+    if (d.error) { if (btn) { btn.disabled = false; btn.textContent = 'Authenticate & Retrieve'; } showToast('Error', d.error); return; }
+
+    // Step 2: Claim the offer into wallet
+    return fetch('/api/wallet/claim-offer', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({offerUrl: d.offerUrl})
+    }).then(function(r2) { return r2.json(); });
+  })
+  .then(function(d) {
+    if (!d) return;
     if (btn) { btn.disabled = false; btn.textContent = 'Authenticate & Retrieve'; }
     if (d.error) { showToast('Error', d.error); return; }
-    showToast('Credential Issued', 'Credential issued and stored in your wallet.');
+    showToast('Credential Retrieved', 'Credential accepted into your wallet.');
     htmx.ajax('GET', '/portal/holder/wallet', {target: '#main-content', swap: 'innerHTML'});
     history.pushState(null, '', '/portal/holder/wallet');
   })

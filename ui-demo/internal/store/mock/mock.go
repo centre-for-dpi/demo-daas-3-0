@@ -79,13 +79,25 @@ func (s *issuerStore) OnboardIssuer(_ context.Context, keyType string) (*model.O
 	}, nil
 }
 
-func (s *issuerStore) IssueCredential(_ context.Context, issuer *model.OnboardIssuerResult, configID string, claims map[string]any) (string, error) {
+func (s *issuerStore) IssueCredential(_ context.Context, issuer *model.OnboardIssuerResult, configID, format string, claims map[string]any) (string, error) {
 	s.counter++
 	return fmt.Sprintf("openid-credential-offer://mock?id=mock-offer-%d", s.counter), nil
 }
 
-func (s *issuerStore) IssueBatch(_ context.Context, issuer *model.OnboardIssuerResult, configID string, records []map[string]any) (*model.BatchResult, error) {
+func (s *issuerStore) IssueBatch(_ context.Context, issuer *model.OnboardIssuerResult, configID, format string, records []map[string]any) (*model.BatchResult, error) {
 	return &model.BatchResult{Total: len(records), Issued: len(records), Failed: 0, BatchID: "mock-batch-1"}, nil
+}
+
+func (s *issuerStore) ListCredentialConfigs(_ context.Context) ([]model.CredentialConfig, error) {
+	return []model.CredentialConfig{
+		{ID: "mock-degree", Name: "University Degree", Category: "Education", Format: "jwt_vc_json"},
+		{ID: "mock-id", Name: "National ID", Category: "Identity", Format: "jwt_vc_json"},
+		{ID: "mock-cert", Name: "Professional Certificate", Category: "Professional", Format: "jwt_vc_json"},
+	}, nil
+}
+
+func (s *issuerStore) RegisterCredentialType(_ context.Context, typeName, displayName, description, format string) (string, error) {
+	return typeName + "_" + format, nil
 }
 
 // --- VerifierStore ---

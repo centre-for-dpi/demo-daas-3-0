@@ -1,0 +1,387 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Verify Credential</h1><p>Create an OID4VP verification request. The holder scans the QR code or uses the deep link to present their credential.</p></div>
+
+  {{$isReal := and .User (not .User.Demo)}}
+
+  {{if $isReal}}
+
+  <!-- Mode toggle -->
+  <div class="auth-tabs" style="margin-bottom:1.25rem">
+    <button class="auth-tab active" onclick="switchVerifyMode(this,'create')">Create Request</button>
+    <button class="auth-tab" onclick="switchVerifyMode(this,'check')">Check Holder Presentation</button>
+  </div>
+
+  <!-- MODE 1: Verifier-initiated -->
+  <div id="verify-mode-create">
+
+  <!-- Step 1: Create session -->
+  <div id="verify-setup" class="card" style="margin-bottom:1.25rem">
+    <h3 style="font-size:0.9rem;margin-bottom:1rem">Verification Request</h3>
+    <div class="form-row">
+      <div class="form-group" style="margin-bottom:0"><label class="form-label">Credential Type</label>
+        <input class="form-input" id="verify-cred-type" value="VerifiableCredential" placeholder="e.g. VerifiableCredential">
+      </div>
+      <div class="form-group" style="margin-bottom:0"><label class="form-label">Request Expiry</label>
+        <select class="form-select" id="verify-expiry">
+          <option value="5">5 minutes</option>
+          <option value="15" selected>15 minutes</option>
+          <option value="60">1 hour</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group" style="margin-top:1rem">
+      <label class="form-label">Verification Policies</label>
+      <div id="verify-policies" style="display:flex;flex-wrap:wrap;gap:0.5rem;padding:0.5rem 0">
+        <span style="font-size:0.82rem;color:var(--text-tertiary)">Loading policies...</span>
+      </div>
+      <div class="form-help" style="margin-top:0.25rem">Select which checks to run against the presented credential.</div>
+    </div>
+    <div style="margin-top:1rem;text-align:right">
+      <button class="btn btn-primary btn-sm" id="verify-create-btn" onclick="createVerifySession()">Create Verification Request</button>
+    </div>
+  </div>
+
+  <!-- Step 2: QR + Deep Link + Result (hidden until session created) -->
+  <div id="verify-session" style="display:none">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem">
+      <!-- QR Code -->
+      <div class="card" style="text-align:center;padding:2rem">
+        <h3 style="font-size:0.9rem;margin-bottom:1rem">Scan with Wallet</h3>
+        <div id="verify-qr" style="margin:0 auto 1rem"></div>
+        <p style="font-size:0.72rem;color:var(--text-tertiary)">OID4VP verification request</p>
+      </div>
+
+      <!-- Deep Link + Status -->
+      <div style="display:flex;flex-direction:column;gap:1rem">
+        <div class="card">
+          <h3 style="font-size:0.9rem;margin-bottom:0.75rem">Deep Link</h3>
+          <code id="verify-url" style="font-size:0.68rem;display:block;background:var(--bg-surface-alt);padding:0.75rem;border-radius:var(--radius-md);word-break:break-all;max-height:80px;overflow-y:auto"></code>
+          <div style="margin-top:0.75rem;display:flex;gap:0.5rem">
+            <button class="btn btn-sm btn-primary" onclick="navigator.clipboard.writeText(document.getElementById('verify-url').textContent);showToast('Copied','OID4VP link copied')">Copy Link</button>
+          </div>
+        </div>
+
+        <div class="card" id="verify-status-card">
+          <h3 style="font-size:0.9rem;margin-bottom:0.75rem">Status</h3>
+          <div id="verify-status" style="display:flex;align-items:center;gap:0.75rem">
+            <span style="font-size:1.2rem" id="verify-status-icon">&#9203;</span>
+            <div>
+              <div style="font-weight:500;font-size:0.88rem" id="verify-status-text">Waiting for holder...</div>
+              <div style="font-size:0.75rem;color:var(--text-tertiary)" id="verify-status-sub">The holder must scan the QR or use the deep link to present their credential.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Result detail (shown when verified) -->
+    <div id="verify-result" class="card" style="display:none;border-left:3px solid var(--color-accent)">
+      <h3 style="font-size:0.9rem;margin-bottom:1rem">Verification Result</h3>
+      <div id="verify-result-body"></div>
+    </div>
+
+    <div style="text-align:center;margin-top:1.25rem">
+      <button class="btn btn-secondary btn-sm" onclick="resetVerify()">New Verification Request</button>
+    </div>
+  </div>
+  </div><!-- end verify-mode-create -->
+
+  <!-- MODE 2: Check holder-initiated presentation -->
+  <div id="verify-mode-check" style="display:none">
+    <div class="card" style="margin-bottom:1.25rem">
+      <h3 style="font-size:0.9rem;margin-bottom:1rem">Check Presentation</h3>
+      <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:1rem">Paste the OID4VP link or state ID shared by the credential holder.</p>
+      <div style="display:grid;grid-template-columns:1fr auto;gap:0.75rem;margin-bottom:1rem">
+        <input type="text" class="form-input" id="check-state-input" placeholder="Paste OID4VP link or session state..." style="font-size:0.78rem;font-family:var(--font-mono)">
+        <button class="btn btn-primary btn-sm" id="check-btn" onclick="checkPresentation()">Check Result</button>
+      </div>
+      <div style="text-align:center">
+        <button class="btn btn-secondary btn-sm" onclick="showToast('Camera','Camera access for QR scanning requires HTTPS. Paste the link for local testing.')">Scan QR Code Instead</button>
+      </div>
+    </div>
+
+    <div id="check-result" style="display:none">
+      <div class="card" id="check-result-card" style="padding:2rem">
+      </div>
+    </div>
+  </div>
+
+  {{else}}
+  <!-- Demo mode -->
+  <div class="card" style="text-align:center;padding:3rem">
+    <div style="width:200px;height:200px;background:var(--bg-surface-alt);border:2px dashed var(--border);border-radius:var(--radius-md);margin:0 auto 1.5rem;display:flex;align-items:center;justify-content:center">
+      <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" stroke-width="1"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="3" height="3"/><rect x="5" y="5" width="3" height="3"/><rect x="16" y="5" width="3" height="3"/><rect x="5" y="16" width="3" height="3"/></svg>
+    </div>
+    <h3 style="font-size:1rem;margin-bottom:0.5rem">Credential Verification</h3>
+    <p style="font-size:0.85rem;color:var(--text-secondary);max-width:400px;margin:0 auto 1.5rem">Sign in as a real user to create OID4VP verification sessions. The holder scans the QR code to present their credential.</p>
+  </div>
+  {{end}}
+</div>
+
+<script>
+var _verifyState = '';
+var _verifyPollTimer = null;
+
+function switchVerifyMode(btn, mode) {
+  btn.parentElement.querySelectorAll('.auth-tab').forEach(function(t) { t.classList.remove('active'); });
+  btn.classList.add('active');
+  document.getElementById('verify-mode-create').style.display = mode === 'create' ? '' : 'none';
+  document.getElementById('verify-mode-check').style.display = mode === 'check' ? '' : 'none';
+}
+
+// Auto-check if URL has ?check= parameter (from holder's shareable link)
+(function autoCheck() {
+  var params = new URLSearchParams(window.location.search);
+  var checkState = params.get('check');
+  if (checkState) {
+    // Switch to check mode and auto-fill
+    var tabs = document.querySelectorAll('.auth-tab');
+    if (tabs.length >= 2) { tabs[0].classList.remove('active'); tabs[1].classList.add('active'); }
+    document.getElementById('verify-mode-create').style.display = 'none';
+    document.getElementById('verify-mode-check').style.display = '';
+    document.getElementById('check-state-input').value = checkState;
+    setTimeout(function() { checkPresentation(); }, 300);
+  }
+})();
+
+function renderVerifiedCredential(d) {
+  var html = '';
+
+  // Credential details
+  if (d.claims && Object.keys(d.claims).length > 0) {
+    html += '<div class="card" style="margin-bottom:1rem"><h4 style="font-size:0.88rem;margin-bottom:0.75rem">Credential Details</h4>';
+    html += '<div style="display:flex;flex-direction:column;gap:0.4rem">';
+    var keys = Object.keys(d.claims);
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i];
+      if (k === 'id' || k === 'type') continue; // skip internal fields
+      var label = k.replace(/([A-Z])/g, ' $1').replace(/^./, function(s) { return s.toUpperCase(); });
+      var val = d.claims[k];
+      if (typeof val === 'object') val = JSON.stringify(val);
+      html += '<div style="display:flex;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid var(--border);font-size:0.82rem"><span style="color:var(--text-secondary)">' + label + '</span><span style="font-weight:500">' + val + '</span></div>';
+    }
+    html += '</div></div>';
+  }
+
+  // Issuer/Holder/Timestamps
+  html += '<div style="display:flex;flex-direction:column;gap:0.4rem;font-size:0.8rem;margin-bottom:1rem">';
+  if (d.credentialType) html += '<div style="display:flex;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid var(--border)"><span style="color:var(--text-secondary)">Credential Type</span><span style="font-weight:500">' + d.credentialType + '</span></div>';
+  if (d.issuerDid) html += '<div style="display:flex;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid var(--border)"><span style="color:var(--text-secondary)">Issuer DID</span><code style="font-size:0.68rem;word-break:break-all;max-width:300px">' + d.issuerDid + '</code></div>';
+  if (d.holderDid) html += '<div style="display:flex;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid var(--border)"><span style="color:var(--text-secondary)">Holder</span><code style="font-size:0.68rem">' + d.holderDid + '</code></div>';
+  if (d.issuedAt) html += '<div style="display:flex;justify-content:space-between;padding:0.4rem 0;border-bottom:1px solid var(--border)"><span style="color:var(--text-secondary)">Issued</span><span>' + d.issuedAt + '</span></div>';
+  if (d.expiresAt) html += '<div style="display:flex;justify-content:space-between;padding:0.4rem 0"><span style="color:var(--text-secondary)">Expires</span><span>' + d.expiresAt + '</span></div>';
+  html += '</div>';
+
+  // Checks
+  if (d.checks && d.checks.length > 0) {
+    html += '<h4 style="font-size:0.85rem;margin-bottom:0.5rem">Verification Checks</h4>';
+    html += '<div style="display:flex;flex-direction:column;gap:0.3rem">';
+    for (var i = 0; i < d.checks.length; i++) {
+      var c = d.checks[i];
+      var icon = c.status === 'pass' ? '<span style="color:var(--success)">&#10003;</span>' : '<span style="color:var(--error)">&#10007;</span>';
+      html += '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.35rem 0;border-bottom:1px solid var(--border);font-size:0.82rem">' + icon + '<span>' + c.name + '</span><span style="margin-left:auto;color:var(--text-tertiary);font-size:0.78rem">' + c.summary + '</span></div>';
+    }
+    html += '</div>';
+  }
+
+  return html;
+}
+
+function checkPresentation() {
+  var input = document.getElementById('check-state-input').value.trim();
+  if (!input) {
+    showToast('Required', 'Paste the OID4VP link or state ID.');
+    document.getElementById('check-state-input').style.borderColor = 'var(--error)';
+    return;
+  }
+
+  // Extract state from URL if it's a full OID4VP link
+  var state = input;
+  if (input.indexOf('state=') !== -1) {
+    var match = input.match(/state=([^&]+)/);
+    if (match) state = match[1];
+  }
+
+  var btn = document.getElementById('check-btn');
+  btn.disabled = true;
+  btn.textContent = 'Checking...';
+
+  fetch('/api/verifier/session/' + encodeURIComponent(state))
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    btn.disabled = false;
+    btn.textContent = 'Check Result';
+    var card = document.getElementById('check-result-card');
+    document.getElementById('check-result').style.display = '';
+
+    if (d.error) {
+      card.style.borderLeft = '3px solid var(--warning)';
+      card.innerHTML = '<div style="display:flex;align-items:center;gap:1rem"><span style="font-size:1.5rem">&#9203;</span><div><div style="font-weight:500;font-size:0.9rem">Pending</div><div style="font-size:0.82rem;color:var(--text-secondary)">The holder has not presented their credential yet. Check back shortly.</div></div></div>';
+      return;
+    }
+
+    if (d.verified === true) {
+      card.style.borderLeft = '3px solid var(--success)';
+      card.innerHTML = '<div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.25rem"><span style="font-size:1.5rem;color:var(--success)">&#10003;</span><div><div style="font-weight:500;font-size:0.9rem;color:var(--success)">Credential Verified</div><div style="font-size:0.82rem;color:var(--text-secondary)">The presented credential is valid.</div></div></div>' + renderVerifiedCredential(d);
+    } else if (d.verified === false) {
+      card.style.borderLeft = '3px solid var(--error)';
+      card.innerHTML = '<div style="display:flex;align-items:center;gap:1rem"><span style="font-size:1.5rem;color:var(--error)">&#10007;</span><div><div style="font-weight:500;font-size:0.9rem;color:var(--error)">Verification Failed</div><div style="font-size:0.82rem;color:var(--text-secondary)">The credential could not be verified.</div></div></div>';
+    } else {
+      card.style.borderLeft = '3px solid var(--warning)';
+      card.innerHTML = '<div style="display:flex;align-items:center;gap:1rem"><span style="font-size:1.5rem">&#9203;</span><div><div style="font-weight:500;font-size:0.9rem">Waiting</div><div style="font-size:0.82rem;color:var(--text-secondary)">The holder has not responded yet.</div></div></div>';
+    }
+  })
+  .catch(function(e) {
+    btn.disabled = false;
+    btn.textContent = 'Check Result';
+    showToast('Error', e.message);
+  });
+}
+
+// Load policies from API on init
+(function loadPolicies() {
+  fetch('/api/verifier/policies')
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    var container = document.getElementById('verify-policies');
+    if (!container) return;
+    if (data.error) { container.innerHTML = '<span style="font-size:0.82rem;color:var(--error)">' + data.error + '</span>'; return; }
+    var html = '';
+    var defaultOn = {'signature': true, 'expired': true, 'not-before': true};
+    var keys = Object.keys(data);
+    keys.sort();
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i];
+      var desc = data[k] || k;
+      var checked = defaultOn[k] ? ' checked' : '';
+      html += '<label style="display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;cursor:pointer;padding:0.3rem 0.6rem;background:var(--bg-surface-alt);border-radius:var(--radius-sm);border:1px solid var(--border)">' +
+        '<input type="checkbox" value="' + k + '" class="verify-policy-cb"' + checked + '>' +
+        '<span title="' + desc.replace(/"/g,'&quot;') + '">' + k + '</span></label>';
+    }
+    container.innerHTML = html;
+  })
+  .catch(function() {
+    var container = document.getElementById('verify-policies');
+    if (container) container.innerHTML = '<label style="display:flex;align-items:center;gap:0.4rem;font-size:0.8rem"><input type="checkbox" value="signature" class="verify-policy-cb" checked> signature</label>';
+  });
+})();
+
+function createVerifySession() {
+  var credType = document.getElementById('verify-cred-type').value.trim() || 'VerifiableCredential';
+  var policies = [];
+  document.querySelectorAll('.verify-policy-cb:checked').forEach(function(cb) { policies.push(cb.value); });
+  if (policies.length === 0) policies = ['signature'];
+  var btn = document.getElementById('verify-create-btn');
+  btn.disabled = true;
+  btn.textContent = 'Creating...';
+
+  fetch('/api/verifier/verify', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({credential_types: [credType], policies: policies})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    btn.disabled = false;
+    btn.textContent = 'Create Verification Request';
+    if (d.error) { showToast('Error', d.error); return; }
+
+    _verifyState = d.state || '';
+    var requestUrl = d.request_url || '';
+
+    // Show session panel
+    document.getElementById('verify-setup').style.display = 'none';
+    document.getElementById('verify-session').style.display = '';
+
+    // Set deep link
+    document.getElementById('verify-url').textContent = requestUrl;
+
+    // Generate QR
+    if (typeof qrcode !== 'undefined' && requestUrl) {
+      var qrEl = document.getElementById('verify-qr');
+      qrEl.innerHTML = '';
+      var qr = qrcode(0, 'L');
+      qr.addData(requestUrl);
+      qr.make();
+      qrEl.innerHTML = qr.createSvgTag(4, 0);
+    }
+
+    showToast('Session Created', 'Waiting for holder to present credential...');
+
+    // Start polling for result
+    startPolling();
+  })
+  .catch(function(e) {
+    btn.disabled = false;
+    btn.textContent = 'Create Verification Request';
+    showToast('Error', e.message);
+  });
+}
+
+function startPolling() {
+  if (_verifyPollTimer) clearInterval(_verifyPollTimer);
+  _verifyPollTimer = setInterval(function() {
+    if (!_verifyState) return;
+    fetch('/api/verifier/session/' + encodeURIComponent(_verifyState))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.error) return;
+      if (d.verified === true) {
+        clearInterval(_verifyPollTimer);
+        showVerifyResult(true, d);
+      } else if (d.verified === false) {
+        clearInterval(_verifyPollTimer);
+        showVerifyResult(false, d);
+      }
+    })
+    .catch(function() {});
+  }, 3000);
+}
+
+function showVerifyResult(passed, data) {
+  var icon = document.getElementById('verify-status-icon');
+  var text = document.getElementById('verify-status-text');
+  var sub = document.getElementById('verify-status-sub');
+  var card = document.getElementById('verify-status-card');
+
+  if (passed) {
+    icon.textContent = '\u2713';
+    icon.style.color = 'var(--success)';
+    text.textContent = 'Verification Passed';
+    text.style.color = 'var(--success)';
+    sub.textContent = 'The credential is valid.';
+    card.style.borderLeft = '3px solid var(--success)';
+  } else {
+    icon.textContent = '\u2717';
+    icon.style.color = 'var(--error)';
+    text.textContent = 'Verification Failed';
+    text.style.color = 'var(--error)';
+    sub.textContent = 'The credential could not be verified.';
+    card.style.borderLeft = '3px solid var(--error)';
+  }
+
+  var resultEl = document.getElementById('verify-result');
+  var body = document.getElementById('verify-result-body');
+  body.innerHTML = renderVerifiedCredential(data);
+  resultEl.style.display = '';
+
+  showToast(passed ? 'Verified' : 'Failed', passed ? 'Credential verified successfully.' : 'Verification failed.');
+}
+
+function resetVerify() {
+  if (_verifyPollTimer) clearInterval(_verifyPollTimer);
+  _verifyState = '';
+  document.getElementById('verify-setup').style.display = '';
+  document.getElementById('verify-session').style.display = 'none';
+  document.getElementById('verify-result').style.display = 'none';
+  // Reset status
+  document.getElementById('verify-status-icon').textContent = '\u23F3';
+  document.getElementById('verify-status-icon').style.color = '';
+  document.getElementById('verify-status-text').textContent = 'Waiting for holder...';
+  document.getElementById('verify-status-text').style.color = '';
+  document.getElementById('verify-status-sub').textContent = 'The holder must scan the QR or use the deep link.';
+  document.getElementById('verify-status-card').style.borderLeft = '';
+}
+</script>
+{{end}}

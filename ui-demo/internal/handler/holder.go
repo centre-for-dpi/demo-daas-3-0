@@ -99,6 +99,17 @@ func (h *Handler) HolderCredDetail(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h *Handler) HolderClaim(w http.ResponseWriter, r *http.Request) {
+	data := h.pageData(r, "holder", nil)
+	data.Breadcrumb = []model.BreadcrumbItem{
+		{Label: "Holder"},
+		{Label: "Claim Credential", Active: true},
+	}
+	if err := h.render.Render(w, "holder/claim", data); err != nil {
+		http.Error(w, "template error", http.StatusInternalServerError)
+	}
+}
+
 func (h *Handler) HolderRetrieval(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
 	data := h.pageData(r, "holder", nil)

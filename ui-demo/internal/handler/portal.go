@@ -27,7 +27,7 @@ func (h *Handler) PortalDashboard(w http.ResponseWriter, r *http.Request) {
 	if user != nil && !user.Demo {
 		dm := map[string]any{}
 
-		// Fetch wallet credentials (needs wallet token)
+		// Fetch wallet credentials and DIDs (needs wallet token)
 		if user.HasBackendAuth() {
 			wallets, err := h.stores.Wallet.GetWallets(r.Context(), user.WalletToken)
 			if err == nil && len(wallets) > 0 {
@@ -36,15 +36,20 @@ func (h *Handler) PortalDashboard(w http.ResponseWriter, r *http.Request) {
 					dm["credentials"] = creds
 					dm["credCount"] = len(creds)
 				}
+				dids, err := h.stores.Wallet.ListDIDs(r.Context(), user.WalletToken, wallets[0].ID)
+				if err == nil {
+					dm["dids"] = dids
+				}
 			}
 		}
 
-		// Fetch schemas (no wallet token needed — static config)
-		schemas, err := h.stores.Schemas.ListSchemas(r.Context())
-		if err == nil {
-			dm["schemas"] = schemas
-			dm["schemaCount"] = len(schemas)
-		}
+		// Fetch user-created schemas and issuer DIDs
+		userSchemas := h.getSchemas(user)
+		dm["schemas"] = userSchemas
+		dm["schemaCount"] = len(userSchemas)
+		issuerDIDs := h.getIssuerDIDs(user)
+		dm["issuerDIDs"] = issuerDIDs
+		dm["issuerDIDCount"] = len(issuerDIDs)
 
 		data.Data = dm
 	}

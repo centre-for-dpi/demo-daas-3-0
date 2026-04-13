@@ -7,6 +7,17 @@ import (
 	"vcplatform/internal/model"
 )
 
+func (h *Handler) VerifierVerify(w http.ResponseWriter, r *http.Request) {
+	data := h.pageData(r, "verifier", nil)
+	data.Breadcrumb = []model.BreadcrumbItem{
+		{Label: "Verifier"},
+		{Label: "Verify Credential", Active: true},
+	}
+	if err := h.render.Render(w, "verifier/verify", data); err != nil {
+		http.Error(w, "template error", http.StatusInternalServerError)
+	}
+}
+
 func (h *Handler) verifierPage(w http.ResponseWriter, r *http.Request, tmpl, crumb string) {
 	data := h.pageData(r, "verifier", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{

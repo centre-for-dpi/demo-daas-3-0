@@ -2,14 +2,15 @@
 <div class="page">
   <div class="page-header">
     <h1>Notifications</h1>
-    <p>All events across issuance, verification, and storage modules.</p>
+    <p>{{if eq .User.Role "issuer"}}Issuance events — credentials issued, schemas published, and revocations.{{else if eq .User.Role "holder"}}Wallet events — credentials received, shared, and verification requests.{{else if eq .User.Role "verifier"}}Verification events — presentation results and policy alerts.{{else}}Events across all platform modules.{{end}}</p>
   </div>
 
   <div class="filter-bar">
     <button class="filter-pill active">All</button>
-    <button class="filter-pill">Issuance</button>
-    <button class="filter-pill">Verification</button>
-    <button class="filter-pill">System</button>
+    {{if or (eq .User.Role "issuer") (eq .User.Role "admin")}}<button class="filter-pill">Issuance</button>{{end}}
+    {{if or (eq .User.Role "verifier") (eq .User.Role "admin")}}<button class="filter-pill">Verification</button>{{end}}
+    {{if or (eq .User.Role "holder") (eq .User.Role "admin")}}<button class="filter-pill">Wallet</button>{{end}}
+    {{if eq .User.Role "admin"}}<button class="filter-pill">System</button>{{end}}
     <button class="btn btn-ghost btn-sm" style="margin-left:auto">Mark all read</button>
   </div>
 
@@ -35,11 +36,11 @@
   </div>
 
   {{else if $isReal}}
-  <!-- REAL USER — no notification backend yet -->
+  <!-- REAL USER — no notifications yet -->
   <div class="card" style="text-align:center;padding:3rem 2rem">
     <div style="font-size:2.5rem;margin-bottom:1rem">&#128276;</div>
     <h3 style="font-size:1rem;margin-bottom:0.5rem">No new notifications</h3>
-    <p style="font-size:0.85rem;color:var(--text-secondary)">You're all caught up. Notifications will appear here when credentials are issued, shared, or verified.</p>
+    <p style="font-size:0.85rem;color:var(--text-secondary)">{{if eq .User.Role "issuer"}}Notifications will appear here when you issue credentials, publish schemas, or register new DIDs.{{else if eq .User.Role "holder"}}Notifications will appear here when you receive credentials, respond to verification requests, or share presentations.{{else if eq .User.Role "verifier"}}Notifications will appear here when verification sessions complete or policies trigger alerts.{{else}}Notifications will appear here as platform activity occurs.{{end}}</p>
   </div>
 
   {{else}}

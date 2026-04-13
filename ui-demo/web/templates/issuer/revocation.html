@@ -33,7 +33,7 @@
     <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem">
       <button class="btn btn-secondary btn-sm" hx-get="/portal/issuer/cred-detail{{if and $isReal $cred}}?id={{$cred.ID}}{{end}}" hx-target="#main-content" hx-push-url="true">Cancel</button>
       {{if $isReal}}
-      <button class="btn btn-danger btn-sm" onclick="showToast('Not Available','Revocation is not available in this backend. Walt.id does not currently expose a revocation API.')">Confirm Revocation</button>
+      <button class="btn btn-danger btn-sm" onclick="showToast('Not Available','Revocation is not available in this backend. backend does not currently expose a revocation API.')">Confirm Revocation</button>
       {{else}}
       <button class="btn btn-danger btn-sm" hx-get="/portal/issuer/issued-creds" hx-target="#main-content" hx-push-url="true" onclick="showToast('Revoked','Credential revoked. Status list updated. Holder notified.')">Confirm Revocation</button>
       {{end}}

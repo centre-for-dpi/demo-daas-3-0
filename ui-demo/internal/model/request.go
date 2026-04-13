@@ -2,6 +2,14 @@ package model
 
 import "encoding/json"
 
+// CredentialConfig represents a credential configuration supported by the backend.
+type CredentialConfig struct {
+	ID       string `json:"id"`       // e.g. "UniversityDegree_jwt_vc_json"
+	Name     string `json:"name"`     // e.g. "University Degree"
+	Category string `json:"category"` // e.g. "Education", "Identity", "Finance"
+	Format   string `json:"format"`   // e.g. "jwt_vc_json", "vc+sd-jwt", "mso_mdoc"
+}
+
 // IssueRequest for single credential issuance.
 type IssueRequest struct {
 	SchemaID string         `json:"schema_id"`
@@ -42,11 +50,17 @@ type VerifyRequest struct {
 
 // VerifyResult from verification.
 type VerifyResult struct {
-	SessionID string        `json:"session_id"`
-	State     string        `json:"state"`
-	RequestURL string       `json:"request_url"` // openid4vp:// URL
-	Verified  *bool         `json:"verified,omitempty"`
-	Checks    []CheckResult `json:"checks,omitempty"`
+	SessionID       string            `json:"session_id"`
+	State           string            `json:"state"`
+	RequestURL      string            `json:"request_url"` // openid4vp:// URL
+	Verified        *bool             `json:"verified,omitempty"`
+	Checks          []CheckResult     `json:"checks,omitempty"`
+	CredentialType  string            `json:"credentialType,omitempty"`
+	IssuerDID       string            `json:"issuerDid,omitempty"`
+	HolderDID       string            `json:"holderDid,omitempty"`
+	Claims          map[string]any    `json:"claims,omitempty"`
+	IssuedAt        string            `json:"issuedAt,omitempty"`
+	ExpiresAt       string            `json:"expiresAt,omitempty"`
 }
 
 type CheckResult struct {

@@ -102,6 +102,9 @@
       <button class="sidebar-item{{if eq .ActivePage "holder"}} active{{end}}" hx-get="/portal/holder/wallet" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#128274;</span> My Credentials
       </button>
+      <button class="sidebar-item" hx-get="/portal/holder/claim" hx-target="#main-content" hx-push-url="true">
+        <span class="sidebar-item-icon">&#128230;</span> Claim Credential
+      </button>
       <button class="sidebar-item" hx-get="/portal/holder/retrieval" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#128229;</span> Retrieve
       </button>
@@ -116,7 +119,7 @@
         <span class="sidebar-item-icon">&#128065;</span> Selective Disclosure
       </button>
       <button class="sidebar-item" hx-get="/portal/holder/share" hx-target="#main-content" hx-push-url="true">
-        <span class="sidebar-item-icon">&#128228;</span> Share
+        <span class="sidebar-item-icon">&#128228;</span> Present Credential
       </button>
       <button class="sidebar-item" hx-get="/portal/holder/catalog" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#128203;</span> Credential Catalog
@@ -134,29 +137,17 @@
     {{if and (hasWorkspace "verifier") .User (roleIs .User.Role "admin" "verifier")}}
     <div class="sidebar-section">
       <div class="sidebar-section-label">Verifier</div>
-      <button class="sidebar-item" hx-get="/portal/verifier/portal" hx-target="#main-content" hx-push-url="true">
-        <span class="sidebar-item-icon">&#127760;</span> Verification Portal
+      <button class="sidebar-item{{if eq .ActivePage "verifier"}} active{{end}}" hx-get="/portal/verifier/verify" hx-target="#main-content" hx-push-url="true">
+        <span class="sidebar-item-icon">&#128270;</span> Verify Credential
       </button>
-      <button class="sidebar-item{{if eq .ActivePage "verifier"}} active{{end}}" hx-get="/portal/verifier/dashboard" hx-target="#main-content" hx-push-url="true">
+      <button class="sidebar-item" hx-get="/portal/verifier/dashboard" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#128202;</span> Results
-      </button>
-      <button class="sidebar-item" hx-get="/portal/verifier/proof-detail" hx-target="#main-content" hx-push-url="true">
-        <span class="sidebar-item-icon">&#128269;</span> Proof Detail
       </button>
       <button class="sidebar-item" hx-get="/portal/verifier/history" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#128203;</span> History
       </button>
-      <button class="sidebar-item" hx-get="/portal/verifier/request-builder" hx-target="#main-content" hx-push-url="true">
-        <span class="sidebar-item-icon">&#128221;</span> Request Builder
-      </button>
-      <button class="sidebar-item" hx-get="/portal/verifier/qr-generator" hx-target="#main-content" hx-push-url="true">
-        <span class="sidebar-item-icon">&#128241;</span> QR / Deep Link
-      </button>
-      <button class="sidebar-item" hx-get="/portal/verifier/offline" hx-target="#main-content" hx-push-url="true">
-        <span class="sidebar-item-icon">&#128225;</span> Online / Offline
-      </button>
       <button class="sidebar-item" hx-get="/portal/verifier/sdk-guide" hx-target="#main-content" hx-push-url="true">
-        <span class="sidebar-item-icon">&#9881;</span> SDK Integration
+        <span class="sidebar-item-icon">&#9881;</span> SDK / API
       </button>
     </div>
     {{end}}

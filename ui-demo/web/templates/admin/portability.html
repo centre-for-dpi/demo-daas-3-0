@@ -21,7 +21,7 @@
         {{$isReal := and .User (not .User.Demo)}}
         {{if $isReal}}
         <button class="btn btn-primary btn-sm" onclick="window.open('/api/wallet/export','_blank');showToast('Export','Opening credential export from the wallet API.')">Export from Wallet API</button>
-        <div style="margin-top:0.5rem;font-size:0.78rem;color:var(--text-secondary)">Exports credential data from the Walt.id wallet via <code>/api/wallet/export</code>.</div>
+        <div style="margin-top:0.5rem;font-size:0.78rem;color:var(--text-secondary)">Exports credential data from the backend wallet via <code>/api/wallet/export</code>.</div>
         {{else}}
         <button class="btn btn-primary btn-sm" onclick="showToast('Export Started','Your export is being prepared. You will be notified when the download is ready.')">Start Export</button>
         {{end}}

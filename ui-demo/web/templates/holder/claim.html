@@ -1,0 +1,107 @@
+{{define "content"}}
+<div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
+  <div class="page-header"><h1>Claim Credential</h1><p>Accept a credential offer from an issuer into your wallet.</p></div>
+
+  {{$isReal := and .User (not .User.Demo)}}
+
+  {{if $isReal}}
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.5rem">
+    <!-- Option 1: Paste link -->
+    <div class="card" style="padding:1.5rem">
+      <div style="font-size:1.5rem;text-align:center;margin-bottom:0.75rem">&#128279;</div>
+      <h3 style="font-size:0.9rem;text-align:center;margin-bottom:0.75rem">Paste Offer Link</h3>
+      <div class="form-group" style="margin-bottom:0.75rem">
+        <input type="text" class="form-input" id="claim-offer-url" placeholder="openid-credential-offer://..." style="font-size:0.78rem;font-family:var(--font-mono)">
+      </div>
+      <button class="btn btn-primary btn-sm" id="claim-link-btn" style="width:100%" onclick="claimFromLink()">Accept Credential</button>
+      <div id="claim-link-status" style="display:none;margin-top:0.75rem;padding:0.5rem 0.75rem;border-radius:var(--radius-sm);font-size:0.82rem"></div>
+    </div>
+
+    <!-- Option 2: Scan QR -->
+    <div class="card" style="padding:1.5rem;text-align:center">
+      <div style="font-size:1.5rem;margin-bottom:0.75rem"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="3" height="3"/><rect x="5" y="5" width="3" height="3"/><rect x="16" y="5" width="3" height="3"/><rect x="5" y="16" width="3" height="3"/></svg></div>
+      <h3 style="font-size:0.9rem;margin-bottom:0.75rem">Scan QR Code</h3>
+      <p style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:0.75rem">Point your camera at the issuer's QR code to receive the credential offer.</p>
+      <button class="btn btn-secondary btn-sm" onclick="showToast('Camera','Camera access for QR scanning requires HTTPS. Use the paste link option for local testing.')">Open Camera</button>
+    </div>
+  </div>
+
+  <div class="card" style="padding:1.25rem;background:var(--bg-surface-alt)">
+    <h4 style="font-size:0.85rem;margin-bottom:0.5rem">How it works</h4>
+    <ol style="font-size:0.8rem;color:var(--text-secondary);margin:0;padding-left:1.25rem;display:flex;flex-direction:column;gap:0.3rem">
+      <li>The issuer creates a credential and generates an OID4VCI offer link or QR code</li>
+      <li>You paste the link or scan the QR code here</li>
+      <li>Your wallet verifies the offer and accepts the credential</li>
+      <li>The credential appears in <strong>My Credentials</strong></li>
+    </ol>
+  </div>
+
+  {{else}}
+  <!-- Demo mode -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem">
+    <div class="card" style="text-align:center;padding:2rem">
+      <div style="font-size:2rem;margin-bottom:0.5rem">&#128279;</div>
+      <h4 style="font-size:0.88rem;margin-bottom:0.3rem">Paste Offer Link</h4>
+      <div style="font-size:0.75rem;color:var(--text-secondary)">Paste an OID4VCI credential offer URL from the issuer.</div>
+      <input type="text" class="form-input" placeholder="openid-credential-offer://..." style="font-size:0.75rem;margin-top:0.75rem">
+      <button class="btn btn-primary btn-sm" style="margin-top:0.5rem;width:100%" onclick="showToast('Claimed','Demo credential accepted into wallet.')">Accept</button>
+    </div>
+    <div class="card" style="text-align:center;padding:2rem">
+      <div style="font-size:2rem;margin-bottom:0.5rem">&#128247;</div>
+      <h4 style="font-size:0.88rem;margin-bottom:0.3rem">Scan QR Code</h4>
+      <div style="font-size:0.75rem;color:var(--text-secondary)">Point your camera at the issuer's QR code.</div>
+      <button class="btn btn-secondary btn-sm" style="margin-top:0.75rem" onclick="showToast('Camera','Camera access requested.')">Open Camera</button>
+    </div>
+  </div>
+  {{end}}
+</div>
+
+<script>
+function claimFromLink() {
+  var url = document.getElementById('claim-offer-url').value.trim();
+  if (!url) {
+    showToast('Required', 'Paste the credential offer URL.');
+    document.getElementById('claim-offer-url').style.borderColor = 'var(--error)';
+    return;
+  }
+
+  var btn = document.getElementById('claim-link-btn');
+  var status = document.getElementById('claim-link-status');
+  btn.disabled = true;
+  btn.textContent = 'Claiming...';
+  status.style.display = 'none';
+
+  fetch('/api/wallet/claim-offer', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({offerUrl: url})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    btn.disabled = false;
+    btn.textContent = 'Accept Credential';
+    status.style.display = '';
+    if (d.error) {
+      status.style.background = 'var(--error-surface)';
+      status.style.color = 'var(--error)';
+      status.textContent = d.error;
+      return;
+    }
+    showToast('Credential Claimed', 'Redirecting to your wallet...');
+    // Redirect to My Credentials
+    setTimeout(function() {
+      htmx.ajax('GET', '/portal/holder/wallet', {target: '#main-content', swap: 'innerHTML'});
+      history.pushState(null, '', '/portal/holder/wallet');
+    }, 500);
+  })
+  .catch(function(e) {
+    btn.disabled = false;
+    btn.textContent = 'Accept Credential';
+    status.style.display = '';
+    status.style.background = 'var(--error-surface)';
+    status.style.color = 'var(--error)';
+    status.textContent = e.message;
+  });
+}
+</script>
+{{end}}

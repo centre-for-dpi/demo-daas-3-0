@@ -5,7 +5,7 @@
   {{$cred := index ($dm) "credential"}}
 
   {{if and .User (not .User.Demo) $cred}}
-  <!-- LIVE DATA from Walt.id -->
+  <!-- LIVE DATA -->
   {{$pd := $cred.ParsedDocument}}
   {{$subj := credSubject $pd}}
   {{$typeName := credTypes $pd}}

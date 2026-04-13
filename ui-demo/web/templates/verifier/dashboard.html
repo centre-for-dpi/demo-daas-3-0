@@ -1,6 +1,6 @@
 {{define "content"}}
 <div class="page" style="display:block;padding:2rem 2rem 4rem;max-width:1100px;animation:pageIn 0.3s ease-out">
-  <div class="page-header"><div style="display:flex;align-items:center;justify-content:space-between"><div><h1>Verification Dashboard</h1><p>Live verification results and queue status.</p></div><button class="btn btn-primary btn-sm" hx-get="/portal/verifier/request-builder" hx-target="#main-content" hx-push-url="true">+ New Request</button></div></div>
+  <div class="page-header"><div style="display:flex;align-items:center;justify-content:space-between"><div><h1>Verification Dashboard</h1><p>Live verification results and queue status.</p></div><button class="btn btn-primary btn-sm" hx-get="/portal/verifier/verify" hx-target="#main-content" hx-push-url="true">+ New Request</button></div></div>
 
   {{$isReal := and .User (not .User.Demo)}}
 
@@ -15,8 +15,8 @@
   <div class="card" style="text-align:center;padding:3rem">
     <div style="font-size:2rem;margin-bottom:0.75rem">&#128270;</div>
     <h3 style="font-size:0.95rem;margin-bottom:0.5rem">No Verifications Yet</h3>
-    <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:1rem">Create a verification request to start verifying credentials via the Walt.id verifier API.</p>
-    <button class="btn btn-primary btn-sm" hx-get="/portal/verifier/request-builder" hx-target="#main-content" hx-push-url="true">+ New Request</button>
+    <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:1rem">Create a verification request to start verifying credentials via the backend verifier API.</p>
+    <button class="btn btn-primary btn-sm" hx-get="/portal/verifier/verify" hx-target="#main-content" hx-push-url="true">+ New Request</button>
   </div>
   {{else}}
   <div class="stats-row">

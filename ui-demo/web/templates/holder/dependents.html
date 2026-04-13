@@ -3,7 +3,7 @@
   <div class="page-header"><div style="display:flex;align-items:center;justify-content:space-between"><div><h1>Dependents</h1><p>Manage credentials held on behalf of minors and dependents.</p></div>{{if and .User .User.Demo}}<button class="btn btn-primary btn-sm" onclick="showToast('Link Dependent','Enter dependent details to initiate registry-validated linking.')">+ Link Dependent</button>{{end}}</div></div>
 
   {{if and .User (not .User.Demo)}}
-  <!-- LIVE DATA: No dependents API available in Walt.id -->
+  <!-- LIVE DATA: No dependents API available in backend -->
   <div class="card" style="text-align:center;padding:3rem">
     <div style="font-size:2rem;margin-bottom:1rem">&#128101;</div>
     <h3 style="font-size:0.95rem;margin-bottom:0.5rem">No dependents linked</h3>

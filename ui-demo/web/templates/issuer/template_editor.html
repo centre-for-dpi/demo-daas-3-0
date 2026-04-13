@@ -41,7 +41,7 @@
 
   {{if hasItems $schemas}}
   <script id="schema-data" type="application/json">
-  [{{range $i, $s := $schemas}}{{if $i}},{{end}}{"id":"{{$s.ID}}","name":"{{$s.Name}}","format":"{{$s.Format}}","fields":[{{range $j, $f := $s.Fields}}{{if $j}},{{end}}{"name":"{{$f.Name}}","type":"{{$f.Type}}","required":{{$f.Required}}}{{end}}]}{{end}}]
+  [{{range $i, $s := $schemas}}{{if $i}},{{end}}{"id":"{{$s.ID}}","name":"{{$s.Name}}","configId":"{{$s.ConfigID}}","format":"{{$s.Format}}","fields":[{{range $j, $f := $s.Fields}}{{if $j}},{{end}}{"name":"{{$f.Name}}","type":"{{$f.Type}}","required":{{$f.Required}}}{{end}}]}{{end}}]
   </script>
   {{end}}
 

@@ -35,9 +35,15 @@ type IssuerStore interface {
 	// OnboardIssuer generates a new issuer key pair and DID.
 	OnboardIssuer(ctx context.Context, keyType string) (*model.OnboardIssuerResult, error)
 	// IssueCredential issues a single credential and returns the OID4VCI offer URL.
-	IssueCredential(ctx context.Context, issuer *model.OnboardIssuerResult, configID string, claims map[string]any) (string, error)
+	// format: "jwt_vc_json", "sdjwt_vc", "ldp_vc" etc.
+	IssueCredential(ctx context.Context, issuer *model.OnboardIssuerResult, configID, format string, claims map[string]any) (string, error)
 	// IssueBatch issues multiple credentials.
-	IssueBatch(ctx context.Context, issuer *model.OnboardIssuerResult, configID string, records []map[string]any) (*model.BatchResult, error)
+	IssueBatch(ctx context.Context, issuer *model.OnboardIssuerResult, configID, format string, records []map[string]any) (*model.BatchResult, error)
+	// ListCredentialConfigs returns the credential configurations supported by this backend.
+	ListCredentialConfigs(ctx context.Context) ([]model.CredentialConfig, error)
+	// RegisterCredentialType registers a new credential type with the backend.
+	// Returns the config ID. Not all backends support this — returns error if unsupported.
+	RegisterCredentialType(ctx context.Context, typeName, displayName, description, format string) (string, error)
 }
 
 // VerifierStore manages credential verification operations.

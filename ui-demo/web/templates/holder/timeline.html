@@ -7,7 +7,7 @@
   {{$isReal := and .User (not .User.Demo)}}
 
   {{if and $isReal (hasItems $creds)}}
-  <!-- LIVE DATA from Walt.id -->
+  <!-- LIVE DATA from backend -->
   <!-- Credential selector -->
   <div style="margin-bottom:1.25rem">
     <select class="form-input" style="width:100%;max-width:400px" onchange="switchTimeline(this.value)">
