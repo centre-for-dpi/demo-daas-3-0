@@ -18,6 +18,7 @@ import (
 	"vcplatform/internal/middleware"
 	"vcplatform/internal/render"
 	"vcplatform/internal/store"
+	adapterstore "vcplatform/internal/store/adapter"
 	"vcplatform/internal/store/credebl"
 	"vcplatform/internal/store/inji"
 	"vcplatform/internal/store/mock"
@@ -139,8 +140,21 @@ func initStores(cfg *config.Config) *store.Stores {
 	stores.Wallet = pickWalletStore(walletDPG, cfg)
 	stores.Verifier = pickVerifierStore(verifierDPG, cfg)
 
-	fmt.Printf("stores: issuer=%s wallet=%s verifier=%s\n",
+	// Hybrid fallback: when the primary verifier is the backend-agnostic
+	// adapter, we also pin a walt.id verifier + wallet pair so that credential
+	// formats the adapter can't handle (JWT_VC, SD-JWT without x5c) can fall
+	// back to walt.id's OID4VP session flow.
+	if verifierDPG == "adapter" {
+		stores.FallbackVerifier = pickVerifierStore("waltid", cfg)
+		stores.FallbackWallet = pickWalletStore("waltid", cfg)
+	}
+
+	fmt.Printf("stores: issuer=%s wallet=%s verifier=%s",
 		stores.Issuer.Name(), stores.Wallet.Name(), stores.Verifier.Name())
+	if stores.FallbackVerifier != nil {
+		fmt.Printf(" (fallback: %s)", stores.FallbackVerifier.Name())
+	}
+	fmt.Println()
 
 	return stores
 }
@@ -199,6 +213,12 @@ func pickVerifierStore(dpg string, cfg *config.Config) store.VerifierStore {
 		url := envOr("INJI_VERIFY_URL", "http://localhost:8082")
 		client := newTransportClient(url, "", cfg)
 		return inji.NewVerifierStore(client)
+	case "adapter":
+		// Backend-agnostic verifier: routes LDP_VC / SD-JWT / JWT credentials
+		// through the standalone verification-adapter, which handles URDNA2015
+		// canonicalization, DID resolution, and format-specific verification.
+		url := envOr("VC_ADAPTER_URL", "http://localhost:8085")
+		return adapterstore.New(url)
 	case "credebl":
 		return credebl.NewVerifierStore()
 	default:

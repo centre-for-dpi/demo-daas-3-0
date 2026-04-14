@@ -46,5 +46,9 @@ echo "Translation:"
 check "LibreTranslate"      "http://localhost:5000/languages"
 
 echo ""
+echo "Verification Adapter:"
+check "vc-adapter"          "http://localhost:8085/health"
+
+echo ""
 echo "App server:"
 check "App"                 "http://localhost:8080/api/capabilities"

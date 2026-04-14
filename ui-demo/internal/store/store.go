@@ -102,6 +102,16 @@ type Stores struct {
 	Schemas       SchemaStore
 	Notifications NotificationStore
 	Audit         AuditStore
+
+	// FallbackVerifier is an optional second verifier. When the primary
+	// Verifier can't handle a credential (typically because it's adapter-only
+	// and the credential is a JWT VC that needs an OID4VP session flow), the
+	// handler delegates to this fallback. In hybrid mode it's the walt.id
+	// verifier; in single-DPG modes it's nil.
+	FallbackVerifier VerifierStore
+	// FallbackWallet is the wallet paired with FallbackVerifier — used when
+	// driving an OID4VP session that needs a wallet to present credentials.
+	FallbackWallet WalletStore
 }
 
 // Capabilities composes the per-service capability structs into the unified

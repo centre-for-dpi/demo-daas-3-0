@@ -262,6 +262,39 @@ services:
       timeout: 5s
       retries: 5
 
+  # ==========================================================================
+  # Verification Adapter — backend-agnostic verifier
+  #
+  # Routes by DID method to inji-verify / waltid-verifier-api, or verifies
+  # LDP_VC cryptographically in-process via URDNA2015 + Ed25519. SD-JWT
+  # with x5c headers is also verified locally (self-contained cert chain).
+  # Runs on the same waltid_default network as the rest of the stack so
+  # backend URLs use internal docker hostnames.
+  #
+  # For true air-gap demonstration, run this service with
+  #   docker run --rm --network none ... verification-adapter
+  # after pre-syncing issuer keys via POST /sync.
+  # ==========================================================================
+
+  vc-adapter:
+    image: verification-adapter-adapter:latest
+    container_name: vc-adapter
+    ports:
+      - "8085:8085"
+    environment:
+      ADAPTER_PORT: "8085"
+      BACKENDS_CONFIG: /app/backends.json
+      CACHE_DB: /app/cache/issuer-cache.db
+    volumes:
+      - ./vc-adapter/backends.json:/app/backends.json:ro
+      - vc-adapter-cache:/app/cache
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8085/health"]
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+
 volumes:
   wallet-db:
   lt-data:
@@ -269,3 +302,4 @@ volumes:
   certify-pkcs12:
   inji-verify-db:
   citizens-data:
+  vc-adapter-cache:

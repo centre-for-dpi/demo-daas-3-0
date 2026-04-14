@@ -12,6 +12,7 @@ import (
 
 	"vcplatform/internal/model"
 	"vcplatform/internal/store"
+	"vcplatform/internal/store/walletbag"
 	"vcplatform/internal/transport"
 )
 
@@ -190,6 +191,10 @@ func (s *walletStore) ListCredentials(ctx context.Context, token, walletID strin
 	if err := json.Unmarshal(resp, &creds); err != nil {
 		return nil, err
 	}
+	// Merge in any credentials held in the shared in-process bag (e.g. LDP_VCs
+	// minted locally by our URDNA2015 signer). They show up alongside
+	// credentials stored in Walt.id wallet-api so the UI sees one unified list.
+	creds = append(creds, walletbag.Shared.List(token)...)
 	return creds, nil
 }
 

@@ -10,7 +10,7 @@ cd /home/adam/cdpi/n8n-demo/ui-demo
 make docker-up          # starts Walt.id + Keycloak + WSO2 + LibreTranslate
 docker compose -f docker/waltid/docker-compose.yml up -d \
   certify-postgres inji-verify-postgres inji-certify certify-nginx \
-  inji-verify-service inji-verify-ui citizens-postgres
+  inji-verify-service inji-verify-ui citizens-postgres vc-adapter
 ```
 
 Wait ~3 minutes for Inji Certify to boot (check `docker logs inji-certify`
@@ -22,7 +22,7 @@ Verify everything is up:
 ./scripts/demo-health.sh
 ```
 
-## Starting the app — two deployment modes
+## Starting the app — three deployment modes
 
 ### Mode A: Kenya (Walt.id stack)
 
@@ -30,10 +30,9 @@ Verify everything is up:
 ./scripts/demo-kenya.sh
 ```
 
-Opens the app at `http://localhost:8080` with:
-- Issuer: Walt.id
-- Wallet: Walt.id
-- Verifier: Walt.id
+- Issuer: Walt.id Issuer API (jwt_vc_json, vc+sd-jwt, mso_mdoc)
+- Wallet: Walt.id Wallet API
+- Verifier: Walt.id Verifier API (OID4VP session flow)
 - Data Source: Citizens DB (filtered to KE records)
 
 ### Mode B: Trinidad & Tobago (Inji stack)
@@ -42,21 +41,70 @@ Opens the app at `http://localhost:8080` with:
 ./scripts/demo-trinidad.sh
 ```
 
-Opens the app at `http://localhost:8080` with:
-- Issuer: Inji Certify
+- Issuer: Inji Certify (ldp_vc, vc+sd-jwt, mso_mdoc via OID4VCI Pre-Auth Code)
 - Wallet: Inji Holder (in-process) — a minimal Go OID4VCI client that claims
-  Inji-issued credentials server-side and stores them in an in-memory bag per
-  user. This sidesteps the lack of a standalone Inji wallet service.
-- Verifier: Inji Verify (via direct-verify endpoint)
+  Inji-issued credentials server-side and stores them in the shared wallet bag
+- Verifier: Inji Verify (direct-verify endpoint)
 - Data Source: Citizens DB (filtered to TT records)
 
-> **Cross-DPG note.** Both demo modes run a single DPG end-to-end. The backend
-> abstraction, capability matrix, and per-service env selectors
-> (`ISSUER_DPG` / `WALLET_DPG` / `VERIFIER_DPG`) support mixing DPGs, but the
-> Walt.id ↔ Inji interop path hits signature-format incompatibilities
-> (JWS vs Linked Data Proof) that require a full credential translation layer
-> — out of scope for v1. See `/api/verifier/direct-verify` for the adapter
-> pattern that will host that layer in v2.
+### Mode C: Hybrid cross-DPG
+
+```bash
+./scripts/demo-hybrid.sh
+```
+
+- Issuer: Walt.id (for jwt_vc_json, sd-jwt, mdoc) PLUS in-process URDNA2015
+  signer (for ldp_vc) — LDP credentials are signed with Ed25519Signature2020
+  and stashed directly in the shared wallet bag
+- Wallet: Walt.id Wallet API (merged with shared wallet bag so LDP and JWT
+  credentials appear in one list)
+- Verifier: **verification-adapter** (docker service `vc-adapter`) — routes
+  by DID method to Inji Verify / Walt.id Verifier, does URDNA2015 two-hash
+  verification for LDP_VC, forwards SD-JWT raw, and supports true air-gap
+  via `docker run --network none`
+- Fallback: Walt.id Verifier for JWT/SD-JWT that need OID4VP sessions
+
+## Cross-DPG verification matrix
+
+All three modes run through `./scripts/smoke-e2e.sh`. Hybrid adds the
+cross-DPG paths:
+
+| Issuer | Format | Wallet | Verifier path | Result |
+|---|---|---|---|---|
+| Walt.id | jwt_vc_json | Walt.id | Walt.id OID4VP session (fallback) | SUCCESS |
+| Walt.id | vc+sd-jwt | Walt.id | Walt.id OID4VP session (fallback) | SUCCESS* |
+| **Walt.id (in-process signer)** | **ldp_vc** | **shared bag** | **adapter → URDNA2015 crypto** | **SUCCESS (CRYPTOGRAPHIC)** |
+| Inji Certify | ldp_vc | Inji Holder | Inji Verify direct-verify | SUCCESS |
+| Inji Certify | vc+sd-jwt | Inji Holder | Inji Verify direct-verify | SUCCESS |
+
+\* SD-JWT OID4VP session verification hits a known walt.id
+`SSIKit2WalletService.usePresentationRequest` serializer bug when the
+credential ID is a URL rather than a UUID. Walt.id's own JSON-format SD-JWT
+issuance + direct claim works; the failure is only in the fallback OID4VP
+presentation step. Tracked as a known limitation.
+
+### True air-gap verification
+
+The verification-adapter supports fully offline cryptographic verification:
+
+```bash
+# Produce a credential (in hybrid mode) then:
+SAMPLE_CRED_FILE=/tmp/cred.ldp.json \
+SAMPLE_ISSUER_DID="did:key:..." \
+  ./scripts/demo-airgap-verify.sh
+```
+
+Sequence:
+1. Adapter container warmed up online: `/sync` caches the issuer DID's public
+   key into SQLite.
+2. Second adapter container started with `docker run --network none` — no
+   network interfaces at all. Cache volume mounted read-write.
+3. Credential submitted via `docker exec` (no host port forwarding possible
+   under `--network none`).
+4. Result: `verificationStatus: SUCCESS, offline: true, verificationLevel:
+   TRUSTED_ISSUER` for LDP_VC (URDNA2015 context fetch fails air-gap, falls
+   back to structural + cached-issuer validation). SD-JWT with `x5c` in the
+   header reaches `CRYPTOGRAPHIC` because the cert is self-contained.
 
 ## Smoke test
 

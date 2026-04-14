@@ -1,0 +1,23 @@
+{
+  "backends": [
+    {
+      "name": "inji-verify",
+      "url": "http://inji-verify-service:8080",
+      "verifyPath": "/v1/verify/vc-verification",
+      "healthPath": "/v1/verify/actuator/health",
+      "didMethods": ["did:web", "did:key", "did:jwk"],
+      "contentType": "application/vc+ld+json",
+      "successField": "verificationStatus",
+      "successValue": "SUCCESS"
+    },
+    {
+      "name": "waltid-verifier",
+      "url": "http://waltid-verifier-api-1:7003",
+      "verifyPath": "/openid4vc/verify",
+      "healthPath": "/",
+      "didMethods": ["did:jwk", "did:web", "did:key", "did:cheqd"],
+      "wrapField": "vp_token",
+      "successField": "verified"
+    }
+  ]
+}

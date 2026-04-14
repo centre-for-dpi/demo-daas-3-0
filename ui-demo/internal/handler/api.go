@@ -1,13 +1,15 @@
 package handler
 
 import (
-	"encoding/base64"
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"vcplatform/internal/middleware"
 	"vcplatform/internal/model"
+	"vcplatform/internal/store/walletbag"
 )
 
 // API handlers return JSON data that HTMX templates can consume,
@@ -206,15 +208,39 @@ func (h *Handler) APIDirectVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If the credential is a JWT-encoded VC (three base64url parts), unwrap it
-	// to extract the inner W3C VC payload. Inji Verify expects JSON-LD; most
-	// Walt.id-issued credentials come through as jwt_vc_json.
-	doc = unwrapJWTVC(doc)
+	// Detect credential format. JWT VCs (three base64url parts) and SD-JWT
+	// (same plus a trailing ~ for disclosures) are forwarded raw so the
+	// verifier backend can do its own parse. JSON-LD credentials use
+	// application/vc+ld+json.
+	contentType := "application/vc+ld+json"
+	trimmed := strings.TrimSpace(doc)
+	isJWTLike := len(trimmed) > 0 && trimmed[0] == 'e' && strings.Count(trimmed, ".") >= 2
+	if isJWTLike {
+		if strings.Contains(trimmed, "~") {
+			contentType = "application/vc+sd-jwt"
+		} else {
+			contentType = "application/jwt"
+		}
+	}
 
-	// Many credentials stored by Inji reference internal hosts (certify-nginx:80)
-	// in credentialStatus URLs; Inji Verify resolves them over the same docker
-	// network so we leave them as-is.
-	result, err := h.stores.Verifier.DirectVerify(r.Context(), []byte(doc), "application/vc+ld+json")
+	result, err := h.stores.Verifier.DirectVerify(r.Context(), []byte(doc), contentType)
+	if err == nil && result != nil && result.Verified != nil && *result.Verified {
+		writeJSON(w, http.StatusOK, result)
+		return
+	}
+
+	// Fallback for JWT / SD-JWT credentials: the direct verifier couldn't
+	// handle it, so drive walt.id's OID4VP session flow instead. This gives
+	// the UI a single /api/verifier/direct-verify entry point that works
+	// across all formats regardless of which DPG issued them.
+	if isJWTLike {
+		oid4vpResult, oid4vpErr := h.driveOID4VPVerify(r.Context(), user)
+		if oid4vpErr == nil && oid4vpResult != nil && oid4vpResult.Verified != nil && *oid4vpResult.Verified {
+			writeJSON(w, http.StatusOK, oid4vpResult)
+			return
+		}
+	}
+
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "verify failed: " + err.Error()})
 		return
@@ -222,50 +248,58 @@ func (h *Handler) APIDirectVerify(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-// unwrapJWTVC detects a three-part base64url JWT and, if it's a W3C VC-JWT,
-// returns the inner `vc` payload as JSON. Otherwise it returns the input
-// unchanged. This lets Inji Verify (which only accepts JSON-LD credentials)
-// verify Walt.id-issued JWT credentials — the cross-DPG adapter pattern.
-func unwrapJWTVC(doc string) string {
-	doc = strings.TrimSpace(doc)
-	parts := strings.Split(doc, ".")
-	if len(parts) != 3 {
-		return doc
+// driveOID4VPVerify runs a full OID4VP session: create request → wallet
+// present → poll result. Used as a fallback when the primary verifier
+// can't handle a credential format (JWT, SD-JWT). Prefers the stores'
+// FallbackVerifier/FallbackWallet pair (in hybrid mode that's walt.id);
+// falls back to the primary verifier/wallet if no fallback pair exists.
+func (h *Handler) driveOID4VPVerify(ctx context.Context, user *model.User) (*model.VerifyResult, error) {
+	verifier := h.stores.FallbackVerifier
+	if verifier == nil {
+		verifier = h.stores.Verifier
 	}
-	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	wallet := h.stores.FallbackWallet
+	if wallet == nil {
+		wallet = h.stores.Wallet
+	}
+
+	session, err := verifier.CreateVerificationSession(ctx, model.VerifyRequest{
+		CredentialTypes: []string{"VerifiableCredential"},
+		Policies:        []string{"signature"},
+	})
 	if err != nil {
-		// Some encoders add padding; try standard base64 url decoding as fallback.
-		payloadBytes, err = base64.URLEncoding.DecodeString(parts[1])
-		if err != nil {
-			return doc
-		}
+		return nil, err
 	}
-	var payload map[string]any
-	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
-		return doc
+	if session.RequestURL == "" {
+		return nil, nil // verifier doesn't support OID4VP sessions
 	}
-	vc, ok := payload["vc"].(map[string]any)
-	if !ok {
-		return doc
+
+	wallets, err := wallet.GetWallets(ctx, user.WalletToken)
+	if err != nil || len(wallets) == 0 {
+		return nil, err
 	}
-	// Populate fields that JWT claims carry outside of the vc payload, per
-	// W3C VC-JWT § 6.3.1 (iss → issuer, nbf → issuanceDate, exp → expirationDate).
-	if iss, ok := payload["iss"].(string); ok && iss != "" {
-		if _, has := vc["issuer"]; !has {
-			vc["issuer"] = iss
-		}
-	}
-	if jti, ok := payload["jti"].(string); ok && jti != "" {
-		if _, has := vc["id"]; !has {
-			vc["id"] = jti
-		}
-	}
-	out, err := json.Marshal(vc)
+	creds, err := wallet.ListCredentials(ctx, user.WalletToken, wallets[0].ID)
 	if err != nil {
-		return doc
+		return nil, err
 	}
-	return string(out)
+	ids := make([]string, 0, len(creds))
+	for _, c := range creds {
+		ids = append(ids, c.ID)
+	}
+
+	presentReq := model.PresentRequest{
+		PresentationRequest: session.RequestURL,
+		SelectedCredentials: ids,
+	}
+	if dids, err := wallet.ListDIDs(ctx, user.WalletToken, wallets[0].ID); err == nil && len(dids) > 0 {
+		presentReq.DID = dids[0].DID
+	}
+	if err := wallet.PresentCredential(ctx, user.WalletToken, wallets[0].ID, presentReq); err != nil {
+		return nil, err
+	}
+	return verifier.GetSessionResult(ctx, session.State)
 }
+
 
 // APIWalletPresent handles POST /api/wallet/present — presents credential to verifier via OID4VP.
 func (h *Handler) APIWalletPresent(w http.ResponseWriter, r *http.Request) {
@@ -435,6 +469,42 @@ func (h *Handler) APIIssueCredentialOffer(w http.ResponseWriter, r *http.Request
 		req.Claims = map[string]any{"name": user.Name}
 	}
 
+	// LDP_VC (JSON-LD with Linked Data Proof) is handled in-process by our
+	// URDNA2015 signer ONLY when the configured issuer backend doesn't expose
+	// an ldp_vc endpoint. Walt.id's issuer-api only offers jwt/sd-jwt/mdoc —
+	// we sign LDP in-process. Inji Certify natively issues ldp_vc via the
+	// OID4VCI Pre-Authorized Code flow, so we delegate to the real issuer.
+	issuerName := strings.ToLower(h.stores.Issuer.Name())
+	useLocalLDP := req.Format == "ldp_vc" && h.ldpSigner != nil && !strings.Contains(issuerName, "inji")
+	if useLocalLDP {
+		types := deriveCredentialTypes(req.ConfigID)
+		credJSON, err := h.ldpSigner.SignJSON(types, req.Claims, "")
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": "ldp sign: " + err.Error()})
+			return
+		}
+		var parsed map[string]any
+		_ = json.Unmarshal(credJSON, &parsed)
+		credID, _ := parsed["id"].(string)
+		if credID == "" {
+			credID = "urn:uuid:ldp"
+		}
+		walletbag.Shared.Add(user.WalletToken, model.WalletCredential{
+			ID:             credID,
+			Format:         "ldp_vc",
+			AddedOn:        time.Now().Format("2006-01-02 15:04"),
+			Document:       string(credJSON),
+			ParsedDocument: parsed,
+		})
+		writeJSON(w, 200, map[string]any{
+			"status":    "stored",
+			"offerUrl":  "local-bag://ldp/" + credID,
+			"issuerDid": h.ldpSigner.DID(),
+			"inWallet":  true,
+		})
+		return
+	}
+
 	// Onboard issuer (creates ephemeral DID+key for this issuance)
 	issuer, err := h.stores.Issuer.OnboardIssuer(r.Context(), "secp256r1")
 	if err != nil {
@@ -454,6 +524,20 @@ func (h *Handler) APIIssueCredentialOffer(w http.ResponseWriter, r *http.Request
 		"offerUrl":  offerURL,
 		"issuerDid": issuer.IssuerDID,
 	})
+}
+
+// deriveCredentialTypes extracts the VC `type` list from a credential
+// configuration ID. Convention: "<TypeName>_ldp_vc" or "<TypeName>" →
+// ["<TypeName>"]. Stripped of format suffixes.
+func deriveCredentialTypes(configID string) []string {
+	base := configID
+	for _, suffix := range []string{"_ldp_vc", "_jwt_vc_json", "_jwt_vc_json-ld", "_vc+sd-jwt", "_sd-jwt"} {
+		base = strings.TrimSuffix(base, suffix)
+	}
+	if base == "" {
+		base = "VerifiableCredential"
+	}
+	return []string{base}
 }
 
 // APIWalletClaimOffer handles POST /api/wallet/claim-offer — holder claims an OID4VCI offer.

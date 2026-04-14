@@ -28,11 +28,11 @@ import (
 	"math/rand"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"vcplatform/internal/model"
 	"vcplatform/internal/store"
+	"vcplatform/internal/store/walletbag"
 	"vcplatform/internal/transport"
 )
 
@@ -385,34 +385,9 @@ func (s *verifierStore) ListPolicies(ctx context.Context) (map[string]string, er
 // For the v1 demo this is fine; a production deployment would persist keys.
 // =============================================================================
 
-// walletBag is a thread-safe in-memory credential store keyed by wallet token.
-type walletBag struct {
-	mu    sync.RWMutex
-	items map[string][]model.WalletCredential
-}
-
-func newWalletBag() *walletBag {
-	return &walletBag{items: map[string][]model.WalletCredential{}}
-}
-
-func (b *walletBag) add(token string, cred model.WalletCredential) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.items[token] = append(b.items[token], cred)
-}
-
-func (b *walletBag) list(token string) []model.WalletCredential {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	// Return a copy so callers can't mutate the underlying slice.
-	out := make([]model.WalletCredential, len(b.items[token]))
-	copy(out, b.items[token])
-	return out
-}
-
-// Package-level singleton — the walletStore is constructed per-request in
-// handlers so it must share state across instances.
-var sharedWalletBag = newWalletBag()
+// The credential bag is shared across stores via walletbag.Shared so that
+// credentials minted in-process (our LDP_VC signer) appear in the same
+// list as credentials claimed through external wallet backends.
 
 type walletStore struct {
 	client transport.Client
@@ -463,7 +438,7 @@ func (s *walletStore) ClaimCredential(ctx context.Context, token, walletID, offe
 		format = "jwt_vc"
 	}
 
-	sharedWalletBag.add(token, model.WalletCredential{
+	walletbag.Shared.Add(token, model.WalletCredential{
 		ID:             id,
 		Format:         format,
 		AddedOn:        time.Now().Format("2006-01-02 15:04"),
@@ -474,7 +449,7 @@ func (s *walletStore) ClaimCredential(ctx context.Context, token, walletID, offe
 }
 
 func (s *walletStore) ListCredentials(ctx context.Context, token, walletID string) ([]model.WalletCredential, error) {
-	return sharedWalletBag.list(token), nil
+	return walletbag.Shared.List(token), nil
 }
 
 func (s *walletStore) ListDIDs(ctx context.Context, token, walletID string) ([]model.DIDInfo, error) {

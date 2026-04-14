@@ -12,6 +12,7 @@ import (
 	"vcplatform/internal/model"
 	"vcplatform/internal/render"
 	"vcplatform/internal/store"
+	"vcplatform/internal/store/ldpsigner"
 )
 
 // IssuerDIDEntry represents a persisted issuer DID from the onboarding flow.
@@ -47,6 +48,7 @@ type Handler struct {
 	config      *config.Config
 	ssoRegistry *auth.Registry
 	dataSources *datasource.Registry
+	ldpSigner   *ldpsigner.Signer
 
 	// In-memory stores, keyed by user ID.
 	// In production these would be persisted to a database.
@@ -62,12 +64,22 @@ func New(r *render.Renderer, s *store.Stores, c *config.Config, sso *auth.Regist
 	if ds == nil {
 		ds = datasource.NewRegistry()
 	}
+	// The in-process LDP_VC signer is used to produce JSON-LD credentials
+	// with Ed25519Signature2020 proofs when a DPG (e.g. walt.id issuer-api)
+	// doesn't natively expose an ldp_vc issuance endpoint. The key is
+	// process-lifetime ephemeral — regenerated on each server start.
+	signer, err := ldpsigner.New()
+	if err != nil {
+		// Non-fatal: LDP issuance simply won't be available until restart.
+		signer = nil
+	}
 	return &Handler{
 		render:      r,
 		stores:      s,
 		config:      c,
 		ssoRegistry: sso,
 		dataSources: ds,
+		ldpSigner:   signer,
 		issuerDIDs:  make(map[string][]IssuerDIDEntry),
 		schemas:     make(map[string][]CredentialSchema),
 	}
