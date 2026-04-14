@@ -59,7 +59,7 @@
     <!-- ============ ISSUER WORKSPACE ============ -->
     {{if and (hasWorkspace "issuer") .User (roleIs .User.Role "admin" "issuer")}}
     <div class="sidebar-section">
-      <div class="sidebar-section-label">Issuer</div>
+      <div class="sidebar-section-label" data-dpg-section="issuer">Issuer</div>
       <button class="sidebar-item" hx-get="/portal/issuer/onboard-form" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#128221;</span> Register Issuer
       </button>
@@ -80,10 +80,10 @@
       <button class="sidebar-item" hx-get="/portal/issuer/templates" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#127912;</span> Templates
       </button>
-      <button class="sidebar-item" hx-get="/portal/issuer/campaign" hx-target="#main-content" hx-push-url="true">
+      <button class="sidebar-item" data-cap="issuer.batch" hx-get="/portal/issuer/campaign" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#128230;</span> Campaign Builder
       </button>
-      <button class="sidebar-item" hx-get="/portal/issuer/batch" hx-target="#main-content" hx-push-url="true">
+      <button class="sidebar-item" data-cap="issuer.batch" hx-get="/portal/issuer/batch" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#128228;</span> Batch Upload
       </button>
       <button class="sidebar-item" hx-get="/portal/issuer/single-issue" hx-target="#main-content" hx-push-url="true">
@@ -98,7 +98,7 @@
     <!-- ============ HOLDER WORKSPACE ============ -->
     {{if and (hasWorkspace "holder") .User (roleIs .User.Role "admin" "holder")}}
     <div class="sidebar-section">
-      <div class="sidebar-section-label">Wallet</div>
+      <div class="sidebar-section-label" data-dpg-section="wallet">Wallet</div>
       <button class="sidebar-item{{if eq .ActivePage "holder"}} active{{end}}" hx-get="/portal/holder/wallet" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#128274;</span> My Credentials
       </button>
@@ -136,7 +136,7 @@
     <!-- ============ VERIFIER WORKSPACE ============ -->
     {{if and (hasWorkspace "verifier") .User (roleIs .User.Role "admin" "verifier")}}
     <div class="sidebar-section">
-      <div class="sidebar-section-label">Verifier</div>
+      <div class="sidebar-section-label" data-dpg-section="verifier">Verifier</div>
       <button class="sidebar-item{{if eq .ActivePage "verifier"}} active{{end}}" hx-get="/portal/verifier/verify" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#128270;</span> Verify Credential
       </button>

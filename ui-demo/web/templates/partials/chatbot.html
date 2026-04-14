@@ -1,5 +1,6 @@
 {{define "chatbot"}}
 <button class="chatbot-trigger" id="chatbot-trigger" onclick="toggleChatbot()" title="Open assistant">&#128172;</button>
+<div class="chatbot-backdrop" id="chatbot-backdrop" onclick="collapseChatbot()"></div>
 <div class="chatbot-panel" id="chatbot-panel">
   <div class="chatbot-header">
     <div class="chatbot-header-info">
@@ -9,89 +10,265 @@
         <p>Explore &middot; Decide &middot; Generate</p>
       </div>
     </div>
-    <button class="panel-close" onclick="toggleChatbot()">&#10005;</button>
+    <div class="chatbot-header-actions">
+      <button class="panel-expand" id="chatbot-expand" onclick="toggleExpandChatbot()" title="Expand to full screen" aria-label="Expand to full screen">&#9727;</button>
+      <button class="panel-close" onclick="toggleChatbot()" title="Close" aria-label="Close">&#10005;</button>
+    </div>
   </div>
   <div class="chatbot-messages" id="chat-messages">
     <div class="chat-msg bot">
-      Welcome. I can help you understand verifiable credentials, explore the platform, or generate documents for your team. What brings you here today?
+      <div class="chat-msg-body">
+        Welcome. I can help you understand verifiable credentials, explore the platform, or generate documents for your team. What brings you here today?
+      </div>
       <div class="chat-suggestions">
-        <button class="chat-suggestion" onclick="sendSuggestion(this)">What are VCs?</button>
+        <button class="chat-suggestion" onclick="sendSuggestion(this)">What is a DaaS scope document?</button>
+        <button class="chat-suggestion" onclick="sendSuggestion(this)">What is a verifiable credential?</button>
         <button class="chat-suggestion" onclick="sendSuggestion(this)">Help me choose a tier</button>
-        <button class="chat-suggestion" onclick="sendSuggestion(this)">Generate a pitch deck</button>
-        <button class="chat-suggestion" onclick="sendSuggestion(this)">Technical scope doc</button>
+        <button class="chat-suggestion" onclick="sendSuggestion(this)">Draft a pitch deck</button>
+        <button class="chat-suggestion" onclick="sendSuggestion(this)">Technical advisory note</button>
       </div>
     </div>
   </div>
   <div class="chatbot-input">
-    <input type="text" id="chat-input" placeholder="Ask anything about VCs..." onkeydown="if(event.key==='Enter')sendChat()">
+    <input type="text" id="chat-input" placeholder="Ask anything..." onkeydown="if(event.key==='Enter')sendChat()">
     <button class="chat-send" onclick="sendChat()">&#8594;</button>
   </div>
 </div>
 
 <script>
-function toggleChatbot() {
-  var panel = document.getElementById('chatbot-panel');
-  var trigger = document.getElementById('chatbot-trigger');
-  panel.classList.toggle('open');
-  trigger.style.display = panel.classList.contains('open') ? 'none' : 'flex';
-}
+(function() {
+  // Conversation state persists for the lifetime of the page.
+  var conversationId = null;
 
-function openChatbot() {
-  var panel = document.getElementById('chatbot-panel');
-  var trigger = document.getElementById('chatbot-trigger');
-  panel.classList.add('open');
-  trigger.style.display = 'none';
-}
-
-function sendChat() {
-  var input = document.getElementById('chat-input');
-  var text = input.value.trim();
-  if (!text) return;
-
-  addChatMessage(text, 'user');
-  input.value = '';
-
-  setTimeout(function() {
-    var t = text.toLowerCase();
-
-    if (t.indexOf('pitch') >= 0 || t.indexOf('proposal') >= 0 || t.indexOf('brief') >= 0 || t.indexOf('adoption') >= 0) {
-      addChatMessage("I'll route this to the <strong>Operations & Program Management Agent</strong>. It sounds like you need a document for decision-makers. Let me gather some details \u2014 which country or region is this for, and what's the primary use case (identity, education, land, health)?", 'bot');
-    } else if (t.indexOf('technical') >= 0 || t.indexOf('scope') >= 0 || t.indexOf('spec') >= 0 || t.indexOf('integration') >= 0 || t.indexOf('architecture') >= 0) {
-      addChatMessage("I'll route this to the <strong>Technical Architect Agent</strong>. To generate the right document, I need to know: which components are in scope (issuance, verification, store, trust infra), and which DPG stack are you evaluating?", 'bot');
-    } else if (t.indexOf('tier') >= 0 || t.indexOf('package') >= 0 || t.indexOf('choose') >= 0 || t.indexOf('pricing') >= 0) {
-      addChatMessage("Let's figure out the right tier. A few questions: How many issuers will you onboard in the first 6 months? Do you need a mobile wallet, or is web-only sufficient? Do you require offline verification or cross-border interoperability?", 'bot');
-    } else if (t.indexOf('what are') >= 0 || t.indexOf('explain') >= 0 || t.indexOf('how do') >= 0) {
-      addChatMessage("Great question. Verifiable credentials are cryptographically signed digital documents \u2014 like a degree, ID, or land certificate \u2014 that the holder controls and any verifier can check instantly. Want me to walk you through the full explainer journey, or focus on a specific sector?", 'bot');
+  function updateExpandButton(isExpanded) {
+    var btn = document.getElementById('chatbot-expand');
+    if (!btn) return;
+    if (isExpanded) {
+      btn.innerHTML = '&#9726;';
+      btn.title = 'Collapse to widget';
+      btn.setAttribute('aria-label', 'Collapse to widget');
     } else {
-      addChatMessage("I can help with that. To give you the best guidance, could you tell me: are you looking for <strong>strategic/program material</strong> (proposals, briefs, pitch decks) or <strong>technical guidance</strong> (specs, architecture advice, integration docs)?", 'bot');
+      btn.innerHTML = '&#9727;';
+      btn.title = 'Expand to full screen';
+      btn.setAttribute('aria-label', 'Expand to full screen');
     }
-  }, 600);
-}
+  }
 
-function sendSuggestion(btn) {
-  var text = btn.textContent;
-  addChatMessage(text, 'user');
-
-  setTimeout(function() {
-    if (text.indexOf('What are') >= 0) {
-      addChatMessage("Verifiable credentials are cryptographically signed digital documents that prove themselves \u2014 no phone calls to the issuer, no office visits, no waiting. The holder controls the data and chooses what to share. Want me to take you through the <a href='/explainer'>interactive explainer</a>?", 'bot');
-    } else if (text.indexOf('tier') >= 0) {
-      addChatMessage("Let's find the right fit. How many credential issuers will your deployment support? And do your holders need a mobile wallet, or is web-based access sufficient for the first phase? You can also <a href='/tiers'>browse the tiers directly</a>.", 'bot');
-    } else if (text.indexOf('pitch') >= 0) {
-      addChatMessage("I'll route this to the <strong>Operations Agent</strong>. I need three things: the target country, the primary use case (education, identity, land, health), and the audience (minister, funder, inter-departmental). I'll generate a tailored pitch deck. See <a href='/agent-output'>generated documents</a>.", 'bot');
-    } else if (text.indexOf('Technical') >= 0) {
-      addChatMessage("I'll route this to the <strong>Technical Architect Agent</strong>. Tell me: which components are in scope (issuance, verification, store, trust infrastructure, interoperability), and any DPG stack preferences (Inji, Credebl, backend, Quark.id)? See <a href='/agent-output'>generated documents</a>.", 'bot');
+  window.toggleChatbot = function() {
+    var panel = document.getElementById('chatbot-panel');
+    var trigger = document.getElementById('chatbot-trigger');
+    var backdrop = document.getElementById('chatbot-backdrop');
+    var willOpen = !panel.classList.contains('open');
+    panel.classList.toggle('open');
+    if (!willOpen) {
+      // Closing — reset to widget state so next open starts small.
+      panel.classList.remove('expanded');
+      backdrop.classList.remove('active');
+      updateExpandButton(false);
     }
-  }, 600);
-}
+    trigger.style.display = panel.classList.contains('open') ? 'none' : 'flex';
+  };
 
-function addChatMessage(text, type) {
-  var container = document.getElementById('chat-messages');
-  var msg = document.createElement('div');
-  msg.className = 'chat-msg ' + type;
-  msg.innerHTML = text;
-  container.appendChild(msg);
-  container.scrollTop = container.scrollHeight;
-}
+  window.openChatbot = function() {
+    var panel = document.getElementById('chatbot-panel');
+    var trigger = document.getElementById('chatbot-trigger');
+    panel.classList.add('open');
+    trigger.style.display = 'none';
+  };
+
+  window.toggleExpandChatbot = function() {
+    var panel = document.getElementById('chatbot-panel');
+    var backdrop = document.getElementById('chatbot-backdrop');
+    var willExpand = !panel.classList.contains('expanded');
+    panel.classList.toggle('expanded');
+    backdrop.classList.toggle('active', willExpand);
+    updateExpandButton(willExpand);
+    var messages = document.getElementById('chat-messages');
+    if (messages) messages.scrollTop = messages.scrollHeight;
+  };
+
+  window.collapseChatbot = function() {
+    // Clicking the backdrop collapses from expanded -> widget (does not close).
+    var panel = document.getElementById('chatbot-panel');
+    var backdrop = document.getElementById('chatbot-backdrop');
+    panel.classList.remove('expanded');
+    backdrop.classList.remove('active');
+    updateExpandButton(false);
+  };
+
+  window.sendChat = function() {
+    var input = document.getElementById('chat-input');
+    var text = (input.value || '').trim();
+    if (!text) return;
+    input.value = '';
+    dispatchMessage(text);
+  };
+
+  window.sendSuggestion = function(btn) {
+    var text = (btn.textContent || '').trim();
+    if (!text) return;
+    dispatchMessage(text);
+  };
+
+  function dispatchMessage(text) {
+    addUserMessage(text);
+    setInputDisabled(true);
+    var typingId = addTypingIndicator();
+
+    var ctx = {
+      currentPath: window.location.pathname,
+      currentTitle: document.title
+    };
+    var body = { message: text, context: ctx };
+    if (conversationId) body.conversationId = conversationId;
+
+    fetch('/api/agent/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+      .then(function(r) {
+        return r.json().then(function(j) { return { ok: r.ok, body: j }; });
+      })
+      .then(function(res) {
+        removeTypingIndicator(typingId);
+        if (!res.ok || res.body.error) {
+          addBotMessage(null, res.body.error || 'Something went wrong talking to the agent. Try again in a moment.');
+          return;
+        }
+        if (res.body.conversationId) conversationId = res.body.conversationId;
+        addBotMessage(res.body.persona, res.body.answer || '(empty response)');
+      })
+      .catch(function(err) {
+        removeTypingIndicator(typingId);
+        addBotMessage(null, 'Network error: ' + (err && err.message ? err.message : 'unknown'));
+      })
+      .finally(function() {
+        setInputDisabled(false);
+        document.getElementById('chat-input').focus();
+      });
+  }
+
+  function addUserMessage(text) {
+    var container = document.getElementById('chat-messages');
+    var msg = document.createElement('div');
+    msg.className = 'chat-msg user';
+    var body = document.createElement('div');
+    body.className = 'chat-msg-body';
+    body.textContent = text;
+    msg.appendChild(body);
+    container.appendChild(msg);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function addBotMessage(persona, text) {
+    var container = document.getElementById('chat-messages');
+    var msg = document.createElement('div');
+    msg.className = 'chat-msg bot';
+    if (persona) {
+      var badge = document.createElement('div');
+      badge.className = 'chat-persona-badge chat-persona-' + persona;
+      badge.textContent = personaLabel(persona);
+      msg.appendChild(badge);
+    }
+    var body = document.createElement('div');
+    body.className = 'chat-msg-body';
+    body.innerHTML = mdToHtml(text);
+    msg.appendChild(body);
+    container.appendChild(msg);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function addTypingIndicator() {
+    var container = document.getElementById('chat-messages');
+    var id = 'typing-' + Date.now();
+    var msg = document.createElement('div');
+    msg.className = 'chat-msg bot typing';
+    msg.id = id;
+    var body = document.createElement('div');
+    body.className = 'chat-msg-body';
+    body.innerHTML = '<span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>';
+    msg.appendChild(body);
+    container.appendChild(msg);
+    container.scrollTop = container.scrollHeight;
+    return id;
+  }
+
+  function removeTypingIndicator(id) {
+    var el = document.getElementById(id);
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+  }
+
+  function setInputDisabled(disabled) {
+    document.getElementById('chat-input').disabled = disabled;
+    document.querySelector('.chat-send').disabled = disabled;
+  }
+
+  function personaLabel(p) {
+    if (p === 'architect') return 'Technical Architect';
+    if (p === 'programs') return 'Programs & Operations';
+    if (p === 'guide') return 'Platform Guide';
+    return p;
+  }
+
+  // Minimal Markdown → HTML converter. Handles the subset Claude emits:
+  // headings, bold/italic/code, bullet lists, horizontal rules, paragraphs.
+  // Does not render tables; they rarely appear in chat-mode replies.
+  function mdToHtml(text) {
+    if (!text) return '';
+    // Strip a leading persona prefix like "**[GUIDE]**" since we already
+    // render the badge separately.
+    text = text.replace(/^\*\*\[[^\]]+\]\*\*\s*/, '');
+    var esc = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    var lines = esc.split('\n');
+    var out = [];
+    var para = [];
+    var inList = false;
+    function flushPara() {
+      if (para.length > 0) {
+        out.push('<p>' + para.join(' ') + '</p>');
+        para = [];
+      }
+    }
+    function flushList() {
+      if (inList) { out.push('</ul>'); inList = false; }
+    }
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      var trimmed = line.trim();
+      if (!trimmed) { flushPara(); flushList(); continue; }
+      if (trimmed === '---' || trimmed === '***') {
+        flushPara(); flushList();
+        out.push('<hr>');
+        continue;
+      }
+      var headMatch = trimmed.match(/^(#{1,6})\s+(.*)$/);
+      if (headMatch) {
+        flushPara(); flushList();
+        var level = Math.min(headMatch[1].length + 2, 6); // h3..h6 inside chat
+        out.push('<h' + level + '>' + headMatch[2] + '</h' + level + '>');
+        continue;
+      }
+      if (/^([-*+]|\d+\.)\s+/.test(trimmed)) {
+        flushPara();
+        if (!inList) { out.push('<ul>'); inList = true; }
+        out.push('<li>' + trimmed.replace(/^([-*+]|\d+\.)\s+/, '') + '</li>');
+        continue;
+      }
+      flushList();
+      para.push(trimmed);
+    }
+    flushPara();
+    flushList();
+    var html = out.join('\n');
+    html = html.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+    html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+    return html;
+  }
+})();
 </script>
 {{end}}

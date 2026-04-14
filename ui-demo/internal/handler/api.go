@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"vcplatform/internal/middleware"
 	"vcplatform/internal/model"
@@ -155,6 +157,116 @@ func (h *Handler) APIWalletClaim(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "claimed"})
 }
 
+// APIDirectVerify handles POST /api/verifier/direct-verify — posts a stored
+// wallet credential to the currently configured verifier's direct-verify
+// endpoint. Used by the Trinidad mode flow (Inji issues → Inji verifies) and
+// by the cross-DPG path (Walt.id issues → Inji verifies) where the UI wants
+// to skip the OID4VP session dance entirely.
+//
+// Request: {"credentialId":"<id from wallet>"} OR {"credential":"<raw json>"}
+func (h *Handler) APIDirectVerify(w http.ResponseWriter, r *http.Request) {
+	user := middleware.GetUser(r.Context())
+	if user == nil || !user.HasBackendAuth() {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "sign in via SSO to link your wallet"})
+		return
+	}
+
+	var req struct {
+		CredentialID string `json:"credentialId"`
+		Credential   string `json:"credential"` // raw VC JSON, used when no stored id
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return
+	}
+
+	// Resolve the credential document: either from the wallet by id, or from
+	// the raw body passed by the UI.
+	doc := req.Credential
+	if doc == "" && req.CredentialID != "" {
+		wallets, err := h.stores.Wallet.GetWallets(r.Context(), user.WalletToken)
+		if err != nil || len(wallets) == 0 {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "no wallet"})
+			return
+		}
+		creds, err := h.stores.Wallet.ListCredentials(r.Context(), user.WalletToken, wallets[0].ID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		for _, c := range creds {
+			if c.ID == req.CredentialID {
+				doc = c.Document
+				break
+			}
+		}
+	}
+	if doc == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "credentialId or credential body required"})
+		return
+	}
+
+	// If the credential is a JWT-encoded VC (three base64url parts), unwrap it
+	// to extract the inner W3C VC payload. Inji Verify expects JSON-LD; most
+	// Walt.id-issued credentials come through as jwt_vc_json.
+	doc = unwrapJWTVC(doc)
+
+	// Many credentials stored by Inji reference internal hosts (certify-nginx:80)
+	// in credentialStatus URLs; Inji Verify resolves them over the same docker
+	// network so we leave them as-is.
+	result, err := h.stores.Verifier.DirectVerify(r.Context(), []byte(doc), "application/vc+ld+json")
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "verify failed: " + err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// unwrapJWTVC detects a three-part base64url JWT and, if it's a W3C VC-JWT,
+// returns the inner `vc` payload as JSON. Otherwise it returns the input
+// unchanged. This lets Inji Verify (which only accepts JSON-LD credentials)
+// verify Walt.id-issued JWT credentials — the cross-DPG adapter pattern.
+func unwrapJWTVC(doc string) string {
+	doc = strings.TrimSpace(doc)
+	parts := strings.Split(doc, ".")
+	if len(parts) != 3 {
+		return doc
+	}
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		// Some encoders add padding; try standard base64 url decoding as fallback.
+		payloadBytes, err = base64.URLEncoding.DecodeString(parts[1])
+		if err != nil {
+			return doc
+		}
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		return doc
+	}
+	vc, ok := payload["vc"].(map[string]any)
+	if !ok {
+		return doc
+	}
+	// Populate fields that JWT claims carry outside of the vc payload, per
+	// W3C VC-JWT § 6.3.1 (iss → issuer, nbf → issuanceDate, exp → expirationDate).
+	if iss, ok := payload["iss"].(string); ok && iss != "" {
+		if _, has := vc["issuer"]; !has {
+			vc["issuer"] = iss
+		}
+	}
+	if jti, ok := payload["jti"].(string); ok && jti != "" {
+		if _, has := vc["id"]; !has {
+			vc["id"] = jti
+		}
+	}
+	out, err := json.Marshal(vc)
+	if err != nil {
+		return doc
+	}
+	return string(out)
+}
+
 // APIWalletPresent handles POST /api/wallet/present — presents credential to verifier via OID4VP.
 func (h *Handler) APIWalletPresent(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
@@ -184,6 +296,17 @@ func (h *Handler) APIWalletPresent(w http.ResponseWriter, r *http.Request) {
 		dids, err := h.stores.Wallet.ListDIDs(r.Context(), user.WalletToken, wallets[0].ID)
 		if err == nil && len(dids) > 0 {
 			req.DID = dids[0].DID
+		}
+	}
+
+	// Auto-select all wallet credentials if the UI didn't specify — Walt.id's
+	// usePresentationRequest expects a non-null selectedCredentials array.
+	if len(req.SelectedCredentials) == 0 {
+		creds, err := h.stores.Wallet.ListCredentials(r.Context(), user.WalletToken, wallets[0].ID)
+		if err == nil {
+			for _, c := range creds {
+				req.SelectedCredentials = append(req.SelectedCredentials, c.ID)
+			}
 		}
 	}
 

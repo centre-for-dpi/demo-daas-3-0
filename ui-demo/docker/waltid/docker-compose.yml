@@ -66,6 +66,7 @@ services:
       POSTGRES_DB_PORT: 5432
     extra_hosts:
       - "localhost:host-gateway"
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./wallet-api/config:/waltid-wallet-api/config
       - ./wallet-api/data:/waltid-wallet-api/data
@@ -94,10 +95,177 @@ services:
     ports:
       - "${LIBRETRANSLATE_PORT:-5000}:5000"
     environment:
-      LT_LOAD_ONLY: "en,es,fr,pt,hi,ar,zh,de"
+      LT_LOAD_ONLY: "en,es,fr"
     volumes:
       - lt-data:/home/libretranslate/.local
+
+  # ==========================================================================
+  # Inji Certify — MOSIP's credential issuance service (OID4VCI)
+  # See docker/waltid/inji/README.md for full setup documentation
+  # ==========================================================================
+
+  certify-postgres:
+    image: postgres:15
+    container_name: certify-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - ./inji/certify/init.sql:/docker-entrypoint-initdb.d/certify_init.sql
+      - certify-db:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  inji-certify:
+    image: injistack/inji-certify-with-plugins:0.14.0
+    container_name: inji-certify
+    user: root
+    ports:
+      - "8090:8090"
+    environment:
+      - container_user=mosip
+      - active_profile_env=default,csvdp-farmer
+      - SPRING_CONFIG_NAME=certify
+      - SPRING_CONFIG_LOCATION=/home/mosip/config/
+      - enable_certify_artifactory=false
+      - download_hsm_client=false
+      - mosip_certify_domain_url=http://certify-nginx:80
+    volumes:
+      - ./inji/certify/certify-default.properties:/home/mosip/config/certify-default.properties
+      - ./inji/certify/certify-csvdp-farmer.properties:/home/mosip/config/certify-csvdp-farmer.properties
+      - ./inji/certify/farmer_identity_data.csv:/home/mosip/config/farmer_identity_data.csv
+      - ./inji/certify/vp_request_config.json:/home/mosip/config/vp_request_config.json
+      - certify-pkcs12:/home/mosip/CERTIFY_PKCS12
+    depends_on:
+      certify-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8090/v1/certify/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      start_period: 120s
+      retries: 10
+
+  certify-nginx:
+    image: nginx:stable
+    container_name: certify-nginx
+    ports:
+      - "8091:80"
+      - "8443:443"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./inji/certify-nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./inji/certify-nginx/certs/nginx.crt:/etc/nginx/certs/nginx.crt:ro
+      - ./inji/certify-nginx/certs/nginx.key:/etc/nginx/certs/nginx.key:ro
+      - ./inji/certify-nginx/config/farmer-context.json:/config/server/farmer-context.json:ro
+      - ./inji/certify-nginx/config/mimoto-issuers-config.json:/config/server/mimoto-issuers-config.json:ro
+      - ./inji/certify-nginx/config/mimoto-trusted-verifiers.json:/config/server/mimoto-trusted-verifiers.json:ro
+      - ./inji/certify-nginx/config/credential-template.html:/config/server/credential-template.html:ro
+      - ./inji/certify-nginx/config/vp_request_config.json:/config/server/vp_request_config.json:ro
+    depends_on:
+      - inji-certify
+
+  # ==========================================================================
+  # Inji Verify — MOSIP's credential verification service (OID4VP)
+  # ==========================================================================
+
+  inji-verify-postgres:
+    image: postgres:13
+    container_name: inji-verify-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: inji_verify
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - inji-verify-db:/var/lib/postgresql/data
+
+  inji-verify-service:
+    image: mosipid/inji-verify-service:0.16.0
+    container_name: inji-verify-service
+    user: root
+    ports:
+      - "8082:8080"
+    environment:
+      - active_profile_env=default
+      - DATABASE_HOST=inji-verify-postgres
+      - DATABASE_PORT=5432
+      - DATABASE_NAME=inji_verify
+      - DATABASE_SCHEMA=verify
+      - DATABASE_USERNAME=postgres
+      - DATABASE_PASSWORD=postgres
+    volumes:
+      - ./inji/certify-nginx/certs/nginx.crt:/tmp/certify-nginx.crt:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        keytool -importcert -alias certify-nginx -file /tmp/certify-nginx.crt \
+          -keystore $$JAVA_HOME/lib/security/cacerts -storepass changeit -noprompt 2>/dev/null || true
+        exec java -jar /home/mosip/verify-service.jar
+    depends_on:
+      inji-verify-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/v1/verify/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      start_period: 120s
+      retries: 10
+
+  inji-verify-ui:
+    image: mosipid/inji-verify-ui:0.16.0
+    container_name: inji-verify-ui
+    ports:
+      - "3001:8000"
+    environment:
+      - DEFAULT_TITLE=Inji Verify
+      - DEFAULT_LANG=en
+      - VERIFIABLE_CLAIMS_CONFIG_URL=/assets/config.json
+      - VP_SUBMISSION_SUPPORTED=false
+      - DISPLAY_TIMEOUT=120000
+    volumes:
+      - ./inji/verify/verify-ui-nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - inji-verify-service
+
+  # ==========================================================================
+  # Citizens database — mock government registry powering the data source
+  # ==========================================================================
+
+  citizens-postgres:
+    image: postgres:16
+    container_name: citizens-postgres
+    environment:
+      POSTGRES_USER: citizens
+      POSTGRES_PASSWORD: citizens
+      POSTGRES_DB: citizens
+    ports:
+      - "5435:5432"
+    volumes:
+      - ./citizens-db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - citizens-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U citizens"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 volumes:
   wallet-db:
   lt-data:
+  certify-db:
+  certify-pkcs12:
+  inji-verify-db:
+  citizens-data:

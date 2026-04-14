@@ -1,0 +1,587 @@
+// Package inji implements the DPG store interfaces against MOSIP's Inji stack:
+//
+//   - Inji Certify (issuance)         — injistack/inji-certify-with-plugins:0.14.0
+//   - Inji Verify (verification)      — mosipid/inji-verify-service:0.16.0
+//   - Inji Web (wallet)               — web-based wallet UI
+//
+// Inji Certify uses the OID4VCI Pre-Authorized Code flow. The issuance sequence is:
+//
+//  1. POST /v1/certify/pre-authorized-data
+//     → pre-stage the claims under a transaction ID.
+//  2. GET  /v1/certify/credential-offer-data/{transactionId}
+//     → returns the OID4VCI credential_offer object with a pre-authorized_code.
+//
+// Our IssueCredential returns the resulting openid-credential-offer:// URL.
+// The holder's wallet then completes the flow:
+//
+//  3. POST /v1/certify/oauth/token  (grant_type=urn:ietf:params:oauth:grant-type:pre-authorized_code)
+//  4. POST /v1/certify/issuance/credential  (with Bearer + proof JWT)
+//
+// This mirrors how Walt.id's flow works from our adaptor's point of view: the
+// issuer produces an offer, the holder claims it.
+package inji
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"math/rand"
+	"net/url"
+	"strings"
+	"sync"
+	"time"
+
+	"vcplatform/internal/model"
+	"vcplatform/internal/store"
+	"vcplatform/internal/transport"
+)
+
+// Config holds Inji connection settings.
+type Config struct {
+	// CertifyURL is the base URL for Inji Certify's REST API.
+	// e.g. http://localhost:8090 (the internal container port)
+	CertifyURL string
+
+	// CertifyPublicURL is the domain url Inji Certify was configured with
+	// (mosip.certify.domain.url). Credential offers reference this URL so
+	// holders can reach it. If different from CertifyURL, set both.
+	// e.g. http://certify-nginx:80 or https://certify.example.com
+	CertifyPublicURL string
+
+	// VerifyURL is the base URL for Inji Verify's REST API.
+	// e.g. http://localhost:8082
+	VerifyURL string
+
+	// WalletURL is the base URL for the Inji Web wallet (optional).
+	WalletURL string
+}
+
+// =============================================================================
+// IssuerStore — Inji Certify
+// =============================================================================
+
+type issuerStore struct {
+	client    transport.Client
+	publicURL string
+
+	// ProxyRewrite is an optional function that takes a raw Inji offer URL and
+	// returns a proxied version (same format, pointing at an internal OID4VCI
+	// translation proxy). Used for cross-DPG wallet claims where the target
+	// wallet can't parse Inji's metadata shape directly.
+	proxyRewrite func(string) string
+}
+
+// NewIssuerStore creates an IssuerStore backed by Inji Certify.
+func NewIssuerStore(certifyClient transport.Client, publicURL string) store.IssuerStore {
+	return &issuerStore{client: certifyClient, publicURL: publicURL}
+}
+
+// SetProxyRewrite wires an offer-URL rewrite function, activated when
+// INJI_PROXY_URL is set and the target wallet needs a translated metadata shape.
+func SetProxyRewrite(s store.IssuerStore, fn func(string) string) {
+	if is, ok := s.(*issuerStore); ok {
+		is.proxyRewrite = fn
+	}
+}
+
+func (s *issuerStore) Name() string { return "Inji Certify" }
+
+func (s *issuerStore) Capabilities() model.IssuerCapabilities {
+	return model.IssuerCapabilities{
+		IssuerInitiated:     true,
+		Batch:               false, // Certify supports it but not wired in v1
+		Deferred:            true,  // Pre-Auth Code flow is inherently deferred
+		SelectiveDisclosure: true,  // via SD-JWT configs
+		CustomTypes:         true,  // via credential_config DB table
+		Revocation:          true,  // Status List 2021 supported by Certify
+		Formats:             []string{"ldp_vc", "vc+sd-jwt", "mso_mdoc"},
+	}
+}
+
+// OnboardIssuer: Inji Certify uses pre-provisioned issuer DIDs (did:web:certify-nginx)
+// configured via certify_init.sql. There is no runtime issuer onboarding endpoint.
+// We return the default DID from the issuer metadata.
+func (s *issuerStore) OnboardIssuer(ctx context.Context, keyType string) (*model.OnboardIssuerResult, error) {
+	// Fetch issuer metadata to get the canonical issuer DID.
+	resp, code, err := s.client.Do(ctx, "GET", "/v1/certify/.well-known/openid-credential-issuer", nil)
+	if err != nil {
+		return nil, fmt.Errorf("fetch issuer metadata: %w", err)
+	}
+	if code != 200 {
+		return nil, fmt.Errorf("issuer metadata (%d): %s", code, truncate(string(resp), 200))
+	}
+
+	var md struct {
+		CredentialIssuer string `json:"credential_issuer"`
+	}
+	if err := json.Unmarshal(resp, &md); err != nil {
+		return nil, fmt.Errorf("parse metadata: %w", err)
+	}
+
+	// Inji Certify's DID is configured per deployment; we use the did:web
+	// derived from the domain URL (did:web:certify-nginx by default).
+	issuerDid := "did:web:certify-nginx"
+	if strings.HasPrefix(md.CredentialIssuer, "http://") || strings.HasPrefix(md.CredentialIssuer, "https://") {
+		host := extractHost(md.CredentialIssuer)
+		if host != "" {
+			issuerDid = "did:web:" + host
+		}
+	}
+
+	return &model.OnboardIssuerResult{
+		IssuerKey: json.RawMessage(`{"type":"inji-managed"}`), // Inji manages keys server-side
+		IssuerDID: issuerDid,
+	}, nil
+}
+
+// IssueCredential pre-stages credential data and returns the OID4VCI offer URL.
+func (s *issuerStore) IssueCredential(ctx context.Context, issuer *model.OnboardIssuerResult, configID, format string, claims map[string]any) (string, error) {
+	// Inji Certify pre-auth endpoint: snake_case field names.
+	// It returns {"credential_offer_uri": "openid-credential-offer://?credential_offer_uri=..."}
+	preAuthBody := map[string]any{
+		"credential_configuration_id": configID,
+		"claims":                      claims,
+	}
+	resp, code, err := s.client.Do(ctx, "POST", "/v1/certify/pre-authorized-data", preAuthBody)
+	if err != nil {
+		return "", fmt.Errorf("pre-auth data: %w", err)
+	}
+	if code != 200 && code != 201 {
+		return "", fmt.Errorf("inji pre-auth (%d): %s", code, truncate(string(resp), 300))
+	}
+
+	var preAuthResp struct {
+		CredentialOfferURI string `json:"credential_offer_uri"`
+	}
+	if err := json.Unmarshal(resp, &preAuthResp); err != nil {
+		return "", fmt.Errorf("parse inji pre-auth response: %w", err)
+	}
+	if preAuthResp.CredentialOfferURI == "" {
+		return "", fmt.Errorf("inji pre-auth returned empty offer: %s", truncate(string(resp), 200))
+	}
+
+	raw := s.rewriteInternalURL(preAuthResp.CredentialOfferURI)
+	// If a proxy rewrite is configured (cross-DPG flow), apply it so the
+	// target wallet sees our proxy's URL instead of Inji's raw URL.
+	if s.proxyRewrite != nil {
+		return s.proxyRewrite(raw), nil
+	}
+	return raw, nil
+}
+
+// rewriteInternalURL replaces the internal Certify URL (as Certify sees itself)
+// with a user-reachable URL (what the holder's wallet should use to fetch the offer).
+// Certify puts its configured domain_url into the offer; we rewrite that domain
+// to the publicURL we've been told about.
+func (s *issuerStore) rewriteInternalURL(u string) string {
+	if s.publicURL == "" {
+		return u
+	}
+	publicURL := strings.TrimRight(s.publicURL, "/")
+
+	// Internal bases (most specific first — longest match wins).
+	// Don't include bare hostnames without port to avoid replacing suffixes inside longer URLs.
+	internalBases := []string{
+		"http://certify-nginx:80",
+		"http://inji-certify:8090",
+	}
+	for _, h := range internalBases {
+		u = strings.ReplaceAll(u, h, publicURL)
+		encoded := urlEncode(h)
+		encodedPublic := urlEncode(publicURL)
+		u = strings.ReplaceAll(u, encoded, encodedPublic)
+	}
+	return u
+}
+
+func urlEncode(s string) string {
+	r := strings.NewReplacer(
+		":", "%3A",
+		"/", "%2F",
+	)
+	return r.Replace(s)
+}
+
+func (s *issuerStore) IssueBatch(ctx context.Context, issuer *model.OnboardIssuerResult, configID, format string, records []map[string]any) (*model.BatchResult, error) {
+	issued := 0
+	var offers []string
+	for _, claims := range records {
+		offer, err := s.IssueCredential(ctx, issuer, configID, format, claims)
+		if err == nil {
+			offers = append(offers, offer)
+			issued++
+		}
+	}
+	return &model.BatchResult{
+		Total:     len(records),
+		Issued:    issued,
+		Failed:    len(records) - issued,
+		OfferURLs: offers,
+	}, nil
+}
+
+// ListCredentialConfigs queries Inji Certify's OID4VCI metadata for supported configurations.
+func (s *issuerStore) ListCredentialConfigs(ctx context.Context) ([]model.CredentialConfig, error) {
+	resp, code, err := s.client.Do(ctx, "GET", "/v1/certify/.well-known/openid-credential-issuer", nil)
+	if err != nil {
+		fmt.Printf("inji: issuer metadata fetch failed: %v\n", err)
+		return []model.CredentialConfig{}, nil
+	}
+	if code != 200 {
+		fmt.Printf("inji: issuer metadata returned %d\n", code)
+		return []model.CredentialConfig{}, nil
+	}
+
+	var metadata struct {
+		CredentialConfigurationsSupported map[string]json.RawMessage `json:"credential_configurations_supported"`
+	}
+	if err := json.Unmarshal(resp, &metadata); err != nil {
+		return nil, fmt.Errorf("parse metadata: %w", err)
+	}
+
+	configs := []model.CredentialConfig{}
+	for configID, raw := range metadata.CredentialConfigurationsSupported {
+		var obj map[string]any
+		json.Unmarshal(raw, &obj)
+		format := "ldp_vc"
+		if f, ok := obj["format"].(string); ok {
+			format = f
+		}
+		name := configID
+		// Try to extract a display name
+		if display, ok := obj["display"].([]any); ok && len(display) > 0 {
+			if d, ok := display[0].(map[string]any); ok {
+				if n, ok := d["name"].(string); ok {
+					name = n
+				}
+			}
+		}
+		cat := categorizeCredentialType(configID, name)
+		configs = append(configs, model.CredentialConfig{
+			ID:       configID,
+			Name:     name,
+			Category: cat,
+			Format:   format,
+		})
+	}
+	return configs, nil
+}
+
+func (s *issuerStore) RegisterCredentialType(ctx context.Context, typeName, displayName, description, format string) (string, error) {
+	return "", fmt.Errorf("inji certify registers credential types via the certify.credential_config table (SQL seed); runtime registration is not supported in v1")
+}
+
+// =============================================================================
+// VerifierStore — Inji Verify
+// =============================================================================
+
+type verifierStore struct {
+	client transport.Client
+}
+
+// NewVerifierStore creates a VerifierStore backed by Inji Verify.
+func NewVerifierStore(verifyClient transport.Client) store.VerifierStore {
+	return &verifierStore{client: verifyClient}
+}
+
+func (s *verifierStore) Name() string { return "Inji Verify" }
+
+func (s *verifierStore) Capabilities() model.VerifierCapabilities {
+	return model.VerifierCapabilities{
+		CreateRequest:          false, // Inji Verify is direct-verify: POST credential → result
+		DirectVerify:           true,
+		PresentationDefinition: false,
+		PolicyEngine:           false,
+		RevocationCheck:        true,
+		DIDMethods:             []string{"did:web", "did:key", "did:jwk"},
+	}
+}
+
+// CreateVerificationSession: Inji Verify does not use OID4VP sessions the same way
+// Walt.id does. It offers direct verification of a submitted credential. For our UI,
+// we return a "pseudo-session" with a client-generated state; the verification is
+// performed synchronously when the holder presents.
+func (s *verifierStore) CreateVerificationSession(ctx context.Context, req model.VerifyRequest) (*model.VerifyResult, error) {
+	// Inji Verify uses a different flow — return a state and a pseudo URL that
+	// our app can handle client-side. Verification happens via the direct-verify
+	// endpoint when a credential is submitted.
+	state := "inji-" + randomID(12)
+	requestURL := "injiverify://verify?state=" + state
+	return &model.VerifyResult{
+		State:      state,
+		RequestURL: requestURL,
+	}, nil
+}
+
+// GetSessionResult returns an empty pending result. For Inji, verification results
+// are obtained directly from the verify endpoint (see DirectVerify below).
+func (s *verifierStore) GetSessionResult(ctx context.Context, state string) (*model.VerifyResult, error) {
+	return &model.VerifyResult{
+		State: state,
+	}, nil
+}
+
+// DirectVerify sends a credential JWT/JSON directly to Inji Verify's vc-verification
+// endpoint and returns the parsed result.
+func (s *verifierStore) DirectVerify(ctx context.Context, credential []byte, contentType string) (*model.VerifyResult, error) {
+	if contentType == "" {
+		contentType = "application/vc+ld+json"
+	}
+	// transport.Client doesn't let us pass content type per request easily;
+	// we pass the credential as a raw body and rely on the HTTPClient sniffing.
+	resp, code, err := s.client.Do(ctx, "POST", "/v1/verify/vc-verification", string(credential))
+	if err != nil {
+		return nil, fmt.Errorf("inji verify: %w", err)
+	}
+	if code != 200 {
+		return nil, fmt.Errorf("inji verify (%d): %s", code, truncate(string(resp), 300))
+	}
+	var out struct {
+		VerificationStatus  string `json:"verificationStatus"`
+		VerificationMessage string `json:"verificationMessage"`
+	}
+	if err := json.Unmarshal(resp, &out); err != nil {
+		return nil, fmt.Errorf("parse verify response: %w", err)
+	}
+	verified := out.VerificationStatus == "SUCCESS"
+	result := &model.VerifyResult{
+		Verified: &verified,
+	}
+	if verified {
+		result.Checks = []model.CheckResult{
+			{Name: "Signature", Status: "pass", Summary: "Verified by Inji Verify"},
+			{Name: "Proof", Status: "pass", Summary: "Proof chain valid"},
+		}
+	}
+	return result, nil
+}
+
+func (s *verifierStore) ListPolicies(ctx context.Context) (map[string]string, error) {
+	return map[string]string{
+		"signature":  "Verify cryptographic signature",
+		"revocation": "Check revocation status",
+		"expiry":     "Verify validity dates",
+	}, nil
+}
+
+// =============================================================================
+// WalletStore — In-process Inji holder wallet.
+//
+// Unlike Walt.id's wallet-api (a standalone service), Inji doesn't ship a
+// HTTP-accessible wallet backend: Inji Web is client-side, Inji Mobile is
+// an Android app. To support Trinidad mode (Inji issues → Inji verifies)
+// without requiring a browser-based wallet, we implement a minimal
+// server-side OID4VCI client + in-memory bag keyed by wallet token.
+//
+// This wallet:
+//   - parses an openid-credential-offer:// URL
+//   - does the OID4VCI pre-authorized_code exchange against Inji Certify
+//   - generates an ephemeral ECDSA P-256 holder key + did:jwk
+//   - signs an OID4VCI proof JWT (ES256)
+//   - fetches the credential from Inji
+//   - stores it in an in-memory bag per wallet token
+//
+// The holder key is ephemeral and regenerated each time the server restarts.
+// For the v1 demo this is fine; a production deployment would persist keys.
+// =============================================================================
+
+// walletBag is a thread-safe in-memory credential store keyed by wallet token.
+type walletBag struct {
+	mu    sync.RWMutex
+	items map[string][]model.WalletCredential
+}
+
+func newWalletBag() *walletBag {
+	return &walletBag{items: map[string][]model.WalletCredential{}}
+}
+
+func (b *walletBag) add(token string, cred model.WalletCredential) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.items[token] = append(b.items[token], cred)
+}
+
+func (b *walletBag) list(token string) []model.WalletCredential {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	// Return a copy so callers can't mutate the underlying slice.
+	out := make([]model.WalletCredential, len(b.items[token]))
+	copy(out, b.items[token])
+	return out
+}
+
+// Package-level singleton — the walletStore is constructed per-request in
+// handlers so it must share state across instances.
+var sharedWalletBag = newWalletBag()
+
+type walletStore struct {
+	client transport.Client
+}
+
+// NewWalletStore creates a WalletStore backed by the in-process Inji holder.
+func NewWalletStore(walletClient transport.Client) store.WalletStore {
+	return &walletStore{client: walletClient}
+}
+
+func (s *walletStore) Name() string { return "Inji Holder (in-process)" }
+
+func (s *walletStore) Capabilities() model.WalletCapabilities {
+	return model.WalletCapabilities{
+		ClaimOffer:                    true,
+		CreateDIDs:                    true,
+		HolderInitiatedPresentation:   true,
+		VerifierInitiatedPresentation: true,
+		SelectiveDisclosure:           false,
+		DIDMethods:                    []string{"did:jwk"},
+	}
+}
+
+func (s *walletStore) GetWallets(ctx context.Context, token string) ([]model.WalletInfo, error) {
+	return []model.WalletInfo{{ID: "inji-holder", Name: "Inji Holder (in-process)"}}, nil
+}
+
+// ClaimCredential runs the full OID4VCI pre-auth flow against Inji Certify
+// and stores the resulting credential in the in-memory bag.
+func (s *walletStore) ClaimCredential(ctx context.Context, token, walletID, offerURL string) error {
+	credJSON, err := ClaimInjiCredential(ctx, offerURL)
+	if err != nil {
+		return err
+	}
+
+	var parsed map[string]any
+	_ = json.Unmarshal(credJSON, &parsed)
+
+	// Derive a display ID: prefer the credential's own id, then fall back.
+	id := randomID(8)
+	if parsed != nil {
+		if s, ok := parsed["id"].(string); ok && s != "" {
+			id = s
+		}
+	}
+	format := "ldp_vc"
+	if strings.HasPrefix(strings.TrimSpace(string(credJSON)), "ey") {
+		format = "jwt_vc"
+	}
+
+	sharedWalletBag.add(token, model.WalletCredential{
+		ID:             id,
+		Format:         format,
+		AddedOn:        time.Now().Format("2006-01-02 15:04"),
+		Document:       string(credJSON),
+		ParsedDocument: parsed,
+	})
+	return nil
+}
+
+func (s *walletStore) ListCredentials(ctx context.Context, token, walletID string) ([]model.WalletCredential, error) {
+	return sharedWalletBag.list(token), nil
+}
+
+func (s *walletStore) ListDIDs(ctx context.Context, token, walletID string) ([]model.DIDInfo, error) {
+	return []model.DIDInfo{
+		{DID: "did:jwk:ephemeral", Alias: "Inji Holder", Default: true},
+	}, nil
+}
+
+func (s *walletStore) CreateDID(ctx context.Context, token, walletID, method string) (string, error) {
+	return "did:jwk:ephemeral", nil
+}
+
+func (s *walletStore) PresentCredential(ctx context.Context, token, walletID string, req model.PresentRequest) error {
+	// For v1 we submit raw credentials via the handler-level Inji Verify path;
+	// this method is a no-op kept for interface compliance.
+	return nil
+}
+
+// =============================================================================
+// AuthStore — Inji Web uses its own auth; we stub here so the selector works.
+// =============================================================================
+
+// authStore provides email/password auth for the in-process Inji holder wallet.
+// It doesn't talk to any backend — passwords are accepted as-is and each user
+// gets a deterministic session token derived from their email so the in-memory
+// wallet bag is stable across requests for the same user.
+type authStore struct{}
+
+// NewAuthStore returns an auth store for the in-process Inji holder.
+func NewAuthStore() store.AuthStore { return &authStore{} }
+
+func (s *authStore) Login(ctx context.Context, email, password string) (*model.SessionInfo, error) {
+	if email == "" {
+		return nil, fmt.Errorf("email required")
+	}
+	return &model.SessionInfo{
+		UserID:   "inji-" + email,
+		Username: email,
+		Token:    "inji-token-" + email,
+	}, nil
+}
+
+func (s *authStore) Register(ctx context.Context, name, email, password string) error {
+	if email == "" {
+		return fmt.Errorf("email required")
+	}
+	return nil
+}
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
+}
+
+func extractHost(u string) string {
+	parsed, err := url.Parse(u)
+	if err != nil {
+		return ""
+	}
+	host := parsed.Hostname()
+	return host
+}
+
+func wrapOfferURL(uri string) string {
+	uri = strings.TrimSpace(uri)
+	if uri == "" {
+		return ""
+	}
+	// If the URI is already a full openid-credential-offer:// URL, return as-is.
+	if strings.HasPrefix(uri, "openid-credential-offer://") || strings.HasPrefix(uri, "openid4vci://") {
+		return uri
+	}
+	// Otherwise, build the standard wrapper.
+	return "openid-credential-offer://?credential_offer_uri=" + url.QueryEscape(uri)
+}
+
+func categorizeCredentialType(id, name string) string {
+	lower := strings.ToLower(id + " " + name)
+	switch {
+	case strings.Contains(lower, "degree") || strings.Contains(lower, "university") || strings.Contains(lower, "educational"):
+		return "Education"
+	case strings.Contains(lower, "farmer") || strings.Contains(lower, "farm"):
+		return "Agriculture"
+	case strings.Contains(lower, "birth") || strings.Contains(lower, "identity") || strings.Contains(lower, "national"):
+		return "Identity"
+	case strings.Contains(lower, "vaccin") || strings.Contains(lower, "health"):
+		return "Health"
+	case strings.Contains(lower, "license") || strings.Contains(lower, "driver"):
+		return "Transport"
+	default:
+		return "Other"
+	}
+}
+
+var randSrc = rand.New(rand.NewSource(time.Now().UnixNano()))
+
+func randomID(n int) string {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = charset[randSrc.Intn(len(charset))]
+	}
+	return string(b)
+}

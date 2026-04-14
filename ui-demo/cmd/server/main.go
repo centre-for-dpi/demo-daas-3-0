@@ -11,10 +11,15 @@ import (
 
 	"vcplatform/internal/auth"
 	"vcplatform/internal/config"
+	"vcplatform/internal/datasource"
+	dspg "vcplatform/internal/datasource/postgres"
+	dsmanual "vcplatform/internal/datasource/manual"
 	"vcplatform/internal/handler"
 	"vcplatform/internal/middleware"
 	"vcplatform/internal/render"
 	"vcplatform/internal/store"
+	"vcplatform/internal/store/credebl"
+	"vcplatform/internal/store/inji"
 	"vcplatform/internal/store/mock"
 	"vcplatform/internal/store/waltid"
 	"vcplatform/internal/transport"
@@ -76,7 +81,20 @@ func main() {
 		ssoRegistry.DiscoverAll(context.Background())
 	}
 
-	h := handler.New(renderer, stores, cfg, ssoRegistry)
+	// Data source registry — data sources are registered per-deployment and are
+	// orthogonal to DPG adaptors.
+	dataSources := datasource.NewRegistry()
+	registerDataSources(dataSources)
+
+	// Cross-DPG OID4VCI metadata proxy: when ISSUER_DPG=inji, our Go proxy
+	// exposes /inji-proxy/.well-known/openid-credential-issuer which returns
+	// Inji's metadata transformed to a shape Walt.id's strict parser accepts.
+	// certify-nginx routes metadata requests through us so wallet-api sees the
+	// translated response without changing any upstream URLs. No offer rewrite
+	// is needed since credential_issuer stays pointing at certify-nginx.
+	_ = inji.SetProxyRewrite // retained for future cases; not activated here.
+
+	h := handler.New(renderer, stores, cfg, ssoRegistry, dataSources)
 
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
@@ -100,23 +118,128 @@ func main() {
 	log.Fatal(http.ListenAndServe(*addr, stack(mux)))
 }
 
+// initStores constructs per-service store implementations. Each service
+// (Issuer, Wallet, Verifier) can be backed by a different DPG selected via
+// environment variables ISSUER_DPG / WALLET_DPG / VERIFIER_DPG, falling back
+// to cfg.Backend.Type when unset.
 func initStores(cfg *config.Config) *store.Stores {
-	switch cfg.Backend.Type {
-	case "waltid":
-		issuerClient := newTransportClient(cfg.Backend.IssuerURL, "", cfg)
-		verifierClient := newTransportClient(cfg.Backend.VerifierURL, "", cfg)
-		walletClient := newTransportClient(cfg.Backend.WalletURL, "", cfg)
-		return waltid.NewStores(
-			waltid.Config{
-				IssuerURL:   cfg.Backend.IssuerURL,
-				VerifierURL: cfg.Backend.VerifierURL,
-				WalletURL:   cfg.Backend.WalletURL,
-			},
-			issuerClient, verifierClient, walletClient,
-		)
-	default:
-		return mock.NewStores()
+	issuerDPG := pickDPG("ISSUER_DPG", cfg.Backend.Type)
+	walletDPG := pickDPG("WALLET_DPG", cfg.Backend.Type)
+	verifierDPG := pickDPG("VERIFIER_DPG", cfg.Backend.Type)
+
+	stores := &store.Stores{
+		Schemas:       newMockSchemaStore(cfg),
+		Notifications: newMockNotificationStore(),
+		Audit:         newMockAuditStore(),
 	}
+
+	// Auth store piggybacks on the wallet DPG (since wallets own user identity).
+	stores.Auth = pickAuthStore(walletDPG, cfg)
+	stores.Issuer = pickIssuerStore(issuerDPG, cfg)
+	stores.Wallet = pickWalletStore(walletDPG, cfg)
+	stores.Verifier = pickVerifierStore(verifierDPG, cfg)
+
+	fmt.Printf("stores: issuer=%s wallet=%s verifier=%s\n",
+		stores.Issuer.Name(), stores.Wallet.Name(), stores.Verifier.Name())
+
+	return stores
+}
+
+// pickDPG reads a per-service DPG selector from environment, falling back to
+// the config-wide Backend.Type.
+func pickDPG(envVar, fallback string) string {
+	if v := os.Getenv(envVar); v != "" {
+		return strings.ToLower(v)
+	}
+	if fallback != "" {
+		return strings.ToLower(fallback)
+	}
+	return "mock"
+}
+
+func pickIssuerStore(dpg string, cfg *config.Config) store.IssuerStore {
+	switch dpg {
+	case "waltid":
+		client := newTransportClient(cfg.Backend.IssuerURL, "", cfg)
+		return waltid.NewIssuerStore(client)
+	case "inji":
+		url := envOr("INJI_CERTIFY_URL", "http://localhost:8090")
+		publicURL := envOr("INJI_CERTIFY_PUBLIC_URL", "http://certify-nginx:80")
+		client := newTransportClient(url, "", cfg)
+		return inji.NewIssuerStore(client, publicURL)
+	case "credebl":
+		return credebl.NewIssuerStore()
+	default:
+		return mock.NewIssuerStore()
+	}
+}
+
+func pickWalletStore(dpg string, cfg *config.Config) store.WalletStore {
+	switch dpg {
+	case "waltid":
+		client := newTransportClient(cfg.Backend.WalletURL, "", cfg)
+		return waltid.NewWalletStore(client)
+	case "inji":
+		url := envOr("INJI_WEB_URL", "http://localhost:3001")
+		client := newTransportClient(url, "", cfg)
+		return inji.NewWalletStore(client)
+	case "credebl":
+		return credebl.NewWalletStore()
+	default:
+		return mock.NewWalletStore()
+	}
+}
+
+func pickVerifierStore(dpg string, cfg *config.Config) store.VerifierStore {
+	switch dpg {
+	case "waltid":
+		client := newTransportClient(cfg.Backend.VerifierURL, "", cfg)
+		return waltid.NewVerifierStore(client)
+	case "inji":
+		url := envOr("INJI_VERIFY_URL", "http://localhost:8082")
+		client := newTransportClient(url, "", cfg)
+		return inji.NewVerifierStore(client)
+	case "credebl":
+		return credebl.NewVerifierStore()
+	default:
+		return mock.NewVerifierStore()
+	}
+}
+
+func pickAuthStore(walletDPG string, cfg *config.Config) store.AuthStore {
+	switch walletDPG {
+	case "waltid":
+		client := newTransportClient(cfg.Backend.WalletURL, "", cfg)
+		return waltid.NewAuthStore(client)
+	case "inji":
+		return inji.NewAuthStore()
+	case "credebl":
+		return credebl.NewAuthStore()
+	default:
+		return mock.NewAuthStore()
+	}
+}
+
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+// newMockSchemaStore, newMockNotificationStore, newMockAuditStore:
+// these stores are local (not DPG-backed) so we always use the mock package.
+func newMockSchemaStore(cfg *config.Config) store.SchemaStore {
+	ms := mock.NewStores()
+	return ms.Schemas
+}
+func newMockNotificationStore() store.NotificationStore {
+	ms := mock.NewStores()
+	return ms.Notifications
+}
+func newMockAuditStore() store.AuditStore {
+	ms := mock.NewStores()
+	return ms.Audit
 }
 
 func newTransportClient(baseURL, token string, cfg *config.Config) transport.Client {
@@ -133,4 +256,89 @@ func backendType(cfg *config.Config) string {
 		return cfg.Backend.Type
 	}
 	return "mock"
+}
+
+// registerDataSources wires real data sources at startup. The default
+// deployment registers the Citizens Postgres database (mock government
+// registry) and the Manual passthrough. Additional sources can be added
+// via config in future iterations.
+func registerDataSources(reg *datasource.Registry) {
+	// Always register manual entry as a fallback.
+	reg.Register(dsmanual.New())
+
+	// Citizens Postgres database — connection via env vars with sensible defaults.
+	dsn := envOr("CITIZENS_DB_DSN", "host=localhost port=5435 user=citizens password=citizens dbname=citizens sslmode=disable")
+	citizens := dspg.New(dspg.Config{
+		DisplayName: "Citizens Database",
+		Summary:     "Mock government citizen registry — 200 records (KE + TT) covering birth records, university degrees, and farmer registrations.",
+		DSN:         dsn,
+		Table:       "citizens",
+		PrimaryKey:  "national_id",
+		Fields: []datasource.FieldDescriptor{
+			{Name: "national_id", Type: "string", Required: true, Description: "Unique national identifier"},
+			{Name: "country_code", Type: "string"},
+			{Name: "first_name", Type: "string"},
+			{Name: "middle_name", Type: "string"},
+			{Name: "last_name", Type: "string"},
+			{Name: "gender", Type: "string"},
+			{Name: "date_of_birth", Type: "date"},
+			{Name: "place_of_birth", Type: "string"},
+			{Name: "nationality", Type: "string"},
+			{Name: "address", Type: "string"},
+			{Name: "phone", Type: "string"},
+			{Name: "email", Type: "string"},
+			{Name: "birth_registration_number", Type: "string"},
+			{Name: "birth_registration_date", Type: "date"},
+			{Name: "mother_name", Type: "string"},
+			{Name: "father_name", Type: "string"},
+			{Name: "university", Type: "string"},
+			{Name: "degree_type", Type: "string"},
+			{Name: "major", Type: "string"},
+			{Name: "graduation_date", Type: "date"},
+			{Name: "gpa", Type: "number"},
+			{Name: "student_id", Type: "string"},
+			{Name: "farm_id", Type: "string"},
+			{Name: "farm_location", Type: "string"},
+			{Name: "farm_size_hectares", Type: "number"},
+			{Name: "primary_crops", Type: "string"},
+			{Name: "farm_registration_date", Type: "date"},
+		},
+		SuggestedMappings: map[string]map[string]string{
+			"UniversityDegree": {
+				"name":           "first_name",
+				"holderName":     "first_name",
+				"nationalId":     "national_id",
+				"institution":    "university",
+				"degree":         "degree_type",
+				"major":          "major",
+				"graduationDate": "graduation_date",
+				"gpa":            "gpa",
+				"studentId":      "student_id",
+			},
+			"FarmerCredential": {
+				"fullName":          "first_name",
+				"mobileNumber":      "phone",
+				"dateOfBirth":       "date_of_birth",
+				"gender":            "gender",
+				"district":          "place_of_birth",
+				"villageOrTown":     "place_of_birth",
+				"landArea":          "farm_size_hectares",
+				"primaryCropType":   "primary_crops",
+				"farmerID":          "farm_id",
+			},
+			"BirthCertificate": {
+				"holderName":         "first_name",
+				"nationalId":         "national_id",
+				"dateOfBirth":        "date_of_birth",
+				"placeOfBirth":       "place_of_birth",
+				"gender":             "gender",
+				"nationality":        "nationality",
+				"motherName":         "mother_name",
+				"fatherName":         "father_name",
+				"registrationNumber": "birth_registration_number",
+				"registrationDate":   "birth_registration_date",
+			},
+		},
+	})
+	reg.Register(citizens)
 }

@@ -21,6 +21,27 @@
       </select>
     </div>
 
+    {{if $isReal}}
+    <div class="form-group">
+      <label class="form-label">Data Source</label>
+      <select class="form-select" id="issue-source" onchange="onDataSourceChange()">
+        <option value="">Manual entry (type claims by hand)</option>
+      </select>
+      <div style="font-size:0.72rem;color:var(--text-tertiary);margin-top:0.35rem" id="source-summary"></div>
+    </div>
+
+    <div class="form-row" id="lookup-row" style="display:none">
+      <div class="form-group" style="flex:1">
+        <label class="form-label">Citizen Lookup Key</label>
+        <input class="form-input" id="lookup-id" placeholder="e.g. KE-NID-81016525">
+      </div>
+      <div class="form-group" style="display:flex;align-items:flex-end">
+        <button class="btn btn-sm" type="button" onclick="lookupRecord()" id="lookup-btn">Lookup &amp; Fill</button>
+      </div>
+    </div>
+    <div id="lookup-status" style="display:none;font-size:0.78rem;padding:0.5rem 0.75rem;border-radius:var(--radius-sm);margin-bottom:0.75rem"></div>
+    {{end}}
+
     <div class="form-group"><label class="form-label">Holder Identifier</label><input class="form-input" id="issue-identifier" placeholder="DID, email, or national ID"></div>
 
     <!-- Dynamic fields rendered from the selected schema -->
@@ -112,6 +133,166 @@ try {
   if (dataEl) schemaFieldDefs = JSON.parse(dataEl.textContent);
 } catch(e) {}
 
+// --- Data source wiring ---------------------------------------------------
+var _dataSources = [];      // [{name, displayName, summary, totalRecords, fields, suggestedMappings?}]
+var _lastRecord  = null;    // last fetched record (for subsequent schema changes)
+var _lastMappings = null;   // suggested mappings for the last fetched record
+
+function onDataSourceChange() {
+  var sel = document.getElementById('issue-source');
+  var summaryEl = document.getElementById('source-summary');
+  var lookupRow = document.getElementById('lookup-row');
+  var name = sel.value;
+  if (!name) {
+    summaryEl.textContent = '';
+    lookupRow.style.display = 'none';
+    return;
+  }
+  var ds = null;
+  for (var i = 0; i < _dataSources.length; i++) {
+    if (_dataSources[i].name === name) { ds = _dataSources[i]; break; }
+  }
+  if (!ds) return;
+  var parts = [];
+  if (ds.summary) parts.push(ds.summary);
+  if (ds.totalRecords) parts.push(ds.totalRecords + ' records available');
+  summaryEl.textContent = parts.join(' · ');
+  lookupRow.style.display = '';
+}
+
+function loadDataSources() {
+  fetch('/api/datasources').then(function(r) { return r.json(); }).then(function(list) {
+    if (!Array.isArray(list)) return;
+    _dataSources = list;
+    var sel = document.getElementById('issue-source');
+    if (!sel) return;
+    // Keep first "Manual entry" option, append the rest.
+    for (var i = 0; i < list.length; i++) {
+      var ds = list[i];
+      if (ds.kind === 'manual') continue; // manual entry is the default option
+      var opt = document.createElement('option');
+      opt.value = ds.name;
+      opt.textContent = ds.displayName || ds.name;
+      sel.appendChild(opt);
+    }
+  }).catch(function() {});
+}
+
+function setLookupStatus(kind, msg) {
+  var el = document.getElementById('lookup-status');
+  if (!el) return;
+  el.style.display = '';
+  if (kind === 'error') {
+    el.style.background = 'var(--error-surface)';
+    el.style.color = 'var(--error)';
+  } else if (kind === 'success') {
+    el.style.background = 'var(--accent-surface)';
+    el.style.color = 'var(--accent)';
+  } else {
+    el.style.background = 'var(--bg-surface-alt)';
+    el.style.color = 'var(--text-secondary)';
+  }
+  el.textContent = msg;
+}
+
+function lookupRecord() {
+  var source = document.getElementById('issue-source').value;
+  var id = document.getElementById('lookup-id').value.trim();
+  if (!source || !id) {
+    setLookupStatus('error', 'Choose a data source and enter a lookup key first.');
+    return;
+  }
+  var btn = document.getElementById('lookup-btn');
+  btn.disabled = true;
+  btn.textContent = 'Looking up...';
+  setLookupStatus('info', 'Fetching record...');
+  fetch('/api/datasources/record?source=' + encodeURIComponent(source) + '&id=' + encodeURIComponent(id))
+    .then(function(r) { return r.json().then(function(d) { return {status: r.status, data: d}; }); })
+    .then(function(res) {
+      btn.disabled = false;
+      btn.textContent = 'Lookup & Fill';
+      if (res.status !== 200) {
+        setLookupStatus('error', res.data.error || 'Lookup failed');
+        _lastRecord = null;
+        _lastMappings = null;
+        return;
+      }
+      _lastRecord = res.data.record || {};
+      _lastMappings = res.data.suggestedMappings || {};
+      // If no schema chosen yet, tell the user
+      var schemaId = document.getElementById('issue-schema').value;
+      if (!schemaId) {
+        setLookupStatus('info', 'Record loaded — select a schema to auto-fill claims.');
+        return;
+      }
+      var filled = applyRecordToFields(_lastRecord, _lastMappings, schemaId);
+      setLookupStatus('success', filled + ' field(s) auto-filled from ' + res.data.source + '.');
+    })
+    .catch(function(e) {
+      btn.disabled = false;
+      btn.textContent = 'Lookup & Fill';
+      setLookupStatus('error', e.message);
+    });
+}
+
+// applyRecordToFields fills any [data-claim] inputs under #schema-fields using
+// the suggested mappings for the selected schema's credential type. Returns
+// the number of fields it populated.
+function applyRecordToFields(record, mappings, schemaId) {
+  if (!record) return 0;
+  // Find the schema and its credential type (derived from configId or name).
+  var schema = null;
+  for (var i = 0; i < schemaFieldDefs.length; i++) {
+    if (schemaFieldDefs[i].id === schemaId) { schema = schemaFieldDefs[i]; break; }
+  }
+  if (!schema) return 0;
+
+  // Try multiple mapping keys: configId, name, and a normalized version of each.
+  var mappingKeys = [schema.configId, schema.name];
+  for (var k = 0; k < mappingKeys.length; k++) {
+    if (mappingKeys[k]) {
+      var norm = mappingKeys[k].split('_')[0]; // strip format suffix ("_jwt_vc_json")
+      if (mappingKeys.indexOf(norm) < 0) mappingKeys.push(norm);
+    }
+  }
+
+  var map = {};
+  if (mappings) {
+    for (var m = 0; m < mappingKeys.length; m++) {
+      if (mappings[mappingKeys[m]]) { map = mappings[mappingKeys[m]]; break; }
+    }
+  }
+
+  var filled = 0;
+  var inputs = document.querySelectorAll('#schema-fields [data-claim]');
+  inputs.forEach(function(el) {
+    var claimName = el.getAttribute('data-claim');
+    // Resolve a column name either via the mapping or by direct column match.
+    var col = map[claimName] || claimName;
+    var value = record[col];
+    // Also try a lowercase snake_case fallback (first_name <-> firstName).
+    if (value == null) {
+      var snake = claimName.replace(/([A-Z])/g, '_$1').toLowerCase();
+      if (record[snake] != null) value = record[snake];
+    }
+    if (value == null) return;
+    if (el.type === 'checkbox') {
+      el.checked = !!value;
+    } else if (el.type === 'date' && typeof value === 'string' && value.indexOf('T') > 0) {
+      el.value = value.split('T')[0];
+    } else {
+      el.value = value;
+    }
+    filled++;
+  });
+
+  // Pre-fill holder identifier from the record's primary key if present.
+  if (record.national_id && !document.getElementById('issue-identifier').value) {
+    document.getElementById('issue-identifier').value = record.national_id;
+  }
+  return filled;
+}
+
 function renderSchemaFields() {
   var schemaId = document.getElementById('issue-schema').value;
   var container = document.getElementById('schema-fields');
@@ -138,7 +319,16 @@ function renderSchemaFields() {
     html += '</div>';
   }
   container.innerHTML = html;
+
+  // If we already fetched a record, re-apply it against the newly rendered fields.
+  if (_lastRecord) {
+    var filled = applyRecordToFields(_lastRecord, _lastMappings, schemaId);
+    if (filled > 0) setLookupStatus('success', filled + ' field(s) auto-filled from data source.');
+  }
 }
+
+// Bootstrap data sources dropdown on load.
+if (document.getElementById('issue-source')) { loadDataSources(); }
 
 function renderFieldInput(field) {
   var inputType = 'text';

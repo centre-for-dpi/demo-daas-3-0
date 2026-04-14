@@ -21,6 +21,51 @@ func NewStores() *store.Stores {
 	}
 }
 
+// Per-service constructors for composition.
+func NewIssuerStore() store.IssuerStore     { return &issuerStore{} }
+func NewWalletStore() store.WalletStore     { return &walletStore{} }
+func NewVerifierStore() store.VerifierStore { return &verifierStore{} }
+func NewAuthStore() store.AuthStore         { return &authStore{} }
+
+// ========== Name + Capabilities ==========
+
+func (s *issuerStore) Name() string { return "Mock Issuer" }
+func (s *issuerStore) Capabilities() model.IssuerCapabilities {
+	return model.IssuerCapabilities{
+		IssuerInitiated:     true,
+		Batch:               true,
+		Deferred:            false,
+		SelectiveDisclosure: true,
+		CustomTypes:         true,
+		Revocation:          true,
+		Formats:             []string{"jwt_vc_json", "vc+sd-jwt", "ldp_vc"},
+	}
+}
+
+func (s *walletStore) Name() string { return "Mock Wallet" }
+func (s *walletStore) Capabilities() model.WalletCapabilities {
+	return model.WalletCapabilities{
+		ClaimOffer:                    true,
+		CreateDIDs:                    true,
+		HolderInitiatedPresentation:   true,
+		VerifierInitiatedPresentation: true,
+		SelectiveDisclosure:           true,
+		DIDMethods:                    []string{"did:jwk", "did:key"},
+	}
+}
+
+func (s *verifierStore) Name() string { return "Mock Verifier" }
+func (s *verifierStore) Capabilities() model.VerifierCapabilities {
+	return model.VerifierCapabilities{
+		CreateRequest:          true,
+		DirectVerify:           true,
+		PresentationDefinition: true,
+		PolicyEngine:           true,
+		RevocationCheck:        true,
+		DIDMethods:             []string{"did:jwk", "did:key", "did:web"},
+	}
+}
+
 // --- AuthStore ---
 type authStore struct{}
 
@@ -132,6 +177,16 @@ func (s *verifierStore) ListPolicies(_ context.Context) (map[string]string, erro
 	return map[string]string{
 		"signature": "Checks cryptographic signature",
 		"expired":   "Checks expiration date",
+	}, nil
+}
+
+func (s *verifierStore) DirectVerify(_ context.Context, credential []byte, contentType string) (*model.VerifyResult, error) {
+	verified := true
+	return &model.VerifyResult{
+		Verified: &verified,
+		Checks: []model.CheckResult{
+			{Name: "Signature", Status: "pass", Summary: "mock verify"},
+		},
 	}, nil
 }
 

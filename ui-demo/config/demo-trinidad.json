@@ -1,0 +1,78 @@
+{
+  "brand": {
+    "name": "tt.vc",
+    "name_accent": "."
+  },
+  "theme": {
+    "light": {
+      "bg": "#FAFAF8", "bg_surface": "#FFFFFF", "bg_surface_alt": "#F3F3F0",
+      "bg_overlay": "rgba(250, 250, 248, 0.92)",
+      "text": "#1A1A18", "text_secondary": "#6B6B66", "text_tertiary": "#9C9C96",
+      "border": "#E4E4E0", "border_strong": "#CCCCC6",
+      "accent": "#2D5A3D", "accent_hover": "#1E3D29", "accent_surface": "#E8F0EB", "accent_text": "#FFFFFF",
+      "tag_bg": "#EEEEE9", "tag_text": "#4A4A46",
+      "success": "#2D5A3D", "warning": "#8B6914", "warning_surface": "#FEF6E0",
+      "error": "#8B2C2C", "error_surface": "#FDECEC",
+      "info": "#2D4A5A", "info_surface": "#E8EFF3",
+      "shadow_sm": "0 1px 2px rgba(0,0,0,0.04)", "shadow_md": "0 4px 12px rgba(0,0,0,0.06)", "shadow_lg": "0 8px 30px rgba(0,0,0,0.08)"
+    },
+    "dark": {
+      "bg": "#111110", "bg_surface": "#1A1A18", "bg_surface_alt": "#222220",
+      "bg_overlay": "rgba(17, 17, 16, 0.92)",
+      "text": "#EAEAE6", "text_secondary": "#9C9C96", "text_tertiary": "#6B6B66",
+      "border": "#2E2E2C", "border_strong": "#444440",
+      "accent": "#5BA97A", "accent_hover": "#7BC49A", "accent_surface": "#1A2E22", "accent_text": "#111110",
+      "tag_bg": "#2A2A28", "tag_text": "#B0B0AA",
+      "success": "#5BA97A", "warning": "#C4962A", "warning_surface": "#2A2414",
+      "error": "#C45050", "error_surface": "#2A1A1A",
+      "info": "#5A8AA0", "info_surface": "#1A2228",
+      "shadow_sm": "0 1px 2px rgba(0,0,0,0.2)", "shadow_md": "0 4px 12px rgba(0,0,0,0.3)", "shadow_lg": "0 8px 30px rgba(0,0,0,0.4)"
+    }
+  },
+  "typography": {
+    "font_display": "'Josefin Sans', sans-serif",
+    "font_body": "'Geist', -apple-system, 'Segoe UI', system-ui, sans-serif",
+    "font_mono": "'Geist Mono', 'SF Mono', 'Consolas', monospace",
+    "font_urls": ["https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@300;400;500;600;700&display=swap"]
+  },
+  "features": {
+    "workspaces": {"issuer": true, "holder": true, "verifier": true, "trust": true, "admin": true},
+    "exploration_mode": true,
+    "chatbot": true
+  },
+  "backend": {
+    "type": "waltid",
+    "issuer_url": "$WALTID_ISSUER_URL",
+    "verifier_url": "$WALTID_VERIFIER_URL",
+    "wallet_url": "$WALTID_WALLET_URL",
+    "transport": "direct"
+  },
+  "sso": {
+    "enabled": true,
+    "base_url": "$APP_BASE_URL",
+    "skip_tls_verify": true,
+    "providers": [
+      {
+        "name": "Keycloak",
+        "discovery_url": "$KEYCLOAK_URL/realms/$KEYCLOAK_REALM/.well-known/openid-configuration",
+        "client_id": "$KEYCLOAK_CLIENT_ID",
+        "client_secret": "",
+        "scopes": "openid profile email"
+      },
+      {
+        "name": "WSO2",
+        "discovery_url": "$WSO2_URL/oauth2/token/.well-known/openid-configuration",
+        "client_id": "auto:$WSO2_CLIENT_ID_FILE",
+        "client_secret": "",
+        "scopes": "openid profile email"
+      }
+    ]
+  },
+  "translation": {
+    "deepl_api_key": "$DEEPL_API_KEY",
+    "libretranslate_url": "$LIBRETRANSLATE_URL",
+    "languages": ["EN", "ES", "FR", "PT-BR", "HI", "SW"]
+  },
+  "mode": "exploration",
+  "locale": "en"
+}

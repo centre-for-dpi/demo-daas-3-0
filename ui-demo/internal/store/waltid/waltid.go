@@ -35,6 +35,65 @@ func NewStores(cfg Config, issuerClient, verifierClient, walletClient transport.
 	}
 }
 
+// NewIssuerStore exposes just the issuer implementation for per-service composition.
+func NewIssuerStore(issuerClient transport.Client) store.IssuerStore {
+	return &issuerStore{issuer: issuerClient}
+}
+
+// NewWalletStore exposes just the wallet implementation for per-service composition.
+func NewWalletStore(walletClient transport.Client) store.WalletStore {
+	return &walletStore{wallet: walletClient}
+}
+
+// NewVerifierStore exposes just the verifier implementation for per-service composition.
+func NewVerifierStore(verifierClient transport.Client) store.VerifierStore {
+	return &verifierStore{verifier: verifierClient}
+}
+
+// NewAuthStore exposes the auth store.
+func NewAuthStore(walletClient transport.Client) store.AuthStore {
+	return &authStore{wallet: walletClient}
+}
+
+// ========== Name + Capabilities ==========
+
+func (s *issuerStore) Name() string { return "Walt.id Issuer" }
+func (s *issuerStore) Capabilities() model.IssuerCapabilities {
+	return model.IssuerCapabilities{
+		IssuerInitiated:     true,
+		Batch:               false, // via loop — not first-class
+		Deferred:            false,
+		SelectiveDisclosure: true,
+		CustomTypes:         true, // via HOCON + container restart
+		Revocation:          false,
+		Formats:             []string{"jwt_vc_json", "vc+sd-jwt"},
+	}
+}
+
+func (s *walletStore) Name() string { return "Walt.id Wallet" }
+func (s *walletStore) Capabilities() model.WalletCapabilities {
+	return model.WalletCapabilities{
+		ClaimOffer:                    true,
+		CreateDIDs:                    true,
+		HolderInitiatedPresentation:   true,
+		VerifierInitiatedPresentation: true,
+		SelectiveDisclosure:           true,
+		DIDMethods:                    []string{"did:jwk", "did:key", "did:web"},
+	}
+}
+
+func (s *verifierStore) Name() string { return "Walt.id Verifier" }
+func (s *verifierStore) Capabilities() model.VerifierCapabilities {
+	return model.VerifierCapabilities{
+		CreateRequest:          true,
+		DirectVerify:           false,
+		PresentationDefinition: true,
+		PolicyEngine:           true,
+		RevocationCheck:        true,
+		DIDMethods:             []string{"did:jwk", "did:key", "did:web"},
+	}
+}
+
 // ========== AuthStore ==========
 
 type authStore struct{ wallet transport.Client }
@@ -83,12 +142,12 @@ func (s *authStore) Login(ctx context.Context, email, password string) (*model.S
 
 func (s *authStore) Register(ctx context.Context, name, email, password string) error {
 	body := map[string]string{"name": name, "email": email, "password": password, "type": "email"}
-	_, code, err := s.wallet.Do(ctx, "POST", "/wallet-api/auth/register", body)
+	resp, code, err := s.wallet.Do(ctx, "POST", "/wallet-api/auth/register", body)
 	if err != nil {
 		return err
 	}
 	if code != 200 && code != 201 {
-		return fmt.Errorf("register failed (%d)", code)
+		return fmt.Errorf("register failed (%d): %s", code, string(resp))
 	}
 	return nil
 }
@@ -576,6 +635,11 @@ func (s *verifierStore) ListPolicies(ctx context.Context) (map[string]string, er
 		return nil, err
 	}
 	return policies, nil
+}
+
+// DirectVerify is not supported by Walt.id verifier API (use OID4VP sessions instead).
+func (s *verifierStore) DirectVerify(ctx context.Context, credential []byte, contentType string) (*model.VerifyResult, error) {
+	return nil, fmt.Errorf("walt.id verifier does not support direct-verify; use CreateVerificationSession + OID4VP flow")
 }
 
 // ========== SchemaStore (queries issuer API for credential configurations) ==========

@@ -7,6 +7,7 @@ import (
 
 	"vcplatform/internal/auth"
 	"vcplatform/internal/config"
+	"vcplatform/internal/datasource"
 	"vcplatform/internal/middleware"
 	"vcplatform/internal/model"
 	"vcplatform/internal/render"
@@ -45,6 +46,7 @@ type Handler struct {
 	stores      *store.Stores
 	config      *config.Config
 	ssoRegistry *auth.Registry
+	dataSources *datasource.Registry
 
 	// In-memory stores, keyed by user ID.
 	// In production these would be persisted to a database.
@@ -56,12 +58,16 @@ type Handler struct {
 }
 
 // New creates a new Handler.
-func New(r *render.Renderer, s *store.Stores, c *config.Config, sso *auth.Registry) *Handler {
+func New(r *render.Renderer, s *store.Stores, c *config.Config, sso *auth.Registry, ds *datasource.Registry) *Handler {
+	if ds == nil {
+		ds = datasource.NewRegistry()
+	}
 	return &Handler{
 		render:      r,
 		stores:      s,
 		config:      c,
 		ssoRegistry: sso,
+		dataSources: ds,
 		issuerDIDs:  make(map[string][]IssuerDIDEntry),
 		schemas:     make(map[string][]CredentialSchema),
 	}
@@ -109,6 +115,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 		mux.HandleFunc("GET /roles", h.Roles)
 		mux.HandleFunc("GET /auditor", h.Auditor)
 		mux.HandleFunc("GET /agent-output", h.AgentOutput)
+		// Agent chat proxy — forwards browser requests to the n8n webhook.
+		// Unauthenticated because the chatbot is available on the public landing page.
+		mux.HandleFunc("POST /api/agent/chat", h.AgentChat)
 	} else {
 		// Production mode: / redirects to /login
 		mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
@@ -248,6 +257,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /api/issuer/onboard", auth(h.APIIssuerOnboard))
 	mux.Handle("POST /api/issuer/issue", auth(h.APIIssueCredential))
 	mux.Handle("POST /api/verifier/verify", auth(h.APIVerify))
+	mux.Handle("POST /api/verifier/direct-verify", auth(h.APIDirectVerify))
 	mux.Handle("GET /api/verifier/session/{state}", auth(h.APIVerifyResult))
 	mux.Handle("GET /api/wallet/credentials", auth(h.APIWalletCredentials))
 	mux.Handle("POST /api/wallet/claim", auth(h.APIWalletClaim))
@@ -266,6 +276,13 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /api/credential-types/register", auth(h.APIRegisterCredentialType))
 	mux.HandleFunc("POST /api/translate", h.APITranslate)
 	mux.HandleFunc("GET /api/translate/config", h.APITranslationConfig)
+	mux.HandleFunc("GET /api/capabilities", h.APICapabilities)
+	mux.HandleFunc("GET /api/datasources", h.APIListDataSources)
+	mux.Handle("GET /api/datasources/record", auth(h.APIFetchDataSourceRecord))
+
+	// Inji proxy — unauthenticated, used by external wallet OID4VCI clients
+	// to translate Inji's metadata shape into something Walt.id wallet can parse.
+	h.RegisterInjiProxy(mux)
 }
 
 // pageData builds the standard PageData for a request.

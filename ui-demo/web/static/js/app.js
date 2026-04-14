@@ -3,6 +3,94 @@
    Only what HTMX can't do.
    ======================================== */
 
+/* ---- Capability matrix bootstrapper ----
+   Fetches /api/capabilities once on page load and stores the result in
+   window._capabilities. Drives sidebar visibility, beta banners, and any
+   other per-DPG UI variations. Re-runs on htmx:afterSettle so portal navigations
+   keep the UI consistent. */
+window._capabilities = null;
+window._capabilitiesLoaded = false;
+
+function applyCapabilities() {
+  var caps = window._capabilities;
+  if (!caps) return;
+
+  // Beta banners — show a small badge next to the sidebar section header
+  // for any service whose backend is in beta. Banner is also shown inline
+  // on the relevant pages.
+  document.querySelectorAll('[data-dpg-section]').forEach(function(el) {
+    var section = el.getAttribute('data-dpg-section');
+    var beta = false;
+    if (section === 'issuer' && caps.issuerBeta) beta = true;
+    if (section === 'wallet' && caps.walletBeta) beta = true;
+    if (section === 'verifier' && caps.verifierBeta) beta = true;
+    if (beta) {
+      el.classList.add('dpg-beta');
+      // Add inline beta tag if not already present
+      if (!el.querySelector('.dpg-beta-tag')) {
+        var tag = document.createElement('span');
+        tag.className = 'dpg-beta-tag';
+        tag.textContent = 'BETA';
+        tag.style.cssText = 'margin-left:0.5rem;font-size:0.55rem;padding:0.1rem 0.35rem;background:var(--warning-surface);color:var(--warning);border-radius:0.2rem;font-weight:600';
+        el.appendChild(tag);
+      }
+    } else {
+      el.classList.remove('dpg-beta');
+      var existing = el.querySelector('.dpg-beta-tag');
+      if (existing) existing.remove();
+    }
+  });
+
+  // Hide flows the active backend doesn't support.
+  // Sidebar items can declare data-cap="issuer.batch" and they'll be hidden
+  // when caps.issuer.batch is false.
+  document.querySelectorAll('[data-cap]').forEach(function(el) {
+    var path = el.getAttribute('data-cap').split('.');
+    var v = caps;
+    for (var i = 0; i < path.length; i++) {
+      if (v && typeof v === 'object') v = v[path[i]];
+      else { v = false; break; }
+    }
+    if (!v) {
+      el.style.display = 'none';
+    } else {
+      el.style.display = '';
+    }
+  });
+
+  // Update topbar DPG badges if present
+  var issuerBadge = document.getElementById('dpg-issuer-name');
+  if (issuerBadge) issuerBadge.textContent = caps.issuerName || '';
+  var walletBadge = document.getElementById('dpg-wallet-name');
+  if (walletBadge) walletBadge.textContent = caps.walletName || '';
+  var verifierBadge = document.getElementById('dpg-verifier-name');
+  if (verifierBadge) verifierBadge.textContent = caps.verifierName || '';
+}
+
+function loadCapabilities() {
+  fetch('/api/capabilities')
+    .then(function(r) { return r.json(); })
+    .then(function(caps) {
+      window._capabilities = caps;
+      window._capabilitiesLoaded = true;
+      applyCapabilities();
+    })
+    .catch(function() { /* silent — caps stay null, UI behaves as default */ });
+}
+
+// Load on initial page load
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', loadCapabilities);
+} else {
+  loadCapabilities();
+}
+
+// Re-apply on every HTMX content swap (sidebar may have new items)
+document.addEventListener('htmx:afterSettle', function() {
+  if (window._capabilities) applyCapabilities();
+});
+
+
 /* ---- Theme toggle ---- */
 function toggleTheme() {
   const html = document.documentElement;
