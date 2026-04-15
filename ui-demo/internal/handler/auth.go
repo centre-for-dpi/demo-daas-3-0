@@ -89,14 +89,10 @@ func (h *Handler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 		if name == "" || name == "Demo User" {
 			name = email
 		}
-		// Pick the starting step based on role: issuers walk through
-		// credential categories first; holders and verifiers jump straight
-		// to DPG choice.
-		startStep := "dpg-choice"
-		if role == "issuer" || role == "admin" {
-			startStep = "categories"
-		}
-		cookieVal := model.EncodeSessionFull(role, name, email, false, session.Token, "", startStep)
+		// Every role now starts at DPG choice — the credential-categories
+		// step was removed because nothing downstream consumed the picked
+		// categories.
+		cookieVal := model.EncodeSessionFull(role, name, email, false, session.Token, "", "dpg-choice")
 		h.setSessionCookie(w, cookieVal)
 		// All roles now go through the onboarding wizard — the wizard
 		// adapts its steps to the user's role.

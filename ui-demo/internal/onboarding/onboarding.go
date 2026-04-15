@@ -17,14 +17,10 @@ type State struct {
 	// Role is the user's role at the time they started onboarding: "issuer",
 	// "holder", or "verifier". Drives which wizard steps are shown.
 	Role string `json:"role"`
-	// CredentialCategories is the list of high-level credential types the
-	// issuer expects to handle (e.g. "education", "identity", "health").
-	// Only populated for issuers.
-	CredentialCategories []string `json:"credentialCategories"`
 	// Per-role DPG choices. Only one is populated per onboarding session
 	// (matching Role), but the State struct carries all three so a single
 	// user can onboard into multiple roles over time.
-	IssuerDPG   string `json:"issuerDpg"`
+	IssuerDPG string `json:"issuerDpg"`
 	WalletDPG   string `json:"walletDpg"`
 	VerifierDPG string `json:"verifierDpg"`
 	// Confirmed is true once the user clicks "Confirm & Continue" on the
@@ -45,7 +41,6 @@ type State struct {
 // Wizard step identifiers. The UI routes and handler dispatch on these.
 const (
 	StepSignup        = "signup"
-	StepCategories    = "categories"
 	StepDPGChoice     = "dpg-choice"
 	StepDPGConfirm    = "dpg-confirm"
 	StepSchemaCatalog = "schema-catalog"
@@ -59,8 +54,6 @@ const (
 func NextStep(current string) string {
 	switch current {
 	case StepSignup, "":
-		return StepCategories
-	case StepCategories:
 		return StepDPGChoice
 	case StepDPGChoice:
 		return StepDPGConfirm

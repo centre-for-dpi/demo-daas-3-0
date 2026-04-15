@@ -405,7 +405,6 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /portal/onboarding", auth(h.OnboardingPage))
 	mux.Handle("GET /api/onboarding/state", auth(h.APIOnboardingState))
 	mux.Handle("GET /api/onboarding/dpgs", auth(h.APIDPGCatalog))
-	mux.Handle("POST /api/onboarding/categories", auth(h.APIOnboardingCategories))
 	mux.Handle("POST /api/onboarding/dpg", auth(h.APIOnboardingDPG))
 	mux.Handle("POST /api/onboarding/confirm", auth(h.APIOnboardingConfirm))
 	mux.Handle("POST /api/onboarding/issuance-mode", auth(h.APIOnboardingIssuanceMode))

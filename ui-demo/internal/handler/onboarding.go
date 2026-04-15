@@ -220,14 +220,10 @@ func (h *Handler) getOrCreateState(user *model.User) *onboarding.State {
 		}
 		return s
 	}
-	initialStep := onboarding.StepDPGChoice
-	if user.Role == "issuer" {
-		initialStep = onboarding.StepCategories
-	}
 	s := &onboarding.State{
 		UserID: user.ID,
 		Role:   user.Role,
-		Step:   initialStep,
+		Step:   onboarding.StepDPGChoice,
 	}
 	h.onboarding.Put(s)
 	return s
@@ -287,7 +283,6 @@ func (h *Handler) OnboardingPage(w http.ResponseWriter, r *http.Request) {
 			"state":       state,
 			"role":        state.Role,
 			"dpgCards":    h.filteredDPGCatalog(state.Role),
-			"categories":  credentialCategoryCatalog,
 			"currentStep": state.Step,
 		},
 	}
@@ -325,35 +320,6 @@ func (h *Handler) filteredDPGCatalog(role string) []DPGCard {
 // -----------------------------------------------------------------------------
 // JSON POST handlers — one per wizard step.
 // -----------------------------------------------------------------------------
-
-// APIOnboardingCategories saves the selected credential categories and
-// advances the wizard to the DPG choice step.
-func (h *Handler) APIOnboardingCategories(w http.ResponseWriter, r *http.Request) {
-	user := middleware.GetUser(r.Context())
-	if user == nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-		return
-	}
-	var req struct {
-		Categories []string `json:"categories"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
-		return
-	}
-	if len(req.Categories) == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "pick at least one credential category"})
-		return
-	}
-	state := h.getOrCreateState(user)
-	state.CredentialCategories = req.Categories
-	state.Step = onboarding.StepDPGChoice
-	h.persistState(w, user, state)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status": "ok",
-		"next":   state.Step,
-	})
-}
 
 // APIOnboardingDPG saves the user's DPG choice for whichever role they're
 // onboarding as (issuer / holder / verifier), and advances to confirm.
@@ -580,58 +546,6 @@ func (h *Handler) APIDPGCatalog(w http.ResponseWriter, r *http.Request) {
 		out = append(out, e)
 	}
 	writeJSON(w, http.StatusOK, out)
-}
-
-// -----------------------------------------------------------------------------
-// Credential category catalog — the high-level taxonomy an issuer picks from.
-// -----------------------------------------------------------------------------
-
-// CredentialCategory is a domain the issuer deals in.
-type CredentialCategory struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Examples    []string `json:"examples"`
-}
-
-var credentialCategoryCatalog = []CredentialCategory{
-	{
-		ID:   "education",
-		Name: "Education",
-		Description: "Academic credentials issued by universities, colleges, " +
-			"training institutes, and qualification authorities.",
-		Examples: []string{"University Degree", "Diploma", "Transcript", "Professional Certification"},
-	},
-	{
-		ID:          "identity",
-		Name:        "Identity",
-		Description: "Foundational identity credentials issued by civil registries and national ID authorities.",
-		Examples:    []string{"Birth Certificate", "National ID", "Passport", "Resident Permit"},
-	},
-	{
-		ID:          "transport",
-		Name:        "Transport",
-		Description: "Driving and mobility credentials.",
-		Examples:    []string{"Driver's License", "Vehicle Registration", "Public Transit Pass"},
-	},
-	{
-		ID:          "business",
-		Name:        "Business & Commerce",
-		Description: "Business registration, tax compliance, and professional licensing.",
-		Examples:    []string{"Business Registration", "Tax Compliance Certificate", "Trade License"},
-	},
-	{
-		ID:          "health",
-		Name:        "Health",
-		Description: "Health records and vaccination credentials.",
-		Examples:    []string{"Vaccination Certificate", "Medical License", "Insurance Card"},
-	},
-	{
-		ID:          "agriculture",
-		Name:        "Agriculture",
-		Description: "Farmer registrations and agricultural subsidies.",
-		Examples:    []string{"Farmer ID", "Land Title", "Subsidy Entitlement"},
-	},
 }
 
 // unused guard — keeps fmt import available for future debug logging.

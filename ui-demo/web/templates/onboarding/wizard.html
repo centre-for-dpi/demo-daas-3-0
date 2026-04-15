@@ -3,7 +3,6 @@
 {{$state := index $dm "state"}}
 {{$role := index $dm "role"}}
 {{$dpgCards := index $dm "dpgCards"}}
-{{$categories := index $dm "categories"}}
 {{$currentStep := index $dm "currentStep"}}
 
 <div class="page" style="padding:2rem 2rem 4rem;max-width:1100px;margin:0 auto;animation:pageIn 0.3s ease-out">
@@ -26,15 +25,13 @@
   <div class="card" style="padding:1rem 1.5rem;margin-bottom:1.25rem">
     <div id="wizard-progress" style="display:flex;gap:0.5rem;font-size:0.78rem;align-items:center;flex-wrap:wrap">
       {{if eq $role "issuer"}}
-      <span class="wz-step" data-step="categories">1. Credential types</span>
+      <span class="wz-step" data-step="dpg-choice">1. Issuer backend</span>
       <span style="color:var(--text-tertiary)">→</span>
-      <span class="wz-step" data-step="dpg-choice">2. Issuer backend</span>
+      <span class="wz-step" data-step="dpg-confirm">2. Confirm</span>
       <span style="color:var(--text-tertiary)">→</span>
-      <span class="wz-step" data-step="dpg-confirm">3. Confirm</span>
+      <span class="wz-step" data-step="schema-catalog">3. Schema</span>
       <span style="color:var(--text-tertiary)">→</span>
-      <span class="wz-step" data-step="schema-catalog">4. Schema</span>
-      <span style="color:var(--text-tertiary)">→</span>
-      <span class="wz-step" data-step="issuance-mode">5. Issuance mode</span>
+      <span class="wz-step" data-step="issuance-mode">4. Issuance mode</span>
       {{else if eq $role "holder"}}
       <span class="wz-step" data-step="dpg-choice">1. Wallet backend</span>
       <span style="color:var(--text-tertiary)">→</span>
@@ -52,35 +49,6 @@
   </div>
 
   <!-- Step panels — only one visible at a time, controlled by JS -->
-
-  <!-- =========================================================== -->
-  <!-- Step: credential types                                        -->
-  <!-- =========================================================== -->
-  <div class="wz-panel card" id="panel-categories" style="padding:2rem">
-    <h2 style="font-size:1.1rem;margin-bottom:0.25rem">What credentials will you be issuing?</h2>
-    <p style="color:var(--text-secondary);font-size:0.85rem;margin-bottom:1.5rem">Pick one or more categories. You can add more later.</p>
-
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:1rem" id="category-grid">
-      {{range $categories}}
-      <label class="card" style="cursor:pointer;padding:1.1rem;border:2px solid var(--border);transition:all 0.15s">
-        <div style="display:flex;align-items:flex-start;gap:0.75rem">
-          <input type="checkbox" name="category" value="{{.ID}}" style="margin-top:0.2rem">
-          <div style="flex:1">
-            <div style="font-weight:500;margin-bottom:0.2rem">{{.Name}}</div>
-            <div style="font-size:0.74rem;color:var(--text-tertiary);line-height:1.35;margin-bottom:0.4rem">{{.Description}}</div>
-            <div style="font-size:0.7rem;color:var(--text-secondary)">
-              {{range $i, $ex := .Examples}}{{if $i}} · {{end}}{{$ex}}{{end}}
-            </div>
-          </div>
-        </div>
-      </label>
-      {{end}}
-    </div>
-
-    <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1.5rem">
-      <button class="btn btn-primary" onclick="wzSaveCategories()">Continue →</button>
-    </div>
-  </div>
 
   <!-- =========================================================== -->
   <!-- Step: DPG choice                                              -->
@@ -296,33 +264,7 @@ function wzGoTo(step) {
   wzShow(step);
 }
 
-// Step 1 — categories ---------------------------------------------------------
-function wzSaveCategories() {
-  const cats = Array.from(document.querySelectorAll('input[name=category]:checked')).map(i => i.value);
-  if (cats.length === 0) {
-    showToast('Pick at least one', 'Select one or more credential categories before continuing.');
-    return;
-  }
-  fetch('/api/onboarding/categories', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({categories: cats}),
-  }).then(r => r.json()).then(d => {
-    if (d.error) { showToast('Error', d.error); return; }
-    wzShow('dpg-choice');
-  });
-}
-
-// Pre-check categories from previous state.
-(function prefillCats() {
-  const prev = wz.state.credentialCategories || [];
-  prev.forEach(c => {
-    const el = document.querySelector('input[name=category][value="' + c + '"]');
-    if (el) el.checked = true;
-  });
-})();
-
-// Step 2 — DPG selection ------------------------------------------------------
+// Step 1 — DPG selection ------------------------------------------------------
 function wzSelectDPG(id) {
   wz.selectedDPG = id;
   fetch('/api/onboarding/dpg', {
@@ -443,7 +385,7 @@ if (wz.selectedDPG) {
   }
 }
 
-// Step 3 — confirm ------------------------------------------------------------
+// Step 2 — confirm ------------------------------------------------------------
 function wzConfirm() {
   fetch('/api/onboarding/confirm', { method: 'POST' })
     .then(r => r.json()).then(d => {
@@ -455,7 +397,7 @@ function wzConfirm() {
     });
 }
 
-// Step 4 — schema catalog -----------------------------------------------------
+// Step 3 — schema catalog -----------------------------------------------------
 function wzLoadCatalog() {
   const dpg = wz.selectedDPG;
   fetch('/api/schemas/catalog?dpg=' + encodeURIComponent(dpg))
@@ -612,7 +554,7 @@ function wzRefreshSavedList() {
   el.textContent = list.join(', ');
 }
 
-// Step 5 — issuance mode ------------------------------------------------------
+// Step 4 — issuance mode ------------------------------------------------------
 function wzPickMode(mode) {
   fetch('/api/onboarding/issuance-mode', {
     method: 'POST',
@@ -627,6 +569,9 @@ function wzPickMode(mode) {
 // ============================================================================
 // Kick off on load.
 // ============================================================================
-wzShow(wz.step || 'categories');
+// Default to dpg-choice when there's no persisted step yet, or when an
+// older session cookie is still pointing at the now-removed categories
+// step.
+wzShow((wz.step && wz.step !== 'categories') ? wz.step : 'dpg-choice');
 </script>
 {{end}}
