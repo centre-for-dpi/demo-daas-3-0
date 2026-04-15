@@ -142,6 +142,18 @@ func (h *Handler) issuerFor(user *model.User) store.IssuerStore {
 			return s
 		}
 	}
+	// Fallback: the cookie might have been re-written without DPG fields
+	// (e.g. a session encoded via the legacy EncodeSession helper), but the
+	// onboarding store still remembers what the user picked in the wizard.
+	// Honor that before dropping to the server default so users never see
+	// a silent backend switch between requests.
+	if user != nil && user.ID != "" {
+		if st := h.onboarding.Get(user.ID); st != nil && st.IssuerDPG != "" {
+			if s, ok := h.issuerRegistry[st.IssuerDPG]; ok && s != nil {
+				return s
+			}
+		}
+	}
 	return h.stores.Issuer
 }
 
@@ -154,6 +166,16 @@ func (h *Handler) walletFor(user *model.User) store.WalletStore {
 			return s
 		}
 	}
+	// See issuerFor — honor the onboarding-store pick before falling back
+	// to the server default so a re-logged-in SSO user never silently
+	// switches wallet backend behind their back.
+	if user != nil && user.ID != "" {
+		if st := h.onboarding.Get(user.ID); st != nil && st.WalletDPG != "" {
+			if s, ok := h.walletRegistry[st.WalletDPG]; ok && s != nil {
+				return s
+			}
+		}
+	}
 	return h.stores.Wallet
 }
 
@@ -164,6 +186,16 @@ func (h *Handler) verifierFor(user *model.User) store.VerifierStore {
 	if user != nil && user.VerifierDPG != "" {
 		if s, ok := h.verifierRegistry[user.VerifierDPG]; ok && s != nil {
 			return s
+		}
+	}
+	// See issuerFor — honor the onboarding-store pick before falling back
+	// to the server default so a re-logged-in SSO user never silently
+	// switches verifier backend behind their back.
+	if user != nil && user.ID != "" {
+		if st := h.onboarding.Get(user.ID); st != nil && st.VerifierDPG != "" {
+			if s, ok := h.verifierRegistry[st.VerifierDPG]; ok && s != nil {
+				return s
+			}
 		}
 	}
 	return h.stores.Verifier

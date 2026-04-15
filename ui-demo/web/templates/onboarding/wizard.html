@@ -569,9 +569,15 @@ function wzPickMode(mode) {
 // ============================================================================
 // Kick off on load.
 // ============================================================================
-// Default to dpg-choice when there's no persisted step yet, or when an
-// older session cookie is still pointing at the now-removed categories
-// step.
-wzShow((wz.step && wz.step !== 'categories') ? wz.step : 'dpg-choice');
+// Default to dpg-choice whenever the persisted step doesn't correspond to
+// a real panel in the DOM — covers users who finished onboarding earlier
+// (state.Step = "done", no panel-done element), users whose old cookie
+// still points at the removed "categories" step, and any future additions
+// that rename or remove steps out from under a live session.
+(function bootWizard() {
+  var target = wz.step || 'dpg-choice';
+  if (!document.getElementById('panel-' + target)) target = 'dpg-choice';
+  wzShow(target);
+})();
 </script>
 {{end}}

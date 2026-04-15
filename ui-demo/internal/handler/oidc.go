@@ -3,6 +3,7 @@ package handler
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 
 	"vcplatform/internal/auth"
@@ -151,8 +152,33 @@ func (h *Handler) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	cookieVal := model.EncodeSession(role, name, false, walletToken)
+	// Build the User from the role + name we just resolved. Derive the
+	// stable onboarding-store key (role + lowercased hyphenated name)
+	// exactly the way UserFromSession / newUser would, then look up any
+	// existing onboarding state for this user — if they already walked
+	// the wizard in a previous session and picked an IssuerDPG /
+	// WalletDPG / VerifierDPG, restore those choices into the new
+	// session cookie. Without this, every SSO sign-in reset the user to
+	// the server default backend (silent DPG switch), which made the
+	// issuer's schema dropdown point at credential types the active
+	// backend could no longer issue.
+	restored := &model.User{
+		Role:        role,
+		Name:        name,
+		Email:       userInfo.Email,
+		WalletToken: walletToken,
+	}
+	restored.ID = role + "-" + strings.ToLower(strings.ReplaceAll(name, " ", "-"))
+	if st := h.onboarding.Get(restored.ID); st != nil {
+		restored.IssuerDPG = st.IssuerDPG
+		restored.WalletDPG = st.WalletDPG
+		restored.VerifierDPG = st.VerifierDPG
+		restored.OnboardingStep = st.Step
+	}
+
+	cookieVal := model.EncodeSessionFromUser(restored)
 	h.setSessionCookie(w, cookieVal)
-	fmt.Printf("sso: session created — role=%s name=%s demo=false hasToken=%v\n", role, name, walletToken != "")
+	fmt.Printf("sso: session created — role=%s name=%s demo=false hasToken=%v issuerDpg=%q walletDpg=%q verifierDpg=%q\n",
+		role, name, walletToken != "", restored.IssuerDPG, restored.WalletDPG, restored.VerifierDPG)
 	http.Redirect(w, r, "/portal", http.StatusSeeOther)
 }
