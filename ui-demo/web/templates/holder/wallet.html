@@ -10,6 +10,60 @@
   {{$dm := dataMap .Data}}
   {{$creds := index ($dm) "credentials"}}
   {{$isReal := and .User (not .User.Demo)}}
+  {{$walletName := index ($dm) "walletName"}}
+  {{$currentDPG := index ($dm) "currentDPG"}}
+  {{$dpgCards := index ($dm) "dpgCards"}}
+
+  {{if $isReal}}
+  <!-- ===== WALLET BACKEND PICKER =====
+       Holders pick the wallet DPG they'll receive credentials into, with the
+       same first-class status the issuer page gives DPG choice. Switching
+       happens in place (no wizard re-entry) and updates the session cookie
+       immediately. -->
+  <div class="card" id="wallet-backend-card" style="margin-bottom:1rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem">
+      <div>
+        <div style="font-size:0.68rem;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.06em">Wallet backend</div>
+        <div style="font-weight:600;font-size:1rem;margin-top:0.15rem">{{if $walletName}}{{$walletName}}{{else}}(not chosen — pick one below){{end}}</div>
+        <div style="font-size:0.72rem;color:var(--text-tertiary);margin-top:0.2rem">All credentials you receive land in this backend until you change it.</div>
+      </div>
+      <button class="btn btn-sm" type="button" onclick="toggleWalletPicker()" id="wallet-picker-toggle">Change backend</button>
+    </div>
+
+    <div id="wallet-picker" style="display:none;margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)">
+      <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:0.75rem">Pick the wallet DPG that should receive future credentials. Credentials already claimed stay where they are.</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:0.75rem">
+        {{range $dpgCards}}
+        <div class="card card-interactive wallet-dpg-card" data-dpg-id="{{.ID}}" style="cursor:pointer;padding:1rem;{{if eq .ID $currentDPG}}border:2px solid var(--color-accent);background:var(--bg-surface-alt){{end}}" onclick="pickWalletDPG('{{.ID}}')">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <strong style="font-size:0.9rem">{{.Name}}</strong>
+            {{if .Beta}}<span class="tag" style="font-size:0.6rem">Beta</span>{{end}}
+          </div>
+          <div style="font-size:0.72rem;color:var(--text-tertiary);margin-top:0.25rem">{{.Tagline}}</div>
+          <div style="font-size:0.7rem;color:var(--text-tertiary);margin-top:0.4rem">Formats: {{range $i, $f := .Formats}}{{if $i}}, {{end}}{{$f}}{{end}}</div>
+          {{if eq .ID $currentDPG}}<div style="font-size:0.65rem;color:var(--accent);margin-top:0.4rem;font-weight:600">CURRENT</div>{{end}}
+        </div>
+        {{end}}
+      </div>
+      <div id="wallet-picker-status" style="display:none;margin-top:0.75rem;padding:0.5rem 0.75rem;border-radius:var(--radius-sm);font-size:0.78rem"></div>
+    </div>
+  </div>
+  {{end}}
+
+  {{if and $isReal (eq $currentDPG "inji_web")}}
+  <!-- Inji Web is a catalog-initiated browser wallet run locally as
+       injistack/inji-web + injistack/mimoto containers (see
+       docker/injiweb/). Credentials live inside Mimoto, not here —
+       point the holder at the local instance. -->
+  <div class="card" style="margin-bottom:1rem;border-left:3px solid var(--color-accent);padding:1.25rem">
+    <div style="font-weight:600;font-size:0.95rem;margin-bottom:0.3rem">Your credentials live in Inji Web</div>
+    <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:0.75rem">Inji Web is a catalog-driven browser wallet. It loads its own issuer list and runs the OID4VCI flow itself, so nothing lands here.</p>
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+      <a class="btn btn-primary btn-sm" href="http://localhost:3004/issuers" target="_blank" rel="noopener">Open Issuer Catalog →</a>
+      <a class="btn btn-ghost btn-sm" href="http://localhost:3004/user" target="_blank" rel="noopener">Open My Credentials</a>
+    </div>
+  </div>
+  {{end}}
 
   {{if and $isReal (hasItems $creds)}}
   <!-- ===== REAL USER WITH CREDENTIALS ===== -->
@@ -46,6 +100,9 @@
       <div style="display:flex;gap:0.35rem;padding:0.6rem 1rem;border-top:1px solid var(--border)" onclick="event.stopPropagation()">
         <button class="btn btn-ghost btn-sm" style="font-size:0.72rem;flex:1" hx-get="/portal/holder/share" hx-target="#main-content" hx-push-url="true">Share</button>
         <button class="btn btn-ghost btn-sm" style="font-size:0.72rem;flex:1" hx-get="/portal/holder/export" hx-target="#main-content" hx-push-url="true">Export</button>
+        {{if eq $currentDPG "pdf"}}
+        <a class="btn btn-ghost btn-sm" style="font-size:0.72rem;flex:1" href="/api/wallet/pdf?id={{.ID}}" target="_blank" rel="noopener">Download PDF</a>
+        {{end}}
       </div>
     </div>
     {{end}}
@@ -126,6 +183,50 @@ function searchCreds(q) {
     var name = (c.dataset.name || '').toLowerCase();
     c.style.display = name.indexOf(query) !== -1 ? '' : 'none';
   });
+}
+
+// --- Wallet backend picker -------------------------------------------------
+// Holder picks a wallet DPG of preference without running the full onboarding
+// wizard. POSTs to /api/onboarding/dpg which already validates against the
+// registered wallet backends and updates the session cookie in place.
+function toggleWalletPicker() {
+  var panel = document.getElementById('wallet-picker');
+  if (!panel) return;
+  panel.style.display = (panel.style.display === 'none' || panel.style.display === '') ? 'block' : 'none';
+}
+function setWalletPickerStatus(kind, msg) {
+  var el = document.getElementById('wallet-picker-status');
+  if (!el) return;
+  el.style.display = '';
+  if (kind === 'error') {
+    el.style.background = 'var(--error-surface)';
+    el.style.color = 'var(--error)';
+  } else if (kind === 'success') {
+    el.style.background = 'var(--accent-surface)';
+    el.style.color = 'var(--accent)';
+  } else {
+    el.style.background = 'var(--bg-surface-alt)';
+    el.style.color = 'var(--text-secondary)';
+  }
+  el.textContent = msg;
+}
+function pickWalletDPG(dpgId) {
+  setWalletPickerStatus('info', 'Switching wallet backend…');
+  fetch('/api/onboarding/dpg', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({dpg: dpgId})
+  })
+  .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
+  .then(function(res) {
+    if (!res.ok || res.data.error) {
+      setWalletPickerStatus('error', res.data.error || ('HTTP ' + (res.status || '?')));
+      return;
+    }
+    setWalletPickerStatus('success', 'Wallet backend set to ' + (res.data.name || dpgId) + '. Reloading…');
+    setTimeout(function() { window.location.reload(); }, 400);
+  })
+  .catch(function(e) { setWalletPickerStatus('error', e.message); });
 }
 </script>
 {{end}}

@@ -52,11 +52,13 @@ def build_config_js(architect: str, programs: str, guide: str, router: str) -> s
         "const routerPrompt = " + json.dumps(router) + ";\n"
         "const input = $input.first().json;\n"
         "const body = (input && input.body) ? input.body : input;\n"
-        "// Handle both webhook ({message, conversation_id, context}) and Chat Trigger ({chatInput, sessionId}) shapes\n"
+        "// Handle both webhook ({message, conversation_id, context, history}) and Chat Trigger ({chatInput, sessionId}) shapes\n"
         "const userMessage = (body && (body.message || body.chatInput)) || input.chatInput || '';\n"
         "const conversationId = (body && (body.conversation_id || body.conversationId || body.sessionId)) || input.sessionId || null;\n"
         "const context = (body && body.context) || null;\n"
-        "return [{ json: { architectPrompt, programsPrompt, guidePrompt, routerPrompt, userMessage, conversationId, context } }];"
+        "const history = (body && Array.isArray(body.history)) ? body.history : [];\n"
+        "const lastPersona = (body && typeof body.lastPersona === 'string') ? body.lastPersona : null;\n"
+        "return [{ json: { architectPrompt, programsPrompt, guidePrompt, routerPrompt, userMessage, conversationId, context, history, lastPersona } }];"
     )
 
 

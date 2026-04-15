@@ -32,6 +32,11 @@ type Config struct {
 	// PrimaryKey is the column used to fetch a single record (e.g. "national_id").
 	PrimaryKey string
 
+	// SearchFields are the columns Search() matches against with ILIKE.
+	// Typical values: ["national_id","first_name","last_name","email","student_id"].
+	// If empty, Search() only matches the PrimaryKey.
+	SearchFields []string
+
 	// Fields lists the columns this source exposes. If empty, all columns are exposed.
 	Fields []datasource.FieldDescriptor
 
@@ -151,6 +156,50 @@ func (s *Source) ListRecords(ctx context.Context, f datasource.Filter) ([]dataso
 // SearchByField is a convenience wrapper around ListRecords with field filter.
 func (s *Source) SearchByField(ctx context.Context, field string, value any) ([]datasource.Record, error) {
 	return s.ListRecords(ctx, datasource.Filter{Field: field, Equals: value})
+}
+
+// Search runs a free-text query across all configured SearchFields using
+// ILIKE %q%. Falls back to exact PrimaryKey match if SearchFields is empty.
+// A limit of 0 defaults to 25.
+func (s *Source) Search(ctx context.Context, query string, limit int) ([]datasource.Record, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return []datasource.Record{}, nil
+	}
+	if err := s.connect(); err != nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		limit = 25
+	}
+
+	fields := s.cfg.SearchFields
+	if len(fields) == 0 {
+		fields = []string{s.cfg.PrimaryKey}
+	}
+
+	var (
+		whereParts []string
+		args       []any
+	)
+	like := "%" + query + "%"
+	for _, f := range fields {
+		args = append(args, like)
+		whereParts = append(whereParts, fmt.Sprintf("%s::text ILIKE $%d", quoteIdent(f), len(args)))
+	}
+	q := fmt.Sprintf(
+		"SELECT * FROM %s WHERE %s ORDER BY %s LIMIT %d",
+		s.cfg.Table,
+		strings.Join(whereParts, " OR "),
+		s.cfg.PrimaryKey,
+		limit,
+	)
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("search: %w", err)
+	}
+	defer rows.Close()
+	return scanRows(rows)
 }
 
 // scanRows reads all rows from a *sql.Rows into a slice of Records, mapping

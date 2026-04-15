@@ -1,0 +1,58 @@
+{
+  "issuers": [
+    {
+      "credential_issuer": "Farmer",
+      "issuer_id": "Farmer",
+      "protocol": "OpenId4VCI",
+      "display": [
+        {
+          "name": "Agriculture Department",
+          "logo": {
+            "url": "https://mosip.github.io/inji-config/logos/agro-vertias-logo.png",
+            "alt_text": "agri-logo"
+          },
+          "title": "Agriculture Department",
+          "description": "Download Farmers Credentials",
+          "language": "en"
+        }
+      ],
+      "client_id": "wallet-demo-client",
+      "redirect_uri": "http://localhost:3004/redirect",
+      "token_endpoint": "http://localhost:8099/v1/mimoto/get-token/Farmer",
+      "authorization_audience": "http://172.24.0.1:3005/v1/esignet/oauth/v2/token",
+      "proxy_token_endpoint": "http://172.24.0.1:3005/v1/esignet/oauth/v2/token",
+      "client_alias": "wallet-demo-client",
+      "qr_code_type": "EmbeddedVC",
+      "credential_issuer_host": "http://certify-nginx",
+      "enabled": "true",
+      "wellknown_endpoint": "http://certify-nginx/.well-known/openid-credential-issuer?client=mimoto"
+    },
+    {
+      "issuer_id": "MockMdl",
+      "credential_issuer": "MockMdl",
+      "protocol": "OpenId4VCI",
+      "display": [
+        {
+          "name": "Transport Department",
+          "logo": {
+            "url": "https://api.collab.mosip.net/inji/mosip-logo.png",
+            "alt_text": "mosip-logo"
+          },
+          "title": "Transport Department",
+          "description": "Download Mobile Driving License",
+          "language": "en"
+        }
+      ],
+      "client_id": "wallet-demo-client",
+      "redirect_uri": "http://localhost:3004/redirect",
+      "token_endpoint": "http://localhost:8099/v1/mimoto/get-token/MockMdl",
+      "authorization_audience": "http://172.24.0.1:3005/v1/esignet/oauth/v2/token",
+      "proxy_token_endpoint": "http://172.24.0.1:3005/v1/esignet/oauth/v2/token",
+      "client_alias": "wallet-demo-client",
+      "qr_code_type": "EmbeddedVC",
+      "credential_issuer_host": "http://certify-nginx",
+      "enabled": "true",
+      "wellknown_endpoint": "http://certify-nginx/.well-known/openid-credential-issuer?client=mimoto"
+    }
+  ]
+}

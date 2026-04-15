@@ -72,7 +72,9 @@ func (h *Handler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// SIGNUP — register first, then login
+	// SIGNUP — register first, then login. Fresh signups land in the
+	// onboarding wizard so they can pick their backend DPG (and, for
+	// issuers, credential categories + starter schemas + issuance mode).
 	if authAction == "signup" {
 		err := h.stores.Auth.Register(r.Context(), name, email, password)
 		if err != nil {
@@ -87,9 +89,18 @@ func (h *Handler) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 		if name == "" || name == "Demo User" {
 			name = email
 		}
-		cookieVal := model.EncodeSession(role, name, false, session.Token)
+		// Pick the starting step based on role: issuers walk through
+		// credential categories first; holders and verifiers jump straight
+		// to DPG choice.
+		startStep := "dpg-choice"
+		if role == "issuer" || role == "admin" {
+			startStep = "categories"
+		}
+		cookieVal := model.EncodeSessionFull(role, name, email, false, session.Token, "", startStep)
 		h.setSessionCookie(w, cookieVal)
-		http.Redirect(w, r, "/portal", http.StatusSeeOther)
+		// All roles now go through the onboarding wizard — the wizard
+		// adapts its steps to the user's role.
+		http.Redirect(w, r, "/portal/onboarding", http.StatusSeeOther)
 		return
 	}
 

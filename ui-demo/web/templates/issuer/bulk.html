@@ -1,0 +1,212 @@
+{{define "content"}}
+{{$dm := dataMap .Data}}
+{{$schemas := index $dm "schemas"}}
+{{$dpgName := index $dm "dpgName"}}
+{{$supportsAPI := index $dm "supportsAPI"}}
+{{$supportsDataProvider := index $dm "supportsDataProvider"}}
+
+<div class="page" style="padding:2rem 2rem 4rem;max-width:1100px;margin:0 auto;animation:pageIn 0.3s ease-out">
+
+  <div class="page-header">
+    <h1>Bulk Issuance</h1>
+    <p>Issue many credentials at once via CSV upload or the HTTP API. Active backend: <strong>{{$dpgName}}</strong></p>
+  </div>
+
+  <!-- Tab switcher -->
+  <div class="card" style="padding:0.5rem;margin-bottom:1.25rem">
+    <div style="display:flex;gap:0.25rem">
+      <button class="btn btn-sm bulk-tab active" data-tab="data-provider" onclick="selectTab('data-provider')">Data-provider plugin (CSV)</button>
+      <button class="btn btn-sm bulk-tab" data-tab="api" onclick="selectTab('api')">HTTP API</button>
+    </div>
+  </div>
+
+  <!-- ========== Data-provider plugin tab ========== -->
+  <div id="tab-data-provider" class="bulk-panel">
+    {{if $supportsDataProvider}}
+    <div class="card" style="padding:1.5rem">
+      <h2 style="font-size:1rem;margin-bottom:0.5rem">Upload a CSV</h2>
+      <p style="color:var(--text-secondary);font-size:0.82rem;margin-bottom:1rem">The first row is the header. Map each column to a credential claim below, then click "Issue all". The server streams each row through the configured issuer.</p>
+
+      <div class="form-group">
+        <label class="form-label">Schema</label>
+        <select class="form-select" id="bulk-schema" onchange="renderMappingRows()">
+          <option value="" disabled selected>Pick a schema…</option>
+          {{range $schemas}}<option value="{{.ID}}" data-config="{{.ConfigID}}" data-format="{{.Format}}" data-fields='{{range $i, $f := .Fields}}{{if $i}},{{end}}{"name":"{{$f.Name}}","type":"{{$f.Type}}","required":{{$f.Required}}}{{end}}'>{{.Name}} ({{.Format}})</option>{{end}}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">CSV file</label>
+        <input class="form-input" type="file" id="bulk-file" accept=".csv" onchange="parseHeader()">
+        <div style="font-size:0.72rem;color:var(--text-tertiary);margin-top:0.3rem">Parsed client-side to preview column names; the file is re-uploaded on submit.</div>
+      </div>
+
+      <div id="bulk-mapping" style="display:none;margin-top:1rem">
+        <label class="form-label">Column → claim mapping</label>
+        <div id="mapping-rows" style="display:flex;flex-direction:column;gap:0.4rem"></div>
+      </div>
+
+      <div style="display:flex;justify-content:flex-end;margin-top:1.25rem">
+        <button class="btn btn-primary" id="bulk-submit" onclick="submitBulkCSV()" disabled>Issue all</button>
+      </div>
+
+      <div id="bulk-result" style="display:none;margin-top:1.25rem;padding:1rem;background:var(--bg-surface-alt);border-radius:var(--radius-md);font-size:0.82rem"></div>
+    </div>
+    {{else}}
+    <div class="card" style="padding:1.5rem;color:var(--text-secondary)">
+      The data-provider plugin isn't available in this deployment — no data sources are registered. Use the HTTP API tab instead, or add a data source in the server configuration.
+    </div>
+    {{end}}
+  </div>
+
+  <!-- ========== HTTP API tab ========== -->
+  <div id="tab-api" class="bulk-panel" style="display:none">
+    <div class="card" style="padding:1.5rem">
+      <h2 style="font-size:1rem;margin-bottom:0.5rem">Issue via HTTP API</h2>
+      <p style="color:var(--text-secondary);font-size:0.82rem;margin-bottom:1rem">POST a JSON array of claim records. The server issues one credential per record and returns a summary.</p>
+
+      <div class="form-group">
+        <label class="form-label">Endpoint</label>
+        <code style="display:block;padding:0.6rem 0.8rem;background:var(--bg-surface-alt);border-radius:var(--radius-sm);font-size:0.75rem">POST /api/issuer/bulk-api</code>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Example curl</label>
+        <pre style="font-size:0.7rem;background:var(--bg-surface-alt);padding:0.9rem;border-radius:var(--radius-sm);overflow-x:auto;line-height:1.5"><code>curl -X POST http://localhost:8080/api/issuer/bulk-api \
+  -H 'Content-Type: application/json' \
+  -b cookies.txt \
+  -d '{
+    "configId": "UniversityDegree",
+    "format": "ldp_vc",
+    "records": [
+      {"name":"Jelagat Gitau","degree":"BSc","major":"Computer Science"},
+      {"name":"Wanjiru Kamau","degree":"MSc","major":"Medicine"}
+    ]
+  }'</code></pre>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Try it — paste a JSON array here</label>
+        <textarea class="form-input" id="bulk-api-body" rows="8" style="font-family:var(--font-mono),monospace;font-size:0.78rem" placeholder='{"configId":"UniversityDegree","format":"ldp_vc","records":[{"name":"A"},{"name":"B"}]}'></textarea>
+      </div>
+
+      <div style="display:flex;justify-content:flex-end">
+        <button class="btn btn-primary" onclick="submitBulkAPI()">Issue all</button>
+      </div>
+
+      <div id="api-result" style="display:none;margin-top:1.25rem;padding:1rem;background:var(--bg-surface-alt);border-radius:var(--radius-md);font-size:0.82rem;white-space:pre-wrap;font-family:var(--font-mono),monospace"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function selectTab(name) {
+  document.querySelectorAll('.bulk-tab').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.bulk-panel').forEach(el => el.style.display = 'none');
+  const tab = document.querySelector('.bulk-tab[data-tab="' + name + '"]');
+  if (tab) tab.classList.add('active');
+  const panel = document.getElementById('tab-' + name);
+  if (panel) panel.style.display = '';
+}
+
+let csvHeader = [];
+function parseHeader() {
+  const input = document.getElementById('bulk-file');
+  if (!input.files || !input.files[0]) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const text = reader.result;
+    const firstLine = text.split(/\r?\n/, 1)[0];
+    csvHeader = firstLine.split(',').map(s => s.trim());
+    renderMappingRows();
+  };
+  reader.readAsText(input.files[0]);
+}
+
+function renderMappingRows() {
+  const schemaSel = document.getElementById('bulk-schema');
+  const opt = schemaSel.selectedOptions[0];
+  if (!opt || !opt.dataset.fields) return;
+  let fields = [];
+  try { fields = JSON.parse('[' + opt.dataset.fields + ']'); } catch(e) { return; }
+  const mappingDiv = document.getElementById('bulk-mapping');
+  const rows = document.getElementById('mapping-rows');
+  if (csvHeader.length === 0 || fields.length === 0) {
+    mappingDiv.style.display = 'none';
+    document.getElementById('bulk-submit').disabled = true;
+    return;
+  }
+  rows.innerHTML = '';
+  fields.forEach(f => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;align-items:center';
+    const label = document.createElement('label');
+    label.style.cssText = 'font-size:0.82rem';
+    label.textContent = f.name + (f.required ? ' *' : '');
+    const select = document.createElement('select');
+    select.className = 'form-select';
+    select.dataset.claim = f.name;
+    select.innerHTML = '<option value="">— skip —</option>' + csvHeader.map(h => '<option value="' + h + '"' + (h === f.name ? ' selected' : '') + '>' + h + '</option>').join('');
+    row.appendChild(label);
+    row.appendChild(select);
+    rows.appendChild(row);
+  });
+  mappingDiv.style.display = '';
+  document.getElementById('bulk-submit').disabled = false;
+}
+
+function submitBulkCSV() {
+  const schemaSel = document.getElementById('bulk-schema');
+  const opt = schemaSel.selectedOptions[0];
+  if (!opt) return;
+  const file = document.getElementById('bulk-file').files[0];
+  if (!file) return;
+
+  const mapping = {};
+  document.querySelectorAll('#mapping-rows select').forEach(sel => {
+    if (sel.value) mapping[sel.dataset.claim] = sel.value;
+  });
+
+  const form = new FormData();
+  form.append('file', file);
+  form.append('configId', opt.dataset.config);
+  form.append('format', opt.dataset.format);
+  form.append('mapping', JSON.stringify(mapping));
+
+  const btn = document.getElementById('bulk-submit');
+  btn.disabled = true;
+  btn.textContent = 'Issuing…';
+
+  fetch('/api/issuer/bulk-csv', {method: 'POST', body: form})
+    .then(r => r.json()).then(d => {
+      btn.disabled = false;
+      btn.textContent = 'Issue all';
+      const box = document.getElementById('bulk-result');
+      box.style.display = '';
+      if (d.error) {
+        box.innerHTML = '<span style="color:var(--error)">Error: ' + d.error + '</span>';
+        return;
+      }
+      box.innerHTML = '<strong>' + d.issued + ' issued</strong> · ' + d.failed + ' failed · ' + d.total + ' total';
+    });
+}
+
+function submitBulkAPI() {
+  let payload = document.getElementById('bulk-api-body').value;
+  if (!payload.trim()) return;
+  let parsed;
+  try { parsed = JSON.parse(payload); } catch(e) { alert('Invalid JSON'); return; }
+
+  fetch('/api/issuer/bulk-api', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(parsed),
+  }).then(r => r.json()).then(d => {
+    const box = document.getElementById('api-result');
+    box.style.display = '';
+    box.textContent = JSON.stringify(d, null, 2);
+  });
+}
+</script>
+{{end}}

@@ -35,6 +35,7 @@ type Renderer struct {
 var landingDirs = map[string]bool{
 	"landing": true,
 	"auth":    true,
+	"share":   true,
 }
 
 // New initializes the renderer by parsing all templates from embedded and custom directories.
@@ -49,7 +50,7 @@ func New(_ fs.FS, templateFS fs.FS, customDir string, cfg *config.Config) (*Rend
 		return nil, fmt.Errorf("glob partials: %w", err)
 	}
 
-	dirs := []string{"landing", "auth", "portal", "issuer", "holder", "verifier", "trust", "admin"}
+	dirs := []string{"landing", "auth", "portal", "issuer", "holder", "verifier", "trust", "admin", "onboarding", "share"}
 	for _, dir := range dirs {
 		entries, err := fs.Glob(templateFS, dir+"/*.html")
 		if err != nil {

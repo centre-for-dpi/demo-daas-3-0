@@ -8,24 +8,26 @@ import (
 	"vcplatform/internal/model"
 )
 
-// getWalletData fetches credentials and DIDs for an authenticated user.
+// getWalletData fetches credentials and DIDs for an authenticated user,
+// resolving the wallet store per the user's WalletDPG choice.
 func (h *Handler) getWalletData(ctx context.Context, user *model.User) map[string]any {
 	if user == nil || !user.HasBackendAuth() {
 		return nil
 	}
 	result := map[string]any{}
-	wallets, err := h.stores.Wallet.GetWallets(ctx, user.WalletToken)
+	wallet := h.walletFor(user)
+	wallets, err := wallet.GetWallets(ctx, user.WalletToken)
 	if err != nil || len(wallets) == 0 {
 		return nil
 	}
 	result["walletID"] = wallets[0].ID
 
-	creds, err := h.stores.Wallet.ListCredentials(ctx, user.WalletToken, wallets[0].ID)
+	creds, err := wallet.ListCredentials(ctx, user.WalletToken, wallets[0].ID)
 	if err == nil {
 		result["credentials"] = creds
 	}
 
-	dids, err := h.stores.Wallet.ListDIDs(ctx, user.WalletToken, wallets[0].ID)
+	dids, err := wallet.ListDIDs(ctx, user.WalletToken, wallets[0].ID)
 	if err == nil {
 		result["dids"] = dids
 	}
@@ -33,28 +35,47 @@ func (h *Handler) getWalletData(ctx context.Context, user *model.User) map[strin
 	return result
 }
 
-// HolderWallet fetches real credentials from the backend and passes them to the template.
+// HolderWallet fetches real credentials from the backend and passes them to
+// the template, along with the holder's chosen wallet DPG and the catalog of
+// alternative wallet backends so the holder can switch backends without
+// leaving the wallet page.
+//
+// Gate: a real holder who hasn't picked a WalletDPG yet is redirected to the
+// onboarding wizard so they explicitly choose a backend before anything
+// lands in their wallet. Without this, brand-new SSO users would silently
+// claim into whichever server-default wallet the deployment picked, which
+// contradicts the "holder picks their preferred wallet DPG" design goal.
 func (h *Handler) HolderWallet(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
-	data := h.pageData(r, "holder", nil)
+
+	if user != nil && user.HasBackendAuth() && user.WalletDPG == "" {
+		http.Redirect(w, r, "/portal/onboarding", http.StatusSeeOther)
+		return
+	}
+
+	data := h.pageData(r, "holder-wallet", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Holder"},
 		{Label: "Credentials", Active: true},
 	}
 
-	// Fetch real credentials if user has backend auth
 	if user != nil && user.HasBackendAuth() {
-		wallets, err := h.stores.Wallet.GetWallets(r.Context(), user.WalletToken)
+		wallet := h.walletFor(user)
+		payload := map[string]any{
+			"live":       true,
+			"walletName": wallet.Name(),
+			"currentDPG": user.WalletDPG,
+			"dpgCards":   h.filteredDPGCatalog("holder"),
+		}
+		wallets, err := wallet.GetWallets(r.Context(), user.WalletToken)
 		if err == nil && len(wallets) > 0 {
-			creds, err := h.stores.Wallet.ListCredentials(r.Context(), user.WalletToken, wallets[0].ID)
+			payload["walletID"] = wallets[0].ID
+			creds, err := wallet.ListCredentials(r.Context(), user.WalletToken, wallets[0].ID)
 			if err == nil {
-				data.Data = map[string]any{
-					"credentials": creds,
-					"walletID":    wallets[0].ID,
-					"live":        true,
-				}
+				payload["credentials"] = creds
 			}
 		}
+		data.Data = payload
 	}
 
 	if err := h.render.Render(w, "holder/wallet", data); err != nil {
@@ -65,7 +86,7 @@ func (h *Handler) HolderWallet(w http.ResponseWriter, r *http.Request) {
 // HolderCredDetail fetches a single credential's details from the wallet.
 func (h *Handler) HolderCredDetail(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
-	data := h.pageData(r, "holder", nil)
+	data := h.pageData(r, "holder-cred-detail", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Holder"},
 		{Label: "Credential Detail", Active: true},
@@ -75,9 +96,10 @@ func (h *Handler) HolderCredDetail(w http.ResponseWriter, r *http.Request) {
 
 	// Fetch real credential if user has backend auth and an ID was provided
 	if credID != "" && user != nil && user.HasBackendAuth() {
-		wallets, err := h.stores.Wallet.GetWallets(r.Context(), user.WalletToken)
+		wallet := h.walletFor(user)
+		wallets, err := wallet.GetWallets(r.Context(), user.WalletToken)
 		if err == nil && len(wallets) > 0 {
-			creds, err := h.stores.Wallet.ListCredentials(r.Context(), user.WalletToken, wallets[0].ID)
+			creds, err := wallet.ListCredentials(r.Context(), user.WalletToken, wallets[0].ID)
 			if err == nil {
 				// Find the credential by ID
 				for _, c := range creds {
@@ -100,7 +122,7 @@ func (h *Handler) HolderCredDetail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) HolderClaim(w http.ResponseWriter, r *http.Request) {
-	data := h.pageData(r, "holder", nil)
+	data := h.pageData(r, "holder-claim", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Holder"},
 		{Label: "Claim Credential", Active: true},
@@ -112,7 +134,7 @@ func (h *Handler) HolderClaim(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) HolderRetrieval(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
-	data := h.pageData(r, "holder", nil)
+	data := h.pageData(r, "holder-retrieval", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Holder"},
 		{Label: "Retrieve", Active: true},
@@ -138,7 +160,7 @@ func (h *Handler) HolderRetrieval(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) HolderDependents(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
-	data := h.pageData(r, "holder", nil)
+	data := h.pageData(r, "holder-dependents", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Holder"},
 		{Label: "Dependents", Active: true},
@@ -153,7 +175,7 @@ func (h *Handler) HolderDependents(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) HolderInbox(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
-	data := h.pageData(r, "holder", nil)
+	data := h.pageData(r, "holder-inbox", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Holder"},
 		{Label: "Verification Requests", Active: true},
@@ -168,7 +190,7 @@ func (h *Handler) HolderInbox(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) HolderDisclosure(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
-	data := h.pageData(r, "holder", nil)
+	data := h.pageData(r, "holder-disclosure", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Holder"},
 		{Label: "Selective Disclosure", Active: true},
@@ -183,7 +205,7 @@ func (h *Handler) HolderDisclosure(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) HolderPresentation(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
-	data := h.pageData(r, "holder", nil)
+	data := h.pageData(r, "holder-presentation", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Holder"},
 		{Label: "Build Presentation", Active: true},
@@ -198,7 +220,7 @@ func (h *Handler) HolderPresentation(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) HolderShare(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
-	data := h.pageData(r, "holder", nil)
+	data := h.pageData(r, "holder-share", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Holder"},
 		{Label: "Share", Active: true},
@@ -211,23 +233,58 @@ func (h *Handler) HolderShare(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// HolderCatalog shows available credential types from the schema registry.
+// HolderCatalog shows available credential types a holder can request. For
+// real users, this is the live credential_configurations_supported list
+// from every registered issuer DPG — not the mock schema store (which used
+// to leak fixture rows like "BSc Degree", "Land Certificate" into new user
+// sessions even on a fresh install). If no issuer exposes any config, the
+// template falls through to an empty state.
 func (h *Handler) HolderCatalog(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
-	data := h.pageData(r, "holder", nil)
+	data := h.pageData(r, "holder-catalog", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Holder"},
 		{Label: "Credential Catalog", Active: true},
 	}
 
-	// Fetch schemas as available credential types
 	if user != nil && !user.Demo {
-		schemas, err := h.stores.Schemas.ListSchemas(r.Context())
-		if err == nil {
-			data.Data = map[string]any{
-				"schemas": schemas,
-				"live":    true,
+		type catalogEntry struct {
+			ID       string `json:"id"`
+			Name     string `json:"name"`
+			Category string `json:"category"`
+			Format   string `json:"format"`
+			Standard string `json:"standard"`
+			Issuer   string `json:"issuer"`
+		}
+		var entries []catalogEntry
+		seen := map[string]bool{}
+		for dpgName, issuer := range h.issuerRegistry {
+			if issuer == nil {
+				continue
 			}
+			cfgs, err := issuer.ListCredentialConfigs(r.Context())
+			if err != nil {
+				continue
+			}
+			for _, c := range cfgs {
+				key := dpgName + "/" + c.ID
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				entries = append(entries, catalogEntry{
+					ID:       c.ID,
+					Name:     c.Name,
+					Category: c.Category,
+					Format:   c.Format,
+					Standard: "OID4VCI",
+					Issuer:   issuer.Name(),
+				})
+			}
+		}
+		data.Data = map[string]any{
+			"schemas": entries,
+			"live":    true,
 		}
 	}
 
@@ -238,7 +295,7 @@ func (h *Handler) HolderCatalog(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) HolderRequestForm(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
-	data := h.pageData(r, "holder", nil)
+	data := h.pageData(r, "holder-request-form", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Holder"},
 		{Label: "New Request", Active: true},
@@ -254,7 +311,7 @@ func (h *Handler) HolderRequestForm(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) HolderRequestTracker(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
-	data := h.pageData(r, "holder", nil)
+	data := h.pageData(r, "holder-request-tracker", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Holder"},
 		{Label: "My Requests", Active: true},
@@ -269,7 +326,7 @@ func (h *Handler) HolderRequestTracker(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) HolderTimeline(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
-	data := h.pageData(r, "holder", nil)
+	data := h.pageData(r, "holder-timeline", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Holder"},
 		{Label: "Timeline", Active: true},
@@ -284,7 +341,7 @@ func (h *Handler) HolderTimeline(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) HolderExport(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
-	data := h.pageData(r, "holder", nil)
+	data := h.pageData(r, "holder-export", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Holder"},
 		{Label: "Export", Active: true},

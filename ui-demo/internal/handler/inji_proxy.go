@@ -17,6 +17,7 @@ package handler
 // resolves back to the host where our Go server runs.
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -131,8 +132,21 @@ func (h *Handler) injiProxyOffer(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(offer)
 }
 
-// injiProxyIssuerMetadata fetches /v1/certify/.well-known/openid-credential-issuer
-// from Inji and transforms it to a Walt.id-compatible shape.
+// injiProxyIssuerMetadata fetches Inji Certify's OID4VCI issuer metadata
+// and serves it in one of two shapes depending on a query parameter:
+//
+//   ?client=waltid (default) — strips scope / display / proof_types_supported /
+//       credential_definition.credentialSubject and other fields walt.id's
+//       kotlinx parser can't tolerate. This is what the walt.id wallet fetches.
+//
+//   ?client=mimoto — passthrough. Mimoto's IssuersValidationConfig REQUIRES
+//       scope, display, and proof_types_supported on every credential
+//       configuration and rejects metadata without them (RESIDENT-APP-041).
+//       So we return the Inji Certify response almost verbatim, only adding
+//       the token_endpoint that Inji puts in a separate well-known doc.
+//
+// Same URL, different Accept/query — lets walt.id and Mimoto share the
+// same upstream inji-certify instance without either breaking the other.
 func (h *Handler) injiProxyIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 	p := getInjiProxy()
 	upstream := p.UpstreamURL + "/v1/certify/.well-known/openid-credential-issuer"
@@ -146,9 +160,56 @@ func (h *Handler) injiProxyIssuerMetadata(w http.ResponseWriter, r *http.Request
 		http.Error(w, "parse: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	md = transformIssuerMetadata(md, p)
+	// Default mode is passthrough (Mimoto-compatible, spec-accurate).
+	// Walt.id wallets that need the stripped shape must fetch with
+	// `?client=waltid`. We flipped the default because Mimoto drops
+	// query params when it re-issues the request internally, so a
+	// query-keyed opt-in for Mimoto doesn't work — walt.id can tolerate
+	// the extra fields on a case-by-case basis via the adaptor layer.
+	client := r.URL.Query().Get("client")
+	if client == "waltid" {
+		md = transformIssuerMetadata(md, p)
+	} else {
+		md = passthroughIssuerMetadata(md, p)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(md)
+}
+
+// passthroughIssuerMetadata returns Inji Certify's original metadata with
+// only the fields Mimoto's validator actually needs added — it does NOT
+// strip anything. If Mimoto has a problem with an Inji-specific extension
+// we fix it here rather than by pre-stripping the whole response.
+//
+// Two active rewrites:
+//
+//  1. token_endpoint added if missing (Inji puts it in a separate
+//     well-known doc; Mimoto expects it inline).
+//
+//  2. authorization_servers is rewritten to point at our local esignet
+//     instance. Inji Certify advertises `["http://certify-nginx:80"]`
+//     because that's where it thinks its own auth endpoints live, but
+//     certify-nginx doesn't actually expose an auth-server well-known —
+//     esignet does, at http://injiweb-esignet:8088/v1/esignet/oauth.
+//     Mimoto derives the auth-server well-known URL as
+//     `{authorization_servers[0]}/.well-known/oauth-authorization-server`,
+//     so without this rewrite Mimoto fails with RESIDENT-APP-042
+//     "Invalid Authorization Server well-known from server: well-known
+//     api is not accessible".
+func passthroughIssuerMetadata(md map[string]any, p *InjiProxy) map[string]any {
+	base, _ := md["credential_issuer"].(string)
+	if base == "" {
+		base = p.InternalBase
+	}
+	if _, ok := md["token_endpoint"]; !ok {
+		md["token_endpoint"] = base + "/v1/certify/oauth/token"
+	}
+	// Point Mimoto at our local esignet for the OIDC authorization server
+	// well-known. Override via env var so deployments pointing at a
+	// different esignet (e.g. MOSIP collab) can set the right URL.
+	esignetBase := envOrDefault("INJI_PROXY_ESIGNET_BASE", "http://injiweb-esignet:8088/v1/esignet/oauth")
+	md["authorization_servers"] = []any{esignetBase}
+	return md
 }
 
 // transformIssuerMetadata strips Inji-specific fields that Walt.id's strict
@@ -264,6 +325,17 @@ func (h *Handler) injiProxyCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	authHdr := r.Header.Get("Authorization")
+
+	// Debug: log the Bearer token's payload so we can see what esignet
+	// put in the iss / aud / scope claims during token exchange. Only
+	// active when INJI_PROXY_LOG_TOKEN=1 is set on the Go server env.
+	if os.Getenv("INJI_PROXY_LOG_TOKEN") == "1" && strings.HasPrefix(authHdr, "Bearer ") {
+		parts := strings.Split(strings.TrimPrefix(authHdr, "Bearer "), ".")
+		if len(parts) == 3 {
+			payload, _ := base64.RawURLEncoding.DecodeString(parts[1])
+			fmt.Printf("inji-proxy: incoming token payload = %s\n", string(payload))
+		}
+	}
 
 	// Parse the request, inject @context if missing, and re-serialize.
 	var parsed map[string]any

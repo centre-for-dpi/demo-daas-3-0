@@ -1,0 +1,83 @@
+{{define "content"}}
+<div class="container" style="max-width:760px;padding:3rem 1.5rem">
+  {{$dm := dataMap .Data}}
+  {{$cred := index ($dm) "credential"}}
+  {{$shareId := index ($dm) "shareId"}}
+  {{$pd := $cred.ParsedDocument}}
+  {{$subj := credSubject $pd}}
+
+  <div class="card" style="padding:2rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+      <div>
+        <h1 style="font-size:1.25rem;margin:0">Shared Credential</h1>
+        <p style="color:var(--text-secondary);font-size:0.82rem;margin:0.25rem 0 0">A holder has shared a credential with you for verification.</p>
+      </div>
+      <span class="tag tag-accent" style="font-size:0.68rem">{{$cred.Format}}</span>
+    </div>
+
+    <div style="margin:1.25rem 0;padding:1rem;background:var(--bg-surface-alt);border-radius:var(--radius-md)">
+      <div style="font-size:0.7rem;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.5rem">Claims</div>
+      {{range $k, $v := $subj}}
+      {{if ne $k "id"}}
+      <div style="display:flex;justify-content:space-between;padding:0.3rem 0;border-bottom:1px solid var(--border);font-size:0.85rem">
+        <span style="color:var(--text-tertiary)">{{$k}}</span>
+        <span>{{$v}}</span>
+      </div>
+      {{end}}
+      {{end}}
+    </div>
+
+    <div style="display:flex;gap:0.5rem;align-items:center">
+      <button class="btn btn-primary btn-sm" id="verify-btn" onclick="verifyShare()">Verify Credential</button>
+      <span style="font-size:0.72rem;color:var(--text-tertiary)">Runs cryptographic verification against the configured backend.</span>
+    </div>
+
+    <div id="verify-result" style="display:none;margin-top:1.25rem;padding:1rem;border-radius:var(--radius-md);font-size:0.85rem"></div>
+  </div>
+
+  <p style="text-align:center;font-size:0.72rem;color:var(--text-tertiary);margin-top:1rem">Share link expires 30 minutes after creation.</p>
+</div>
+
+<script>
+var shareId = {{marshal $shareId}};
+
+function verifyShare() {
+  var btn = document.getElementById('verify-btn');
+  var panel = document.getElementById('verify-result');
+  btn.disabled = true;
+  btn.textContent = 'Verifying...';
+  panel.style.display = 'none';
+
+  fetch('/share/v/' + shareId + '/verify', {method: 'POST'})
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      btn.disabled = false;
+      btn.textContent = 'Verify Credential';
+      panel.style.display = '';
+      if (d.error) {
+        panel.style.background = 'var(--error-surface)';
+        panel.style.color = 'var(--error)';
+        panel.textContent = 'Verification failed: ' + d.error;
+        return;
+      }
+      if (d.verified === true) {
+        panel.style.background = 'var(--accent-surface)';
+        panel.style.color = 'var(--accent)';
+        panel.innerHTML = '<strong>Credential verified.</strong> Cryptographic signature valid.';
+      } else {
+        panel.style.background = 'var(--error-surface)';
+        panel.style.color = 'var(--error)';
+        panel.textContent = 'Credential did not verify.';
+      }
+    })
+    .catch(function(e) {
+      btn.disabled = false;
+      btn.textContent = 'Verify Credential';
+      panel.style.display = '';
+      panel.style.background = 'var(--error-surface)';
+      panel.style.color = 'var(--error)';
+      panel.textContent = e.message;
+    });
+}
+</script>
+{{end}}

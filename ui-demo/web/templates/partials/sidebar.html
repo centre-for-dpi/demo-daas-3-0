@@ -56,41 +56,34 @@
     </div>
     {{end}}
 
-    <!-- ============ ISSUER WORKSPACE ============ -->
+    <!-- ============ ISSUER WORKSPACE ============
+         Register Issuer, Onboarding Queue, DID & Keys, and Templates have
+         been folded into the Onboarding Wizard — the wizard creates the
+         issuer DID, captures institution details, and saves starter schemas
+         in one pass. Only actions that happen AFTER onboarding remain here. -->
     {{if and (hasWorkspace "issuer") .User (roleIs .User.Role "admin" "issuer")}}
     <div class="sidebar-section">
       <div class="sidebar-section-label" data-dpg-section="issuer">Issuer</div>
-      <button class="sidebar-item" hx-get="/portal/issuer/onboard-form" hx-target="#main-content" hx-push-url="true">
-        <span class="sidebar-item-icon">&#128221;</span> Register Issuer
+      <button class="sidebar-item{{if eq .ActivePage "issuer-onboarding"}} active{{end}}" hx-get="/portal/onboarding" hx-target="#main-content" hx-push-url="true">
+        <span class="sidebar-item-icon">&#128736;</span> Onboarding Wizard
       </button>
-      {{if roleIs .User.Role "admin"}}
-      <button class="sidebar-item" hx-get="/portal/issuer/onboard-queue" hx-target="#main-content" hx-push-url="true">
-        <span class="sidebar-item-icon">&#128203;</span> Onboarding Queue
-      </button>
-      {{end}}
-      <button class="sidebar-item" hx-get="/portal/issuer/did-keys" hx-target="#main-content" hx-push-url="true">
-        <span class="sidebar-item-icon">&#128273;</span> DID &amp; Keys
-      </button>
-      <button class="sidebar-item{{if eq .ActivePage "issuer"}} active{{end}}" hx-get="/portal/issuer/schemas" hx-target="#main-content" hx-push-url="true">
+      <button class="sidebar-item{{if eq .ActivePage "issuer-schemas"}} active{{end}}" hx-get="/portal/issuer/schemas" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#128208;</span> Schemas
       </button>
-      <button class="sidebar-item" hx-get="/portal/issuer/schema-builder" hx-target="#main-content" hx-push-url="true">
+      <button class="sidebar-item{{if eq .ActivePage "issuer-schema-builder"}} active{{end}}" hx-get="/portal/issuer/schema-builder" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#128295;</span> Schema Builder
       </button>
-      <button class="sidebar-item" hx-get="/portal/issuer/templates" hx-target="#main-content" hx-push-url="true">
-        <span class="sidebar-item-icon">&#127912;</span> Templates
-      </button>
-      <button class="sidebar-item" data-cap="issuer.batch" hx-get="/portal/issuer/campaign" hx-target="#main-content" hx-push-url="true">
-        <span class="sidebar-item-icon">&#128230;</span> Campaign Builder
-      </button>
-      <button class="sidebar-item" data-cap="issuer.batch" hx-get="/portal/issuer/batch" hx-target="#main-content" hx-push-url="true">
-        <span class="sidebar-item-icon">&#128228;</span> Batch Upload
-      </button>
-      <button class="sidebar-item" hx-get="/portal/issuer/single-issue" hx-target="#main-content" hx-push-url="true">
+      <button class="sidebar-item{{if eq .ActivePage "issuer-single-issue"}} active{{end}}" hx-get="/portal/issuer/single-issue" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#128196;</span> Single Issuance
       </button>
-      <button class="sidebar-item" hx-get="/portal/issuer/issued-creds" hx-target="#main-content" hx-push-url="true">
+      <button class="sidebar-item{{if eq .ActivePage "issuer-bulk"}} active{{end}}" hx-get="/portal/issuer/bulk" hx-target="#main-content" hx-push-url="true">
+        <span class="sidebar-item-icon">&#128230;</span> Bulk Issuance
+      </button>
+      <button class="sidebar-item{{if eq .ActivePage "issuer-issued"}} active{{end}}" hx-get="/portal/issuer/issued-creds" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#128202;</span> Issued Credentials
+      </button>
+      <button class="sidebar-item{{if eq .ActivePage "issuer-revocation"}} active{{end}}" data-cap="issuer.revocation" hx-get="/portal/issuer/revocation" hx-target="#main-content" hx-push-url="true">
+        <span class="sidebar-item-icon">&#9940;</span> Revocation
       </button>
     </div>
     {{end}}
@@ -99,35 +92,38 @@
     {{if and (hasWorkspace "holder") .User (roleIs .User.Role "admin" "holder")}}
     <div class="sidebar-section">
       <div class="sidebar-section-label" data-dpg-section="wallet">Wallet</div>
-      <button class="sidebar-item{{if eq .ActivePage "holder"}} active{{end}}" hx-get="/portal/holder/wallet" hx-target="#main-content" hx-push-url="true">
+      <button class="sidebar-item{{if eq .ActivePage "holder-onboarding"}} active{{end}}" hx-get="/portal/onboarding" hx-target="#main-content" hx-push-url="true">
+        <span class="sidebar-item-icon">&#128736;</span> Onboarding Wizard
+      </button>
+      <button class="sidebar-item{{if eq .ActivePage "holder-wallet"}} active{{end}}" hx-get="/portal/holder/wallet" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#128274;</span> My Credentials
       </button>
-      <button class="sidebar-item" hx-get="/portal/holder/claim" hx-target="#main-content" hx-push-url="true">
+      <button class="sidebar-item{{if eq .ActivePage "holder-claim"}} active{{end}}" hx-get="/portal/holder/claim" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#128230;</span> Claim Credential
       </button>
-      <button class="sidebar-item" hx-get="/portal/holder/retrieval" hx-target="#main-content" hx-push-url="true">
+      <button class="sidebar-item{{if eq .ActivePage "holder-retrieval"}} active{{end}}" hx-get="/portal/holder/retrieval" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#128229;</span> Retrieve
       </button>
-      <button class="sidebar-item" hx-get="/portal/holder/dependents" hx-target="#main-content" hx-push-url="true">
+      <button class="sidebar-item{{if eq .ActivePage "holder-dependents"}} active{{end}}" hx-get="/portal/holder/dependents" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#128106;</span> Dependents
       </button>
-      <button class="sidebar-item" hx-get="/portal/holder/inbox" hx-target="#main-content" hx-push-url="true">
+      <button class="sidebar-item{{if eq .ActivePage "holder-inbox"}} active{{end}}" hx-get="/portal/holder/inbox" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#128233;</span> Requests
         {{if and .User .User.Demo}}<span class="sidebar-item-badge">2</span>{{end}}
       </button>
-      <button class="sidebar-item" hx-get="/portal/holder/disclosure" hx-target="#main-content" hx-push-url="true">
+      <button class="sidebar-item{{if eq .ActivePage "holder-disclosure"}} active{{end}}" hx-get="/portal/holder/disclosure" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#128065;</span> Selective Disclosure
       </button>
-      <button class="sidebar-item" hx-get="/portal/holder/share" hx-target="#main-content" hx-push-url="true">
+      <button class="sidebar-item{{if eq .ActivePage "holder-share"}} active{{end}}" hx-get="/portal/holder/share" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#128228;</span> Present Credential
       </button>
-      <button class="sidebar-item" hx-get="/portal/holder/catalog" hx-target="#main-content" hx-push-url="true">
+      <button class="sidebar-item{{if eq .ActivePage "holder-catalog"}} active{{end}}" hx-get="/portal/holder/catalog" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#128203;</span> Credential Catalog
       </button>
-      <button class="sidebar-item" hx-get="/portal/holder/timeline" hx-target="#main-content" hx-push-url="true">
+      <button class="sidebar-item{{if eq .ActivePage "holder-timeline"}} active{{end}}" hx-get="/portal/holder/timeline" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#128200;</span> Timeline
       </button>
-      <button class="sidebar-item" hx-get="/portal/holder/export" hx-target="#main-content" hx-push-url="true">
+      <button class="sidebar-item{{if eq .ActivePage "holder-export"}} active{{end}}" hx-get="/portal/holder/export" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#128190;</span> Export
       </button>
     </div>
@@ -137,16 +133,19 @@
     {{if and (hasWorkspace "verifier") .User (roleIs .User.Role "admin" "verifier")}}
     <div class="sidebar-section">
       <div class="sidebar-section-label" data-dpg-section="verifier">Verifier</div>
-      <button class="sidebar-item{{if eq .ActivePage "verifier"}} active{{end}}" hx-get="/portal/verifier/verify" hx-target="#main-content" hx-push-url="true">
+      <button class="sidebar-item{{if eq .ActivePage "verifier-onboarding"}} active{{end}}" hx-get="/portal/onboarding" hx-target="#main-content" hx-push-url="true">
+        <span class="sidebar-item-icon">&#128736;</span> Onboarding Wizard
+      </button>
+      <button class="sidebar-item{{if eq .ActivePage "verifier-verify"}} active{{end}}" hx-get="/portal/verifier/verify" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#128270;</span> Verify Credential
       </button>
-      <button class="sidebar-item" hx-get="/portal/verifier/dashboard" hx-target="#main-content" hx-push-url="true">
+      <button class="sidebar-item{{if eq .ActivePage "verifier-dashboard"}} active{{end}}" hx-get="/portal/verifier/dashboard" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#128202;</span> Results
       </button>
-      <button class="sidebar-item" hx-get="/portal/verifier/history" hx-target="#main-content" hx-push-url="true">
+      <button class="sidebar-item{{if eq .ActivePage "verifier-history"}} active{{end}}" hx-get="/portal/verifier/history" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#128203;</span> History
       </button>
-      <button class="sidebar-item" hx-get="/portal/verifier/sdk-guide" hx-target="#main-content" hx-push-url="true">
+      <button class="sidebar-item{{if eq .ActivePage "verifier-sdk-guide"}} active{{end}}" hx-get="/portal/verifier/sdk-guide" hx-target="#main-content" hx-push-url="true">
         <span class="sidebar-item-icon">&#9881;</span> SDK / API
       </button>
     </div>

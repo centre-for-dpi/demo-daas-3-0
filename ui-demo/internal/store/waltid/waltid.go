@@ -369,7 +369,26 @@ func (s *issuerStore) IssueCredential(ctx context.Context, issuer *model.Onboard
 	if code != 200 {
 		return "", fmt.Errorf("issue failed (%d): %s", code, string(resp))
 	}
-	return string(resp), nil
+	// Sanitize: some walt.id builds append a trailing newline to the
+	// offer URL, which makes wallets (and Go's url.Parse) reject the URL
+	// with "invalid control character". Strip all whitespace/control
+	// characters defensively.
+	return sanitizeOfferURL(string(resp)), nil
+}
+
+// sanitizeOfferURL strips whitespace and control characters from an OID4VCI
+// offer URL. An errant newline anywhere in the string is enough to break
+// Go's net/url.Parse in downstream wallets.
+func sanitizeOfferURL(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f || r == ' ' {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 func (s *issuerStore) IssueBatch(ctx context.Context, issuer *model.OnboardIssuerResult, configID, format string, records []map[string]any) (*model.BatchResult, error) {

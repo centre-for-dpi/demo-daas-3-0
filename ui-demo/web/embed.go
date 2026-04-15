@@ -14,11 +14,17 @@ var staticEmbed embed.FS
 //go:embed templates
 var templateEmbed embed.FS
 
+//go:embed schemas
+var schemaEmbed embed.FS
+
 // StaticFS returns the embedded static filesystem rooted at "static/".
 var StaticFS, _ = fs.Sub(staticEmbed, "static")
 
 // TemplateFS returns the embedded template filesystem rooted at "templates/".
 var TemplateFS, _ = fs.Sub(templateEmbed, "templates")
+
+// SchemaFS returns the embedded starter-schema catalog rooted at "schemas/".
+var SchemaFS, _ = fs.Sub(schemaEmbed, "schemas")
 
 // StaticHandler returns an http.Handler that serves static files,
 // checking the custom directory first, then falling back to embedded.

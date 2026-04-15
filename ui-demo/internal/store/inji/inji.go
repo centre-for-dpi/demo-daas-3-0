@@ -32,7 +32,6 @@ import (
 
 	"vcplatform/internal/model"
 	"vcplatform/internal/store"
-	"vcplatform/internal/store/walletbag"
 	"vcplatform/internal/transport"
 )
 
@@ -160,13 +159,27 @@ func (s *issuerStore) IssueCredential(ctx context.Context, issuer *model.Onboard
 		return "", fmt.Errorf("inji pre-auth returned empty offer: %s", truncate(string(resp), 200))
 	}
 
-	raw := s.rewriteInternalURL(preAuthResp.CredentialOfferURI)
+	raw := sanitizeOfferURL(s.rewriteInternalURL(preAuthResp.CredentialOfferURI))
 	// If a proxy rewrite is configured (cross-DPG flow), apply it so the
 	// target wallet sees our proxy's URL instead of Inji's raw URL.
 	if s.proxyRewrite != nil {
-		return s.proxyRewrite(raw), nil
+		return sanitizeOfferURL(s.proxyRewrite(raw)), nil
 	}
 	return raw, nil
+}
+
+// sanitizeOfferURL strips whitespace and control characters from an OID4VCI
+// offer URL. Defensive — a stray newline will break url.Parse in wallets.
+func sanitizeOfferURL(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f || r == ' ' {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // rewriteInternalURL replaces the internal Certify URL (as Certify sees itself)
@@ -364,140 +377,13 @@ func (s *verifierStore) ListPolicies(ctx context.Context) (map[string]string, er
 	}, nil
 }
 
-// =============================================================================
-// WalletStore — In-process Inji holder wallet.
+// NOTE: The in-process holder/wallet store that used to live here has been
+// moved to internal/store/localholder. It was never Inji-specific — it's a
+// generic OID4VCI Pre-Auth Code flow client + in-memory credential bag,
+// and naming it "Inji Holder" confused everyone.
 //
-// Unlike Walt.id's wallet-api (a standalone service), Inji doesn't ship a
-// HTTP-accessible wallet backend: Inji Web is client-side, Inji Mobile is
-// an Android app. To support Trinidad mode (Inji issues → Inji verifies)
-// without requiring a browser-based wallet, we implement a minimal
-// server-side OID4VCI client + in-memory bag keyed by wallet token.
-//
-// This wallet:
-//   - parses an openid-credential-offer:// URL
-//   - does the OID4VCI pre-authorized_code exchange against Inji Certify
-//   - generates an ephemeral ECDSA P-256 holder key + did:jwk
-//   - signs an OID4VCI proof JWT (ES256)
-//   - fetches the credential from Inji
-//   - stores it in an in-memory bag per wallet token
-//
-// The holder key is ephemeral and regenerated each time the server restarts.
-// For the v1 demo this is fine; a production deployment would persist keys.
-// =============================================================================
-
-// The credential bag is shared across stores via walletbag.Shared so that
-// credentials minted in-process (our LDP_VC signer) appear in the same
-// list as credentials claimed through external wallet backends.
-
-type walletStore struct {
-	client transport.Client
-}
-
-// NewWalletStore creates a WalletStore backed by the in-process Inji holder.
-func NewWalletStore(walletClient transport.Client) store.WalletStore {
-	return &walletStore{client: walletClient}
-}
-
-func (s *walletStore) Name() string { return "Inji Holder (in-process)" }
-
-func (s *walletStore) Capabilities() model.WalletCapabilities {
-	return model.WalletCapabilities{
-		ClaimOffer:                    true,
-		CreateDIDs:                    true,
-		HolderInitiatedPresentation:   true,
-		VerifierInitiatedPresentation: true,
-		SelectiveDisclosure:           false,
-		DIDMethods:                    []string{"did:jwk"},
-	}
-}
-
-func (s *walletStore) GetWallets(ctx context.Context, token string) ([]model.WalletInfo, error) {
-	return []model.WalletInfo{{ID: "inji-holder", Name: "Inji Holder (in-process)"}}, nil
-}
-
-// ClaimCredential runs the full OID4VCI pre-auth flow against Inji Certify
-// and stores the resulting credential in the in-memory bag.
-func (s *walletStore) ClaimCredential(ctx context.Context, token, walletID, offerURL string) error {
-	credJSON, err := ClaimInjiCredential(ctx, offerURL)
-	if err != nil {
-		return err
-	}
-
-	var parsed map[string]any
-	_ = json.Unmarshal(credJSON, &parsed)
-
-	// Derive a display ID: prefer the credential's own id, then fall back.
-	id := randomID(8)
-	if parsed != nil {
-		if s, ok := parsed["id"].(string); ok && s != "" {
-			id = s
-		}
-	}
-	format := "ldp_vc"
-	if strings.HasPrefix(strings.TrimSpace(string(credJSON)), "ey") {
-		format = "jwt_vc"
-	}
-
-	walletbag.Shared.Add(token, model.WalletCredential{
-		ID:             id,
-		Format:         format,
-		AddedOn:        time.Now().Format("2006-01-02 15:04"),
-		Document:       string(credJSON),
-		ParsedDocument: parsed,
-	})
-	return nil
-}
-
-func (s *walletStore) ListCredentials(ctx context.Context, token, walletID string) ([]model.WalletCredential, error) {
-	return walletbag.Shared.List(token), nil
-}
-
-func (s *walletStore) ListDIDs(ctx context.Context, token, walletID string) ([]model.DIDInfo, error) {
-	return []model.DIDInfo{
-		{DID: "did:jwk:ephemeral", Alias: "Inji Holder", Default: true},
-	}, nil
-}
-
-func (s *walletStore) CreateDID(ctx context.Context, token, walletID, method string) (string, error) {
-	return "did:jwk:ephemeral", nil
-}
-
-func (s *walletStore) PresentCredential(ctx context.Context, token, walletID string, req model.PresentRequest) error {
-	// For v1 we submit raw credentials via the handler-level Inji Verify path;
-	// this method is a no-op kept for interface compliance.
-	return nil
-}
-
-// =============================================================================
-// AuthStore — Inji Web uses its own auth; we stub here so the selector works.
-// =============================================================================
-
-// authStore provides email/password auth for the in-process Inji holder wallet.
-// It doesn't talk to any backend — passwords are accepted as-is and each user
-// gets a deterministic session token derived from their email so the in-memory
-// wallet bag is stable across requests for the same user.
-type authStore struct{}
-
-// NewAuthStore returns an auth store for the in-process Inji holder.
-func NewAuthStore() store.AuthStore { return &authStore{} }
-
-func (s *authStore) Login(ctx context.Context, email, password string) (*model.SessionInfo, error) {
-	if email == "" {
-		return nil, fmt.Errorf("email required")
-	}
-	return &model.SessionInfo{
-		UserID:   "inji-" + email,
-		Username: email,
-		Token:    "inji-token-" + email,
-	}, nil
-}
-
-func (s *authStore) Register(ctx context.Context, name, email, password string) error {
-	if email == "" {
-		return fmt.Errorf("email required")
-	}
-	return nil
-}
+// This file now only contains the Inji Certify issuer adaptor and the
+// Inji Verify verifier adaptor — the parts that ARE Inji-specific.
 
 // =============================================================================
 // Helpers

@@ -1,65 +1,105 @@
 {{define "content"}}
 <div class="tiers-screen">
   <div class="container">
-    <div class="section-label">Tiered Packages</div>
-    <h2>What do you need?</h2>
-    <p style="color:var(--text-secondary);margin-bottom:1rem;font-size:0.95rem">Each tier builds on the previous. Select based on your deployment scope and institutional capacity.</p>
+    <div class="section-label">DaaS Tiered Packages</div>
+    <h2>Choose your engagement</h2>
+    <p style="color:var(--text-secondary);margin-bottom:1rem;font-size:0.95rem;max-width:680px">CDPI's Digital Public Infrastructure as a Packaged Solution (DaaS) is offered in three tiers — <strong>Spark</strong>, <strong>Boost</strong>, and <strong>Scale</strong> — representing increasing levels of deployment scope, programmatic depth, and institutional embedding. Each tier maps to the same DaaS v2.0 requirement IDs, so countries can move between tiers without re-architecting.</p>
 
     <div class="tiers-grid">
+
+      <!-- SPARK -->
       <div class="card tier-card">
         <div class="tier-inner">
-          <span class="tag" style="margin-bottom:0.75rem">Tier 1</span>
-          <div class="tier-name">Foundation</div>
-          <div class="tier-desc">Single use case, single issuer, basic issuance and verification. Ideal for pilots and proof-of-concept.</div>
+          <span class="tag" style="margin-bottom:0.75rem">Tier 1 · Spark</span>
+          <div class="tier-name">Spark</div>
+          <div class="tier-desc">Minimum viable deployment. The lightest path to demonstrating that verifiable credentials work in your country, before committing to a full national engagement.</div>
+
+          <div class="tier-meta">
+            <div><strong>Active rollout:</strong> 16 weeks</div>
+            <div><strong>Post-rollout support:</strong> 10 weeks</div>
+            <div><strong>Cloud hosting:</strong> 8 months</div>
+            <div><strong>Use cases:</strong> 2 end-to-end</div>
+            <div><strong>Best for:</strong> Countries that need to prove feasibility before committing to a national rollout.</div>
+          </div>
+
           <ul class="tier-features">
-            <li><span class="tier-check">&#10003;</span> Credential issuance (single + batch)</li>
-            <li><span class="tier-check">&#10003;</span> Basic verification portal</li>
-            <li><span class="tier-check">&#10003;</span> Web eLocker for holders</li>
-            <li><span class="tier-check">&#10003;</span> Single schema/template</li>
-            <li><span class="tier-check">&#10003;</span> QR + PDF output</li>
-            <li class="excluded"><span class="tier-check">—</span> Mobile wallet</li>
-            <li class="excluded"><span class="tier-check">—</span> Multi-issuer onboarding</li>
-            <li class="excluded"><span class="tier-check">—</span> Selective disclosure</li>
+            <li><span class="tier-check">&#10003;</span> Foundational VC infrastructure (issuance, store, verification)</li>
+            <li><span class="tier-check">&#10003;</span> 2 issuers + corresponding verifiers, end-to-end</li>
+            <li><span class="tier-check">&#10003;</span> SSO integration</li>
+            <li><span class="tier-check">&#10003;</span> L1 / L2 support</li>
+            <li><span class="tier-check">&#10003;</span> Cloud hosting, basic monitoring</li>
+            <li><span class="tier-check">&#10003;</span> AI-assisted development tooling</li>
+            <li class="excluded"><span class="tier-check">&minus;</span> No outreach playbook</li>
+            <li class="excluded"><span class="tier-check">&minus;</span> No ecosystem expansion</li>
+            <li class="excluded"><span class="tier-check">&minus;</span> No sustainability planning</li>
           </ul>
         </div>
       </div>
 
+      <!-- BOOST -->
       <div class="card tier-card recommended">
         <div class="tier-inner">
-          <span class="tag tag-accent" style="margin-bottom:0.75rem">Tier 2</span>
-          <div class="tier-name">Ecosystem</div>
-          <div class="tier-desc">Multiple use cases, self-service issuer onboarding, mobile wallet, cross-sector deployment.</div>
+          <span class="tag tag-accent" style="margin-bottom:0.75rem">Tier 2 · Boost</span>
+          <div class="tier-name">Boost</div>
+          <div class="tier-desc">The closest equivalent to the original DaaS v2.0 scope. Full programmatic engagement with outreach, ecosystem onboarding, and national policy support, on a 24-week active timeline.</div>
+
+          <div class="tier-meta">
+            <div><strong>Active rollout:</strong> 24 weeks</div>
+            <div><strong>Post-rollout support:</strong> 24 weeks</div>
+            <div><strong>Cloud hosting:</strong> 12 months</div>
+            <div><strong>Use cases:</strong> 2–5 use cases</div>
+            <div><strong>Best for:</strong> Countries with momentum and clear use cases ready for ecosystem deployment.</div>
+          </div>
+
           <ul class="tier-features">
-            <li><span class="tier-check">&#10003;</span> Everything in Foundation</li>
-            <li><span class="tier-check">&#10003;</span> Self-service issuer onboarding</li>
-            <li><span class="tier-check">&#10003;</span> Mobile wallet (Inji or compliant)</li>
-            <li><span class="tier-check">&#10003;</span> Multiple schemas/templates</li>
-            <li><span class="tier-check">&#10003;</span> Selective disclosure (SD-JWT)</li>
-            <li><span class="tier-check">&#10003;</span> Trust registry</li>
-            <li><span class="tier-check">&#10003;</span> Analytics dashboards</li>
-            <li class="excluded"><span class="tier-check">—</span> Cross-DPG interoperability</li>
+            <li><span class="tier-check">&#10003;</span> Everything in Spark</li>
+            <li><span class="tier-check">&#10003;</span> 2–5 end-to-end use cases</li>
+            <li><span class="tier-check">&#10003;</span> Outreach playbook (issuer & acceptor adoption roadmap)</li>
+            <li><span class="tier-check">&#10003;</span> Ecosystem onboarding (additional issuers, verifiers)</li>
+            <li><span class="tier-check">&#10003;</span> National credentialing policy support</li>
+            <li><span class="tier-check">&#10003;</span> L1 / L2 support, monitoring</li>
+            <li><span class="tier-check">&#10003;</span> 12-month cloud hosting</li>
+            <li><span class="tier-check">&#10003;</span> Intelligent user-facing AI services</li>
           </ul>
         </div>
       </div>
 
+      <!-- SCALE -->
       <div class="card tier-card">
         <div class="tier-inner">
-          <span class="tag" style="margin-bottom:0.75rem">Tier 3</span>
-          <div class="tier-name">National Scale</div>
-          <div class="tier-desc">Full interoperability, multi-DPG bridging, last-mile channels, ZKP, agent-assisted flows.</div>
+          <span class="tag" style="margin-bottom:0.75rem">Tier 3 · Scale</span>
+          <div class="tier-name">Scale</div>
+          <div class="tier-desc">Advanced capabilities and deep institutional embedding. The full strategic deliverables suite, denser parallel workstreams, L1–L3 support, designed for national-scale rollouts with multilateral funding alignment.</div>
+
+          <div class="tier-meta">
+            <div><strong>Active rollout:</strong> 24 weeks (parallel workstreams)</div>
+            <div><strong>Post-rollout support:</strong> 24 weeks</div>
+            <div><strong>Cloud hosting:</strong> 12 months</div>
+            <div><strong>Use cases:</strong> 5+ use cases</div>
+            <div><strong>Best for:</strong> Countries committing to national-scale deployment with strong DPI Owner capacity.</div>
+          </div>
+
           <ul class="tier-features">
-            <li><span class="tier-check">&#10003;</span> Everything in Ecosystem</li>
-            <li><span class="tier-check">&#10003;</span> Cross-DPG adaptor layer</li>
-            <li><span class="tier-check">&#10003;</span> Last-mile channels (SMS, USSD, IVR)</li>
-            <li><span class="tier-check">&#10003;</span> ZKP / AnonCreds support</li>
-            <li><span class="tier-check">&#10003;</span> Agent-assisted verification</li>
-            <li><span class="tier-check">&#10003;</span> Offline verification</li>
-            <li><span class="tier-check">&#10003;</span> Multi-tenancy</li>
-            <li><span class="tier-check">&#10003;</span> Schema harmonization tools</li>
+            <li><span class="tier-check">&#10003;</span> Everything in Boost</li>
+            <li><span class="tier-check">&#10003;</span> 5+ use cases with parallel workstreams</li>
+            <li><span class="tier-check">&#10003;</span> Operational &amp; business plan</li>
+            <li><span class="tier-check">&#10003;</span> Multilateral funding alignment</li>
+            <li><span class="tier-check">&#10003;</span> Impact whitepaper</li>
+            <li><span class="tier-check">&#10003;</span> Ecosystem mapping</li>
+            <li><span class="tier-check">&#10003;</span> L1 / L2 / L3 support (extended 12 months)</li>
+            <li><span class="tier-check">&#10003;</span> 12-month cloud hosting</li>
+            <li><span class="tier-check">&#10003;</span> Advanced AI-driven ecosystem intelligence</li>
           </ul>
         </div>
       </div>
+
     </div>
+
+    <div style="margin-top:2.5rem;padding:1.5rem;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--radius-md);max-width:880px;margin-left:auto;margin-right:auto">
+      <div style="font-family:var(--font-display);font-size:0.7rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:0.5rem">A note on tier selection</div>
+      <p style="font-size:0.88rem;color:var(--text-secondary);margin:0">Tier selection follows the requirements you assemble in your country scope document — not the other way around. The tier label is the consequence of which functional requirements your country selects from the DaaS v2.0 matrix. If your requirements span tiers, choose the higher tier. Countries that succeed with Spark have a natural upgrade path to Boost and then Scale, with full requirement traceability between tiers.</p>
+    </div>
+
     <div style="margin-top:2rem;text-align:center">
       <button class="btn btn-primary" onclick="if(typeof openChatbot==='function')openChatbot();else if(typeof toggleChatbot==='function')toggleChatbot()">Help me choose a tier</button>
     </div>

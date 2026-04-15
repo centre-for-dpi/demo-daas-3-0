@@ -4,3 +4,10 @@
 # Plans
 ./ui-demo/implementation-plan.md
 go-build-plan.md
+
+# Loose scratch copy of the wallet-demo-client p12 — the real copy lives
+# at ui-demo/docker/injiweb/config/certs/oidckeystore.p12 which IS tracked.
+/oidckeystore.p12/
+
+# Runtime state
+ui-demo/cache/

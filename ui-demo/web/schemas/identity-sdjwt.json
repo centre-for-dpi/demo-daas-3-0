@@ -1,0 +1,17 @@
+{
+  "id": "identity-sdjwt",
+  "name": "Identity Credential (SD-JWT)",
+  "description": "IETF SD-JWT identity credential with selective disclosure. All fields individually disclosable.",
+  "category": "identity",
+  "credentialType": "IdentityCredential",
+  "format": "vc+sd-jwt",
+  "standard": "IETF SD-JWT VC",
+  "compatibleDPGs": ["waltid", "inji"],
+  "fields": [
+    {"name": "given_name", "type": "string", "required": true},
+    {"name": "family_name", "type": "string", "required": true},
+    {"name": "birthdate", "type": "date", "required": true},
+    {"name": "nationality", "type": "string", "required": false},
+    {"name": "document_number", "type": "string", "required": true}
+  ]
+}

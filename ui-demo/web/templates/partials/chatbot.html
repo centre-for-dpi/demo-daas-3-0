@@ -1,5 +1,5 @@
 {{define "chatbot"}}
-<button class="chatbot-trigger" id="chatbot-trigger" onclick="toggleChatbot()" title="Open assistant">&#128172;</button>
+<button type="button" class="chatbot-trigger" id="chatbot-trigger" onclick="toggleChatbot()" title="Open assistant">&#128172;</button>
 <div class="chatbot-backdrop" id="chatbot-backdrop" onclick="collapseChatbot()"></div>
 <div class="chatbot-panel" id="chatbot-panel">
   <div class="chatbot-header">
@@ -11,8 +11,8 @@
       </div>
     </div>
     <div class="chatbot-header-actions">
-      <button class="panel-expand" id="chatbot-expand" onclick="toggleExpandChatbot()" title="Expand to full screen" aria-label="Expand to full screen">&#9727;</button>
-      <button class="panel-close" onclick="toggleChatbot()" title="Close" aria-label="Close">&#10005;</button>
+      <button type="button" class="panel-expand" id="chatbot-expand" onclick="toggleExpandChatbot()" title="Expand to full screen" aria-label="Expand to full screen">&#9727;</button>
+      <button type="button" class="panel-close" onclick="toggleChatbot()" title="Close" aria-label="Close">&#10005;</button>
     </div>
   </div>
   <div class="chatbot-messages" id="chat-messages">
@@ -21,24 +21,60 @@
         Welcome. I can help you understand verifiable credentials, explore the platform, or generate documents for your team. What brings you here today?
       </div>
       <div class="chat-suggestions">
-        <button class="chat-suggestion" onclick="sendSuggestion(this)">What is a DaaS scope document?</button>
-        <button class="chat-suggestion" onclick="sendSuggestion(this)">What is a verifiable credential?</button>
-        <button class="chat-suggestion" onclick="sendSuggestion(this)">Help me choose a tier</button>
-        <button class="chat-suggestion" onclick="sendSuggestion(this)">Draft a pitch deck</button>
-        <button class="chat-suggestion" onclick="sendSuggestion(this)">Technical advisory note</button>
+        <button type="button" class="chat-suggestion" onclick="sendSuggestion(this)">What is a DaaS scope document?</button>
+        <button type="button" class="chat-suggestion" onclick="sendSuggestion(this)">What is a verifiable credential?</button>
+        <button type="button" class="chat-suggestion" onclick="sendSuggestion(this)">Help me choose a tier</button>
+        <button type="button" class="chat-suggestion" onclick="sendSuggestion(this)">Draft a pitch deck</button>
+        <button type="button" class="chat-suggestion" onclick="sendSuggestion(this)">Technical advisory note</button>
       </div>
     </div>
   </div>
   <div class="chatbot-input">
-    <input type="text" id="chat-input" placeholder="Ask anything..." onkeydown="if(event.key==='Enter')sendChat()">
-    <button class="chat-send" onclick="sendChat()">&#8594;</button>
+    <input type="text" id="chat-input" placeholder="Ask anything..." onkeydown="if(event.key==='Enter'){event.preventDefault();sendChat();}">
+    <button type="button" class="chat-send" onclick="sendChat()">&#8594;</button>
   </div>
 </div>
 
 <script>
 (function() {
-  // Conversation state persists for the lifetime of the page.
+  // Conversation state persists for the lifetime of the open panel.
+  // Closing the panel resets both, so reopening starts a fresh conversation.
   var conversationId = null;
+  var conversationHistory = [];  // [{role: 'user'|'assistant', content: '...'}]
+  var lastBotPersona = null;     // most recent assistant persona — used by the router for stickiness
+
+  // Persist chat state in sessionStorage so a page refresh within the same
+  // tab keeps the conversation and the rendered messages. Cleared on panel
+  // close and automatically cleared when the browser tab closes.
+  var SS_KEY = 'cdpi.chatbot.state.v1';
+  function saveState() {
+    try {
+      sessionStorage.setItem(SS_KEY, JSON.stringify({
+        conversationId: conversationId,
+        conversationHistory: conversationHistory,
+        lastBotPersona: lastBotPersona
+      }));
+    } catch (e) { /* non-fatal: quota or disabled */ }
+  }
+  function clearState() {
+    try { sessionStorage.removeItem(SS_KEY); } catch (e) {}
+  }
+  function loadState() {
+    try {
+      var raw = sessionStorage.getItem(SS_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (e) { return null; }
+  }
+
+  // Cross-tab signal: when the chatbot saves an artifact, broadcast it so the
+  // Outputs page (if open in another tab) can refresh its list without polling.
+  var artifactChannel = null;
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      artifactChannel = new BroadcastChannel('cdpi-agent-outputs');
+    }
+  } catch (e) { /* older browsers: feature skipped */ }
 
   function updateExpandButton(isExpanded) {
     var btn = document.getElementById('chatbot-expand');
@@ -61,10 +97,21 @@
     var willOpen = !panel.classList.contains('open');
     panel.classList.toggle('open');
     if (!willOpen) {
-      // Closing — reset to widget state so next open starts small.
+      // Closing — reset to widget state so next open starts small AND fresh.
       panel.classList.remove('expanded');
       backdrop.classList.remove('active');
       updateExpandButton(false);
+      conversationId = null;
+      conversationHistory = [];
+      lastBotPersona = null;
+      clearState();
+      // Clear rendered messages back to the welcome bubble (the first child).
+      var container = document.getElementById('chat-messages');
+      if (container) {
+        while (container.children.length > 1) {
+          container.removeChild(container.lastChild);
+        }
+      }
     }
     trigger.style.display = panel.classList.contains('open') ? 'none' : 'flex';
   };
@@ -119,7 +166,12 @@
       currentPath: window.location.pathname,
       currentTitle: document.title
     };
-    var body = { message: text, context: ctx };
+    var body = {
+      message: text,
+      context: ctx,
+      history: conversationHistory.slice(),  // prior turns only; current message goes in `message`
+      lastPersona: lastBotPersona             // router stickiness hint
+    };
     if (conversationId) body.conversationId = conversationId;
 
     fetch('/api/agent/chat', {
@@ -137,7 +189,45 @@
           return;
         }
         if (res.body.conversationId) conversationId = res.body.conversationId;
-        addBotMessage(res.body.persona, res.body.answer || '(empty response)');
+        if (res.body.persona) lastBotPersona = res.body.persona;
+        var answer = res.body.answer || '(empty response)';
+        var lastMsg = addBotMessage(res.body.persona, answer);
+        // Persist this turn into history for the next call.
+        conversationHistory.push({ role: 'user', content: text });
+        conversationHistory.push({ role: 'assistant', content: answer });
+        saveState();
+        // Auto-save architect/programs replies as Outputs. Supports:
+        //   - Single-document replies (deck OR note OR blog) — whole content
+        //   - Content-pack replies — split on <!-- CDPI-ARTIFACT-BREAK --> and
+        //     save each block as a separate artifact (e.g. blog + deck together)
+        // Each block must pass looksLikeDocument on its own.
+        var p = res.body.persona;
+        if ((p === 'architect' || p === 'programs') && answer.length > 400) {
+          var blocks = answer.split(/\n?<!--\s*CDPI-ARTIFACT-BREAK\s*-->\n?/i);
+          blocks.forEach(function(block) {
+            var trimmed = (block || '').trim();
+            if (!trimmed || trimmed.length < 400) return;
+            if (!looksLikeDocument(trimmed)) return;
+            fetch('/api/agent/outputs', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ persona: p, content: trimmed, source: text })
+            })
+              .then(function(r) { return r.json(); })
+              .then(function(saved) {
+                if (saved && saved.id && lastMsg) {
+                  attachSavedBadge(lastMsg, saved);
+                  try {
+                    window.dispatchEvent(new CustomEvent('cdpi:artifact-saved', { detail: { id: saved.id, artifact: saved } }));
+                  } catch (e) {}
+                  if (artifactChannel) {
+                    try { artifactChannel.postMessage({ type: 'artifact-saved', id: saved.id }); } catch (e) {}
+                  }
+                }
+              })
+              .catch(function() { /* non-fatal */ });
+          });
+        }
       })
       .catch(function(err) {
         removeTypingIndicator(typingId);
@@ -176,6 +266,39 @@
     body.innerHTML = mdToHtml(text);
     msg.appendChild(body);
     container.appendChild(msg);
+    container.scrollTop = container.scrollHeight;
+    return msg;
+  }
+
+  // looksLikeDocument returns true if the assistant's reply (or a block of it)
+  // is structured like a real artifact (Marp deck, advisory note, blog post)
+  // rather than a conversational meta reply.
+  function looksLikeDocument(text) {
+    if (!text) return false;
+    var trimmed = text.replace(/^\s+/, '');
+    var head = trimmed.slice(0, 400).toLowerCase();
+    if (head.indexOf('---\nmarp: true') === 0) return true;  // Marp deck
+    if (head.indexOf('---\r\nmarp: true') === 0) return true;
+    if (/^#\s+\S/.test(head)) return true;                    // H1 first line (advisory note, blog post)
+    if (/^##\s+ask\b/.test(head)) return true;                // advisory-note template
+    return false;
+  }
+
+  function attachSavedBadge(msgEl, saved) {
+    // Passive notification only — no link, no button, no navigation.
+    var badge = document.createElement('div');
+    badge.className = 'chat-saved-badge';
+    var typeLabel = (function(t) {
+      if (t === 'pitch_deck') return 'Pitch Deck';
+      if (t === 'advisory_note') return 'Advisory Note';
+      if (t === 'technical_scope') return 'Technical Scope';
+      if (t === 'country_proposal') return 'Country Proposal';
+      if (t === 'blog_post') return 'Blog Post';
+      return 'Output';
+    })(saved.type);
+    badge.textContent = '✓ Saved as ' + typeLabel + ' · view and download from the Outputs tab';
+    msgEl.appendChild(badge);
+    var container = document.getElementById('chat-messages');
     container.scrollTop = container.scrollHeight;
   }
 
@@ -269,6 +392,29 @@
     html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
     return html;
   }
+
+  // ---- Boot: restore saved chat state from sessionStorage ----
+  function restoreChatState() {
+    var state = loadState();
+    if (!state || !Array.isArray(state.conversationHistory) || state.conversationHistory.length === 0) return;
+
+    conversationId = state.conversationId || null;
+    lastBotPersona = state.lastBotPersona || null;
+    conversationHistory = state.conversationHistory;
+
+    // Re-render the messages into the panel so the user sees their prior turns.
+    // Keep the existing welcome message (first .chat-msg child).
+    for (var i = 0; i < conversationHistory.length; i++) {
+      var turn = conversationHistory[i];
+      if (!turn || !turn.content) continue;
+      if (turn.role === 'user') {
+        addUserMessage(turn.content);
+      } else if (turn.role === 'assistant') {
+        addBotMessage(lastBotPersona || 'guide', turn.content);
+      }
+    }
+  }
+  restoreChatState();
 })();
 </script>
 {{end}}

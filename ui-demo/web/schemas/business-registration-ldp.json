@@ -1,0 +1,20 @@
+{
+  "id": "business-registration-ldp",
+  "name": "Business Registration (LDP_VC)",
+  "description": "W3C Verifiable Credential for business registration / trade license records.",
+  "category": "business",
+  "credentialType": "BusinessRegistration",
+  "format": "ldp_vc",
+  "standard": "W3C-VCDM 1.1",
+  "compatibleDPGs": ["waltid", "inji"],
+  "fields": [
+    {"name": "businessName", "type": "string", "required": true},
+    {"name": "registrationNumber", "type": "string", "required": true},
+    {"name": "businessType", "type": "string", "required": true},
+    {"name": "ownerName", "type": "string", "required": true},
+    {"name": "registrationDate", "type": "date", "required": true},
+    {"name": "expiryDate", "type": "date", "required": false},
+    {"name": "registeredAddress", "type": "string", "required": true},
+    {"name": "taxId", "type": "string", "required": false}
+  ]
+}

@@ -8,7 +8,7 @@ import (
 )
 
 func (h *Handler) VerifierVerify(w http.ResponseWriter, r *http.Request) {
-	data := h.pageData(r, "verifier", nil)
+	data := h.pageData(r, "verifier-verify", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Verifier"},
 		{Label: "Verify Credential", Active: true},
@@ -18,8 +18,8 @@ func (h *Handler) VerifierVerify(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) verifierPage(w http.ResponseWriter, r *http.Request, tmpl, crumb string) {
-	data := h.pageData(r, "verifier", nil)
+func (h *Handler) verifierPage(w http.ResponseWriter, r *http.Request, tmpl, crumb, activePage string) {
+	data := h.pageData(r, activePage, nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Verifier"},
 		{Label: crumb, Active: true},
@@ -32,14 +32,14 @@ func (h *Handler) verifierPage(w http.ResponseWriter, r *http.Request, tmpl, cru
 // VerifierPortal passes policies for real users.
 func (h *Handler) VerifierPortal(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
-	data := h.pageData(r, "verifier", nil)
+	data := h.pageData(r, "verifier-portal", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Verifier"},
 		{Label: "Verification Portal", Active: true},
 	}
 
 	if user != nil && user.HasBackendAuth() {
-		policies, err := h.stores.Verifier.ListPolicies(r.Context())
+		policies, err := h.verifierFor(user).ListPolicies(r.Context())
 		if err == nil {
 			data.Data = map[string]any{
 				"policies": policies,
@@ -56,7 +56,7 @@ func (h *Handler) VerifierPortal(w http.ResponseWriter, r *http.Request) {
 // VerifierRequestBuilder passes policies and schemas for real users.
 func (h *Handler) VerifierRequestBuilder(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
-	data := h.pageData(r, "verifier", nil)
+	data := h.pageData(r, "verifier-request-builder", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Verifier"},
 		{Label: "Request Builder", Active: true},
@@ -64,7 +64,7 @@ func (h *Handler) VerifierRequestBuilder(w http.ResponseWriter, r *http.Request)
 
 	if user != nil && user.HasBackendAuth() {
 		dm := map[string]any{"live": true}
-		policies, err := h.stores.Verifier.ListPolicies(r.Context())
+		policies, err := h.verifierFor(user).ListPolicies(r.Context())
 		if err == nil {
 			dm["policies"] = policies
 		}
@@ -83,7 +83,7 @@ func (h *Handler) VerifierRequestBuilder(w http.ResponseWriter, r *http.Request)
 // VerifierQRGenerator passes live flag for real users.
 func (h *Handler) VerifierQRGenerator(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
-	data := h.pageData(r, "verifier", nil)
+	data := h.pageData(r, "verifier-qr-generator", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Verifier"},
 		{Label: "QR / Deep Link", Active: true},
@@ -103,7 +103,7 @@ func (h *Handler) VerifierQRGenerator(w http.ResponseWriter, r *http.Request) {
 // VerifierDashboard shows verification policies if available.
 func (h *Handler) VerifierDashboard(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
-	data := h.pageData(r, "verifier", nil)
+	data := h.pageData(r, "verifier-dashboard", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Verifier"},
 		{Label: "Results", Active: true},
@@ -111,7 +111,7 @@ func (h *Handler) VerifierDashboard(w http.ResponseWriter, r *http.Request) {
 
 	// Fetch verification policies if backend is available
 	if user != nil && user.HasBackendAuth() {
-		policies, err := h.stores.Verifier.ListPolicies(r.Context())
+		policies, err := h.verifierFor(user).ListPolicies(r.Context())
 		if err == nil {
 			data.Data = map[string]any{
 				"policies": policies,
@@ -128,7 +128,7 @@ func (h *Handler) VerifierDashboard(w http.ResponseWriter, r *http.Request) {
 // VerifierProofDetail passes live flag for real users.
 func (h *Handler) VerifierProofDetail(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
-	data := h.pageData(r, "verifier", nil)
+	data := h.pageData(r, "verifier-proof-detail", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Verifier"},
 		{Label: "Proof Detail", Active: true},
@@ -148,7 +148,7 @@ func (h *Handler) VerifierProofDetail(w http.ResponseWriter, r *http.Request) {
 // VerifierHistory passes live flag for real users.
 func (h *Handler) VerifierHistory(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
-	data := h.pageData(r, "verifier", nil)
+	data := h.pageData(r, "verifier-history", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Verifier"},
 		{Label: "History", Active: true},
@@ -168,7 +168,7 @@ func (h *Handler) VerifierHistory(w http.ResponseWriter, r *http.Request) {
 // VerifierOffline passes policies for real users.
 func (h *Handler) VerifierOffline(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
-	data := h.pageData(r, "verifier", nil)
+	data := h.pageData(r, "verifier-offline", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Verifier"},
 		{Label: "Online / Offline", Active: true},
@@ -176,7 +176,7 @@ func (h *Handler) VerifierOffline(w http.ResponseWriter, r *http.Request) {
 
 	if user != nil && user.HasBackendAuth() {
 		dm := map[string]any{"live": true}
-		policies, err := h.stores.Verifier.ListPolicies(r.Context())
+		policies, err := h.verifierFor(user).ListPolicies(r.Context())
 		if err == nil {
 			dm["policies"] = policies
 		}
@@ -189,13 +189,13 @@ func (h *Handler) VerifierOffline(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) VerifierSDKGuide(w http.ResponseWriter, r *http.Request) {
-	h.verifierPage(w, r, "verifier/sdk_guide", "SDK Integration")
+	h.verifierPage(w, r, "verifier/sdk_guide", "SDK Integration", "verifier-sdk-guide")
 }
 
 // VerifierIntegration passes backend config info for real users.
 func (h *Handler) VerifierIntegration(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
-	data := h.pageData(r, "verifier", nil)
+	data := h.pageData(r, "verifier-integration", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Verifier"},
 		{Label: "Integration Status", Active: true},

@@ -120,8 +120,8 @@
   </div>
   {{else}}
   <div class="card" style="text-align:center;padding:2.5rem">
-    <p style="font-size:0.9rem;color:var(--text-secondary);margin-bottom:1rem">Get started: register an issuer to create your DID, then build a credential schema.</p>
-    <button class="btn btn-primary btn-sm" hx-get="/portal/issuer/onboard-form" hx-target="#main-content" hx-push-url="true">Register New Issuer</button>
+    <p style="font-size:0.9rem;color:var(--text-secondary);margin-bottom:1rem">Get started: run the onboarding wizard to pick a DPG backend, save starter schemas, and issue your first credential.</p>
+    <button class="btn btn-primary btn-sm" hx-get="/portal/onboarding" hx-target="#main-content" hx-push-url="true">Start Onboarding</button>
   </div>
   {{end}}
   {{else}}
@@ -151,7 +151,7 @@
   </div>
   {{end}}
   <div style="text-align:center;padding:1.5rem 0">
-    <button class="btn btn-primary btn-sm" hx-get="/portal/issuer/onboard-form" hx-target="#main-content" hx-push-url="true">Open Issuer Workspace &rarr;</button>
+    <button class="btn btn-primary btn-sm" hx-get="/portal/issuer/single-issue" hx-target="#main-content" hx-push-url="true">Open Issuer Workspace &rarr;</button>
   </div>
 
   {{else if and .User (eq .User.Role "holder")}}

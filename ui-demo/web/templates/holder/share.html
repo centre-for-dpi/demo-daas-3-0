@@ -166,6 +166,14 @@ function selectShareCred(label) {
   label.querySelector('input').checked = true;
 }
 
+// generateSharePresentation stages the selected credential on the server
+// and shows the holder two delivery paths:
+//   1. Share URL — a short-lived /share/v/{id} link the verifier can open
+//      in a browser. They see the claims and click Verify.
+//   2. QR code — encodes the share URL (small, always fits). The older
+//      approach called wallet.PresentCredential which only works for
+//      credentials the wallet backend natively owns; our shared walletbag
+//      breaks that assumption. Using a server-hosted share works uniformly.
 function generateSharePresentation() {
   var selected = document.querySelector('input[name="share-cred"]:checked');
   if (!selected) {
@@ -175,55 +183,44 @@ function generateSharePresentation() {
 
   var btn = document.getElementById('share-gen-btn');
   btn.disabled = true;
-  btn.textContent = 'Creating session...';
+  btn.textContent = 'Generating share link…';
 
-  // Step 1: Create an OID4VP verification session
-  fetch('/api/share/create-session', {method: 'POST'})
-  .then(function(r) { return r.json(); })
-  .then(function(d) {
-    if (d.error) { throw new Error(d.error); }
-
-    var vpUrl = d.request_url || '';
-    var state = d.state || '';
-
-    btn.textContent = 'Presenting credential...';
-
-    // Step 2: Auto-present the selected credential into the session
-    return fetch('/api/wallet/present', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        presentationRequest: vpUrl,
-        selectedCredentials: [selected.value]
-      })
-    })
-    .then(function(r2) { return r2.json(); })
-    .then(function(d2) {
-      if (d2.error) { throw new Error('Present failed: ' + d2.error); }
-
-      // Both steps succeeded — show the shareable link
-      // The verifier checks the state and sees the result immediately
-      btn.disabled = false;
-      btn.textContent = 'Generate Shareable Link';
-
-      // Build a simple check URL the verifier can use
-      var checkUrl = window.location.origin + '/portal/verifier/verify?check=' + encodeURIComponent(state);
-      document.getElementById('share-vp-url').textContent = checkUrl;
-
-      // Generate QR
-      if (typeof qrcode !== 'undefined' && checkUrl) {
-        var qrEl = document.getElementById('share-qr');
-        qrEl.innerHTML = '';
-        var qr = qrcode(0, 'L');
-        qr.addData(checkUrl);
-        qr.make();
-        qrEl.innerHTML = qr.createSvgTag(4, 0);
+  fetch('/api/share/proactive', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({credentialId: selected.value})
+  })
+  .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
+  .then(function(res) {
+    btn.disabled = false;
+    btn.textContent = 'Generate Shareable Link';
+    var d = res.data || {};
+    if (!res.ok || d.error) {
+      if (d.redirect) {
+        showToast('Onboarding needed', d.error || 'Pick a wallet backend first.');
+        setTimeout(function() { window.location = d.redirect; }, 800);
+        return;
       }
+      throw new Error(d.error || 'share failed');
+    }
 
-      document.getElementById('share-result').style.display = '';
-      document.getElementById('share-result').scrollIntoView({behavior:'smooth', block:'nearest'});
-      showToast('Credential Shared', 'The verifier can check your credential using this link.');
-    });
+    var shareUrl = d.shareUrl || '';
+    document.getElementById('share-vp-url').textContent = shareUrl;
+
+    if (typeof qrcode !== 'undefined' && shareUrl) {
+      var qrEl = document.getElementById('share-qr');
+      qrEl.innerHTML = '';
+      var qr = qrcode(0, 'L');
+      qr.addData(shareUrl);
+      qr.make();
+      qrEl.innerHTML = qr.createSvgTag(4, 0);
+    }
+
+    document.getElementById('share-result').style.display = '';
+    document.getElementById('share-result').scrollIntoView({behavior:'smooth', block:'nearest'});
+
+    var expiry = d.expiresIn ? (' Link expires in ' + Math.round(d.expiresIn / 60) + ' minutes.') : '';
+    showToast('Credential Shared', 'Send the link or QR to a verifier.' + expiry);
   })
   .catch(function(e) {
     btn.disabled = false;

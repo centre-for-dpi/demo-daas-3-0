@@ -14,7 +14,8 @@ import (
 // so users see the full format matrix (jwt_vc_json / vc+sd-jwt / ldp_vc /
 // mso_mdoc) regardless of which DPG is the primary issuer.
 func (h *Handler) APIListCredentialConfigs(w http.ResponseWriter, r *http.Request) {
-	configs, err := h.stores.Issuer.ListCredentialConfigs(r.Context())
+	user := middleware.GetUser(r.Context())
+	configs, err := h.issuerFor(user).ListCredentialConfigs(r.Context())
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": err.Error()})
 		return
@@ -81,7 +82,7 @@ func (h *Handler) APIRegisterCredentialType(w http.ResponseWriter, r *http.Reque
 		req.DisplayName = req.TypeName
 	}
 
-	configID, err := h.stores.Issuer.RegisterCredentialType(r.Context(), req.TypeName, req.DisplayName, req.Description, req.Format)
+	configID, err := h.issuerFor(user).RegisterCredentialType(r.Context(), req.TypeName, req.DisplayName, req.Description, req.Format)
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": err.Error()})
 		return

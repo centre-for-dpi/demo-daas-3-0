@@ -7,8 +7,8 @@ import (
 	"vcplatform/internal/model"
 )
 
-func (h *Handler) issuerPage(w http.ResponseWriter, r *http.Request, tmpl, crumb string) {
-	data := h.pageData(r, "issuer", nil)
+func (h *Handler) issuerPage(w http.ResponseWriter, r *http.Request, tmpl, crumb, activePage string) {
+	data := h.pageData(r, activePage, nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Issuer"},
 		{Label: crumb, Active: true},
@@ -30,7 +30,7 @@ func (h *Handler) issuerSchemaData(r *http.Request) map[string]any {
 
 // IssuerSchemas fetches real schemas from the store.
 func (h *Handler) IssuerSchemas(w http.ResponseWriter, r *http.Request) {
-	data := h.pageData(r, "issuer", nil)
+	data := h.pageData(r, "issuer-schemas", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Issuer"},
 		{Label: "Schemas", Active: true},
@@ -44,17 +44,17 @@ func (h *Handler) IssuerSchemas(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) IssuerOnboardForm(w http.ResponseWriter, r *http.Request) {
-	h.issuerPage(w, r, "issuer/onboard_form", "Register Issuer")
+	h.issuerPage(w, r, "issuer/onboard_form", "Register Issuer", "issuer-onboard-form")
 }
 
 func (h *Handler) IssuerOnboardQueue(w http.ResponseWriter, r *http.Request) {
-	h.issuerPage(w, r, "issuer/onboard_queue", "Onboarding Queue")
+	h.issuerPage(w, r, "issuer/onboard_queue", "Onboarding Queue", "issuer-onboard-queue")
 }
 
 // IssuerDIDKeys shows issuer-specific DIDs (created via the registration/onboarding flow).
 func (h *Handler) IssuerDIDKeys(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
-	data := h.pageData(r, "issuer", nil)
+	data := h.pageData(r, "issuer-did-keys", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Issuer"},
 		{Label: "DID & Keys", Active: true},
@@ -74,7 +74,7 @@ func (h *Handler) IssuerDIDKeys(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) IssuerSchemaBuilder(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
-	data := h.pageData(r, "issuer", nil)
+	data := h.pageData(r, "issuer-schema-builder", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Issuer"},
 		{Label: "Schema Builder", Active: true},
@@ -95,53 +95,53 @@ func (h *Handler) IssuerSchemaBuilder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) IssuerTemplates(w http.ResponseWriter, r *http.Request) {
-	h.issuerPage(w, r, "issuer/template_list", "Templates")
+	h.issuerPage(w, r, "issuer/template_list", "Templates", "issuer-templates")
 }
 
 func (h *Handler) IssuerTemplateEditor(w http.ResponseWriter, r *http.Request) {
-	data := h.pageData(r, "issuer", nil)
+	data := h.pageData(r, "issuer-template-editor", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{{Label: "Issuer"}, {Label: "Template Editor", Active: true}}
 	if sd := h.issuerSchemaData(r); sd != nil { data.Data = sd }
 	if err := h.render.Render(w, "issuer/template_editor", data); err != nil { http.Error(w, "template error", 500) }
 }
 
 func (h *Handler) IssuerCredPreview(w http.ResponseWriter, r *http.Request) {
-	data := h.pageData(r, "issuer", nil)
+	data := h.pageData(r, "issuer-cred-preview", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{{Label: "Issuer"}, {Label: "Credential Preview", Active: true}}
 	if sd := h.issuerSchemaData(r); sd != nil { data.Data = sd }
 	if err := h.render.Render(w, "issuer/cred_preview", data); err != nil { http.Error(w, "template error", 500) }
 }
 
 func (h *Handler) IssuerCampaign(w http.ResponseWriter, r *http.Request) {
-	data := h.pageData(r, "issuer", nil)
+	data := h.pageData(r, "issuer-campaign", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{{Label: "Issuer"}, {Label: "Campaign Builder", Active: true}}
 	if sd := h.issuerSchemaData(r); sd != nil { data.Data = sd }
 	if err := h.render.Render(w, "issuer/campaign", data); err != nil { http.Error(w, "template error", 500) }
 }
 
 func (h *Handler) IssuerBatch(w http.ResponseWriter, r *http.Request) {
-	data := h.pageData(r, "issuer", nil)
+	data := h.pageData(r, "issuer-batch", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{{Label: "Issuer"}, {Label: "Batch Upload", Active: true}}
 	if sd := h.issuerSchemaData(r); sd != nil { data.Data = sd }
 	if err := h.render.Render(w, "issuer/batch", data); err != nil { http.Error(w, "template error", 500) }
 }
 
 func (h *Handler) IssuerReview(w http.ResponseWriter, r *http.Request) {
-	data := h.pageData(r, "issuer", nil)
+	data := h.pageData(r, "issuer-review", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{{Label: "Issuer"}, {Label: "Review & Sign", Active: true}}
 	if sd := h.issuerSchemaData(r); sd != nil { data.Data = sd }
 	if err := h.render.Render(w, "issuer/issue_review", data); err != nil { http.Error(w, "template error", 500) }
 }
 
 func (h *Handler) IssuerDispatch(w http.ResponseWriter, r *http.Request) {
-	data := h.pageData(r, "issuer", nil)
+	data := h.pageData(r, "issuer-dispatch", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{{Label: "Issuer"}, {Label: "Dispatch Monitor", Active: true}}
 	if sd := h.issuerSchemaData(r); sd != nil { data.Data = sd }
 	if err := h.render.Render(w, "issuer/dispatch", data); err != nil { http.Error(w, "template error", 500) }
 }
 
 func (h *Handler) IssuerSingleIssue(w http.ResponseWriter, r *http.Request) {
-	data := h.pageData(r, "issuer", nil)
+	data := h.pageData(r, "issuer-single-issue", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{{Label: "Issuer"}, {Label: "Single Issuance", Active: true}}
 	if sd := h.issuerSchemaData(r); sd != nil { data.Data = sd }
 	if err := h.render.Render(w, "issuer/single_issue", data); err != nil { http.Error(w, "template error", 500) }
@@ -149,7 +149,7 @@ func (h *Handler) IssuerSingleIssue(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) IssuerCredentials(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
-	data := h.pageData(r, "issuer", nil)
+	data := h.pageData(r, "issuer-issued", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Issuer"},
 		{Label: "Issued Credentials", Active: true},
@@ -168,7 +168,7 @@ func (h *Handler) IssuerCredentials(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) IssuerCredDetail(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
-	data := h.pageData(r, "issuer", nil)
+	data := h.pageData(r, "issuer-cred-detail", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Issuer"},
 		{Label: "Credential Detail", Active: true},
@@ -177,9 +177,10 @@ func (h *Handler) IssuerCredDetail(w http.ResponseWriter, r *http.Request) {
 	credID := r.URL.Query().Get("id")
 
 	if credID != "" && user != nil && user.HasBackendAuth() {
-		wallets, err := h.stores.Wallet.GetWallets(r.Context(), user.WalletToken)
+		wallet := h.walletFor(user)
+		wallets, err := wallet.GetWallets(r.Context(), user.WalletToken)
 		if err == nil && len(wallets) > 0 {
-			creds, err := h.stores.Wallet.ListCredentials(r.Context(), user.WalletToken, wallets[0].ID)
+			creds, err := wallet.ListCredentials(r.Context(), user.WalletToken, wallets[0].ID)
 			if err == nil {
 				for _, c := range creds {
 					if c.ID == credID {
@@ -202,7 +203,7 @@ func (h *Handler) IssuerCredDetail(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) IssuerRevocation(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
-	data := h.pageData(r, "issuer", nil)
+	data := h.pageData(r, "issuer-revocation", nil)
 	data.Breadcrumb = []model.BreadcrumbItem{
 		{Label: "Issuer"},
 		{Label: "Revocation", Active: true},
@@ -211,9 +212,10 @@ func (h *Handler) IssuerRevocation(w http.ResponseWriter, r *http.Request) {
 	credID := r.URL.Query().Get("id")
 
 	if credID != "" && user != nil && user.HasBackendAuth() {
-		wallets, err := h.stores.Wallet.GetWallets(r.Context(), user.WalletToken)
+		wallet := h.walletFor(user)
+		wallets, err := wallet.GetWallets(r.Context(), user.WalletToken)
 		if err == nil && len(wallets) > 0 {
-			creds, err := h.stores.Wallet.ListCredentials(r.Context(), user.WalletToken, wallets[0].ID)
+			creds, err := wallet.ListCredentials(r.Context(), user.WalletToken, wallets[0].ID)
 			if err == nil {
 				for _, c := range creds {
 					if c.ID == credID {

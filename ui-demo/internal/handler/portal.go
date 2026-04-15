@@ -29,14 +29,15 @@ func (h *Handler) PortalDashboard(w http.ResponseWriter, r *http.Request) {
 
 		// Fetch wallet credentials and DIDs (needs wallet token)
 		if user.HasBackendAuth() {
-			wallets, err := h.stores.Wallet.GetWallets(r.Context(), user.WalletToken)
+			wallet := h.walletFor(user)
+			wallets, err := wallet.GetWallets(r.Context(), user.WalletToken)
 			if err == nil && len(wallets) > 0 {
-				creds, err := h.stores.Wallet.ListCredentials(r.Context(), user.WalletToken, wallets[0].ID)
+				creds, err := wallet.ListCredentials(r.Context(), user.WalletToken, wallets[0].ID)
 				if err == nil {
 					dm["credentials"] = creds
 					dm["credCount"] = len(creds)
 				}
-				dids, err := h.stores.Wallet.ListDIDs(r.Context(), user.WalletToken, wallets[0].ID)
+				dids, err := wallet.ListDIDs(r.Context(), user.WalletToken, wallets[0].ID)
 				if err == nil {
 					dm["dids"] = dids
 				}

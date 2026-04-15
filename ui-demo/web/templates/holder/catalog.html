@@ -8,9 +8,10 @@
   {{$isReal := and .User (not .User.Demo)}}
 
   {{if and $isReal (hasItems $schemas)}}
-  <!-- LIVE: credential types from issuer API metadata -->
+  <!-- LIVE: credential types pulled from every registered issuer DPG's
+       credential_configurations_supported metadata. -->
   <div style="padding:0.75rem 1rem;background:var(--bg-surface-alt);border-radius:var(--radius-md);margin-bottom:1.25rem;font-size:0.82rem;color:var(--text-secondary)">
-    Showing <strong>{{len $schemas}}</strong> credential type(s) supported by the connected issuer. To obtain a credential, click <strong>Retrieve</strong> to start the OID4VCI flow.
+    Showing <strong>{{len $schemas}}</strong> credential type(s) published by the connected issuer backends. Click <strong>Retrieve</strong> to start the OID4VCI flow.
   </div>
 
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1rem">
@@ -19,10 +20,12 @@
       <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.6rem">
         <span style="font-size:1.2rem">&#128220;</span>
         <div style="flex:1"><div style="font-weight:600;font-size:0.9rem">{{.Name}}</div></div>
-        <span class="tag" style="font-size:0.65rem">{{.Standard}}</span>
+        <span class="tag" style="font-size:0.65rem">{{.Format}}</span>
       </div>
       <div style="font-size:0.78rem;display:flex;flex-direction:column;gap:0.3rem;margin-bottom:0.75rem">
-        <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Configuration</span><span style="font-weight:500;font-size:0.72rem">{{.ID}}</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Config ID</span><span style="font-weight:500;font-size:0.72rem">{{.ID}}</span></div>
+        {{if .Category}}<div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Category</span><span style="font-weight:500">{{.Category}}</span></div>{{end}}
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Issuer</span><span style="font-weight:500;font-size:0.72rem">{{.Issuer}}</span></div>
       </div>
       <button class="btn btn-primary btn-sm" style="width:100%" hx-get="/portal/holder/retrieval" hx-target="#main-content" hx-push-url="true">Retrieve</button>
     </div>

@@ -135,6 +135,35 @@ services:
       - enable_certify_artifactory=false
       - download_hsm_client=false
       - mosip_certify_domain_url=http://certify-nginx:80
+      # Route token validation through our local esignet instead of
+      # inji-certify's default "I'm my own auth server" mode. The Farmer
+      # credential flow originally used inji-certify's Pre-Authorized
+      # Code endpoint where certify itself issues the access token. For
+      # Inji Web + Mimoto we need the Authorization Code flow, where
+      # esignet issues the access token and inji-certify only validates
+      # it as a resource server. These four overrides retarget:
+      #   - jwk-set-uri → fetches signing keys from esignet (via the
+      #     oidc-ui nginx proxy on 172.24.0.1:3005, which forwards
+      #     /.well-known/jwks.json to esignet's JWKS endpoint).
+      #   - oauth.issuer / authn.issuer-uri → the expected `iss` claim
+      #     on the access token. Matches esignet's MOSIP_ESIGNET_DOMAIN_URL.
+      #   - access-token.audience stays the default (which is
+      #     `${certify.identifier}/v1/certify/issuance/credential` =
+      #     http://certify-nginx/v1/certify/issuance/credential) because
+      #     we set MOSIP_ESIGNET_CREDENTIAL_SCOPE_RESOURCE_MAPPING on
+      #     esignet to the same string, so the `aud` on the token matches.
+      # The JWT iss claim that esignet sets is derived from
+      # `mosip.esignet.discovery.issuer-id=${domain.url}${server.servlet.path}`
+      # which resolves to `http://172.24.0.1:3005/v1/esignet`. So the
+      # expected iss on the certify side MUST include the /v1/esignet
+      # path — the bare domain URL produces "The iss claim is not valid".
+      # The jwk-set-uri is proxied through our oidc-ui nginx which
+      # rewrites /.well-known/jwks.json to esignet's internal path, so
+      # that URL stays at the bare domain root.
+      - mosip_certify_authorization_url=http://172.24.0.1:3005
+      - mosip_certify_authn_issuer_uri=http://172.24.0.1:3005/v1/esignet
+      - mosip_certify_authn_jwk_set_uri=http://172.24.0.1:3005/.well-known/jwks.json
+      - mosip_certify_oauth_issuer=http://172.24.0.1:3005/v1/esignet
     volumes:
       - ./inji/certify/certify-default.properties:/home/mosip/config/certify-default.properties
       - ./inji/certify/certify-csvdp-farmer.properties:/home/mosip/config/certify-csvdp-farmer.properties
@@ -295,6 +324,323 @@ services:
       start_period: 5s
       retries: 3
 
+  # ==========================================================================
+  # Inji Web stack — MOSIP's browser-hosted wallet, opt-in via `--profile injiweb`.
+  #
+  # injiweb-ui (injistack/inji-web:0.16.0) serves the React UI on :3004 and
+  # proxies /v1/mimoto/* to injiweb-mimoto (the Spring Boot BFF). Mimoto
+  # signs private_key_jwt assertions with oidckeystore.p12 (alias
+  # wallet-demo-client, password in $INJIWEB_P12_PASSWORD, default
+  # xy4gh6swa2i) and posts them to injiweb-esignet, which validates against
+  # the JWK we seed via seed-esignet-client.sh. Mock identity verification
+  # runs locally in injiweb-mock-identity.
+  #
+  # Services in this block live on the same waltid_default network as
+  # inji-certify and certify-nginx, so Mimoto reaches them by container
+  # DNS (no host-gateway juggling). That's the whole point of
+  # consolidating this stack into one compose file.
+  #
+  # Bring-up:
+  #   cd docker/injiweb && ./fetch-config.sh   # pulls upstream configs
+  #   docker compose -f docker/waltid/docker-compose.yml --profile injiweb up -d
+  #   docker/injiweb/seed-esignet-client.sh
+  # ==========================================================================
+
+  injiweb-postgres:
+    image: postgres:15
+    container_name: injiweb-postgres
+    profiles:
+      - injiweb
+    healthcheck:
+      test: ["CMD", "pg_isready", "-q", "-U", "postgres"]
+      interval: 5s
+      timeout: 2s
+      retries: 10
+    environment:
+      # The init scripts (mimoto_init.sql, esignet_init.sql) are written
+      # against the bootstrap superuser `postgres` — they CREATE DATABASE
+      # with OWNER = postgres and \c <db> postgres. So we keep the user
+      # as `postgres` here and let the scripts create mimoto/esignetuser/
+      # mosip_mockidentity roles internally.
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - injiweb-db:/var/lib/postgresql/data
+      - ../injiweb/config/mimoto_init.sql:/docker-entrypoint-initdb.d/01-mimoto_init.sql:ro
+      - ../injiweb/config/esignet_init.sql:/docker-entrypoint-initdb.d/02-esignet_init.sql:ro
+
+  injiweb-redis:
+    image: redis:7-alpine
+    container_name: injiweb-redis
+    profiles:
+      - injiweb
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 2s
+      retries: 5
+
+  injiweb-mock-identity:
+    image: mosipid/mock-identity-system:0.10.1
+    container_name: injiweb-mock-identity
+    profiles:
+      - injiweb
+    user: root
+    depends_on:
+      injiweb-postgres:
+        condition: service_healthy
+    ports:
+      - "8083:8082"     # 8082 is already taken by inji-verify-service
+    environment:
+      container_user: mosip
+      active_profile_env: default,local
+      download_hsm_client: "false"
+      enable_esignet_artifactory: "false"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://injiweb-postgres:5432/mosip_mockidentitysystem
+      # Connect as the Postgres superuser the init scripts created tables
+      # under. The upstream esignet_init.sql doesn't seed per-app roles,
+      # so using the superuser is the simplest way to make the service
+      # start without patching the init SQL.
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+
+  injiweb-esignet:
+    image: mosipid/esignet-with-plugins:1.5.1
+    container_name: injiweb-esignet
+    profiles:
+      - injiweb
+    # Run as root so the image's entrypoint can drop HSM install steps
+    # via download_hsm_client=false without trying to sudo.
+    user: root
+    depends_on:
+      injiweb-postgres:
+        condition: service_healthy
+      injiweb-redis:
+        condition: service_healthy
+      injiweb-mock-identity:
+        condition: service_started
+    ports:
+      - "8088:8088"
+    environment:
+      container_user: mosip
+      active_profile_env: default,local
+      plugin_name_env: esignet-mock-plugin.jar
+      # Suppress the HSM client install step from the image entrypoint —
+      # without it the container tries `sudo apt install softhsm` and exits.
+      download_hsm_client: "false"
+      enable_esignet_artifactory: "false"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://injiweb-postgres:5432/mosip_esignet?currentSchema=esignet
+      # Upstream esignet_init.sql creates all tables under the `postgres`
+      # superuser and never provisions a dedicated esignetuser role —
+      # match that reality instead of guessing a password.
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_CACHE_TYPE: redis
+      SPRING_REDIS_HOST: injiweb-redis
+      SPRING_REDIS_PORT: "6379"
+      SPRING_REDIS_PASSWORD: ""
+      MOSIP_ESIGNET_MOCK_DOMAIN_URL: http://injiweb-mock-identity:8082
+      MOSIP_ESIGNET_INTEGRATION_KEY_BINDER: MockKeyBindingWrapperService
+      # Rewrite every URL esignet advertises to point at the oidc-ui
+      # nginx via an IP that resolves consistently from BOTH the
+      # browser AND from inside the Mimoto container.
+      #
+      # Why not localhost:3005? Mimoto ignores `proxy_token_endpoint`
+      # in mimoto-issuers-config.json — it reads the token endpoint
+      # directly from esignet's oauth-authorization-server well-known
+      # (see IdpServiceImpl.getTokenEndpoint). So whatever esignet
+      # advertises is what Mimoto POSTs to. If the URL is
+      # `localhost:3005`, Mimoto tries to connect to itself and fails.
+      #
+      # 172.24.0.1 is the waltid_default network's gateway — it's the
+      # docker host's bridge IP. Port 3005 is published on 0.0.0.0
+      # (all interfaces) so both paths reach the oidc-ui container:
+      #   - Browser on host: http://172.24.0.1:3005 → docker port
+      #     forward → injiweb-oidc-ui:3000
+      #   - Mimoto inside waltid_default: http://172.24.0.1:3005 →
+      #     bridge gateway (host) → docker port forward → same target
+      # Same URL, works in both contexts, no /etc/hosts edits needed.
+      MOSIP_ESIGNET_DOMAIN_URL: http://172.24.0.1:3005
+      # Persist esignet's kernel keymanager PKCS12 keystore into a named
+      # volume instead of the container's writable layer. Without this
+      # override, esignet uses the local profile default of
+      # `esignet_local.p12` relative to /home/mosip, which lives in the
+      # container's ephemeral writable layer. On container recreation
+      # (e.g. when adding an env var like MOSIP_ESIGNET_DOMAIN_URL) the
+      # keystore is wiped, esignet tries to re-generate the master key,
+      # can't read it back, and crashes with
+      # `NoSuchSecurityProviderException: KER-KMA-004 --> No such alias`.
+      MOSIP_KERNEL_KEYMANAGER_HSM_CONFIG_PATH: /home/mosip/keystore/esignet_local.p12
+      # Credential scope config — esignet's shipped default is
+      # `mosip_identity_vc_ldp` but inji-certify's Farmer credential
+      # config declares scope `mock_identity_vc_ldp`. Override the
+      # scope allowlist and map it at the access-token audience check
+      # layer onto inji-certify's credential endpoint. Without this
+      # override, the OIDC authorize request carries an unrecognized
+      # scope and esignet returns
+      # "The requested scope is not supported."
+      # esignet's `credentialScopes` field is injected via
+      # `@Value("#{${mosip.esignet.supported.credential.scopes}}")` —
+      # a double-layer SpEL expression. The env var must be a SpEL Set
+      # literal (curly braces + single-quoted strings) so that after
+      # property substitution the expression becomes `#{{'...'}}`
+      # which SpEL evaluates to a Java Set. A plain string
+      # `mock_identity_vc_ldp` is parsed as a SpEL property reference
+      # and fails with EL1008E.
+      MOSIP_ESIGNET_SUPPORTED_CREDENTIAL_SCOPES: "{'mock_identity_vc_ldp'}"
+      # Audience must exactly match inji-certify's
+      # mosip.certify.oauth.access-token.audience, which resolves to
+      # `${mosip.certify.identifier}/v1/certify/issuance/credential`.
+      # Since mosip_certify_domain_url=http://certify-nginx:80, the
+      # expected aud is http://certify-nginx:80/v1/certify/issuance/credential
+      # — explicit :80 port. Dropping it here causes certify's
+      # JwtAudienceValidator to reject with "The aud claim is not valid".
+      MOSIP_ESIGNET_CREDENTIAL_SCOPE_RESOURCE_MAPPING: "{'mock_identity_vc_ldp':'http://certify-nginx:80/v1/certify/issuance/credential'}"
+    volumes:
+      - injiweb-esignet-keystore:/home/mosip/keystore
+
+  # esignet's browser-facing React UI. Serves /authorize, /consent, and
+  # other login screens, plus a same-origin nginx proxy for /v1/esignet
+  # and the three well-known endpoints. Holders land here after the
+  # issuer redirects them for OIDC authorization.
+  injiweb-oidc-ui:
+    image: mosipid/oidc-ui:1.5.1
+    container_name: injiweb-oidc-ui
+    profiles:
+      - injiweb
+    user: root
+    depends_on:
+      injiweb-esignet:
+        condition: service_started
+    ports:
+      # Host :3005 → container :3000. Avoids conflict with inji-verify-ui
+      # (:3001) and injiweb-ui (:3004). Must match MOSIP_ESIGNET_DOMAIN_URL.
+      - "3005:3000"
+    environment:
+      container_user: mosip
+      DEFAULT_WELLKNOWN: '%5B%7B%22name%22%3A%22OpenID%20Configuration%22%2C%22value%22%3A%22%2F.well-known%2Fopenid-configuration%22%7D%2C%7B%22name%22%3A%22Jwks%20Json%22%2C%22value%22%3A%22%2F.well-known%2Fjwks.json%22%7D%2C%7B%22name%22%3A%22Authorization%20Server%22%2C%22value%22%3A%22%2F.well-known%2Foauth-authorization-server%22%7D%5D'
+      SIGN_IN_WITH_ESIGNET_PLUGIN_URL: https://raw.githubusercontent.com/mosip/artifactory-ref-impl/master/artifacts/src/mosip-plugins/sign-in-with-esignet/sign-in-with-esignet.zip
+    volumes:
+      - ../injiweb/config/oidc-ui-nginx.conf:/etc/nginx/nginx.conf:ro
+
+  injiweb-minio:
+    image: minio/minio:latest
+    container_name: injiweb-minio
+    profiles:
+      - injiweb
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - injiweb-minio:/data
+
+  injiweb-datashare:
+    image: mosipid/data-share-service:1.3.0-beta.2
+    container_name: injiweb-datashare
+    profiles:
+      - injiweb
+    user: root
+    depends_on:
+      - injiweb-minio
+    ports:
+      - "8097:8097"
+    environment:
+      container_user: mosip
+      active_profile_env: inji-default,standalone
+      SPRING_CONFIG_NAME: data-share
+      SPRING_CONFIG_LOCATION: /home/mosip/
+      DATASHARE_DOMAIN: injiweb-datashare:8097
+      download_hsm_client: "false"
+    volumes:
+      - ../injiweb/config/data-share-inji-default.properties:/home/mosip/data-share-inji-default.properties:ro
+      - ../injiweb/config/data-share-standalone.properties:/home/mosip/data-share-standalone.properties:ro
+
+  injiweb-mimoto:
+    image: injistack/mimoto:0.21.0
+    container_name: injiweb-mimoto
+    profiles:
+      - injiweb
+    user: root
+    # The injistack/inji-web image's nginx hardcodes `mimoto-service` as the
+    # upstream hostname. Expose that alias so the UI container resolves it
+    # without us having to match container_name to the image's assumption.
+    networks:
+      default:
+        aliases:
+          - mimoto-service
+    depends_on:
+      injiweb-postgres:
+        condition: service_healthy
+      injiweb-datashare:
+        condition: service_started
+      injiweb-esignet:
+        condition: service_started
+    ports:
+      - "8099:8099"
+    environment:
+      container_user: mosip
+      active_profile_env: default
+      download_hsm_client: "false"
+      enable_esignet_artifactory: "false"
+      SPRING_CONFIG_NAME: mimoto
+      SPRING_CONFIG_LOCATION: /home/mosip/
+      SPRING_CLOUD_BOOTSTRAP_LOCATION: /home/mosip/mimoto-bootstrap.properties
+      SPRING_DATASOURCE_URL: jdbc:postgresql://injiweb-postgres:5432/inji_mimoto
+      # Upstream config expects POSTGRES_USER / POSTGRES_PASSWORD env vars
+      # which the Spring config files then reference via placeholders.
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      oidc_p12_password: ${INJIWEB_P12_PASSWORD:-xy4gh6swa2i}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-dummy-client-id}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-dummy-client-secret}
+    volumes:
+      - ../injiweb/config/mimoto-default.properties:/home/mosip/mimoto-default.properties:ro
+      - ../injiweb/config/mimoto-bootstrap.properties:/home/mosip/mimoto-bootstrap.properties:ro
+      # Mimoto's kernel keymanager WRITES master key aliases into the
+      # mounted p12 on first boot. Mount the runtime copy (refreshed from
+      # the pristine original by fetch-config.sh) as writable so Mimoto
+      # can persist those keys without mutating the user's real file.
+      - ../injiweb/config/certs-runtime/oidckeystore.p12:/home/mosip/certs/oidckeystore.p12
+
+  injiweb-ui:
+    image: injistack/inji-web:0.16.0
+    container_name: injiweb-ui
+    profiles:
+      - injiweb
+    # Mimoto's IssuersServiceImpl fetches the issuer catalog from
+    # `http://inji-web:3004/mimoto-issuers-config.json` at runtime —
+    # upstream names the UI container `inji-web`, not `injiweb-ui`.
+    # Expose the alias so Mimoto's hard-coded URL resolves here.
+    networks:
+      default:
+        aliases:
+          - inji-web
+    depends_on:
+      - injiweb-mimoto
+    ports:
+      # Upstream maps 3004:3004 (the image's nginx listens on 3004, not 80).
+      - "3004:3004"
+    environment:
+      DEFAULT_LANG: en
+      MIMOTO_URL: http://localhost:3004/v1/mimoto
+      IGNORED_ISSUER_IDS: MockMdl
+    volumes:
+      # The UI container reads the issuer list directly from these JSON
+      # files — NOT Mimoto. Our edited version points client_id /
+      # client_alias at wallet-demo-client and the token endpoints at
+      # our local injiweb-esignet.
+      - ../injiweb/config/mimoto-issuers-config.json:/home/mosip/mimoto-issuers-config.json:ro
+      - ../injiweb/config/mimoto-trusted-verifiers.json:/home/mosip/mimoto-trusted-verifiers.json:ro
+      - ../injiweb/config/credential-template.html:/home/mosip/credential-template.html:ro
+      # Override the baked-in nginx config with one that uses Docker's
+      # embedded DNS resolver (127.0.0.11) and a per-request proxy_pass
+      # variable so nginx re-resolves mimoto-service on every request.
+      # Without this, restarting Mimoto gives it a new waltid_default IP
+      # and the UI starts returning 502 until nginx is also restarted.
+      - ../injiweb/config/injiweb-ui-nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
 volumes:
   wallet-db:
   lt-data:
@@ -303,3 +649,21 @@ volumes:
   inji-verify-db:
   citizens-data:
   vc-adapter-cache:
+  injiweb-db:
+  injiweb-minio:
+  injiweb-esignet-keystore:
+
+# Pin the default network to a fixed subnet + gateway so that every service
+# URL hardcoded against 172.24.0.1 (esignet MOSIP_ESIGNET_DOMAIN_URL, Mimoto
+# authorization_audience, inji-certify authorization.url) keeps working
+# across docker compose down/up cycles. Without this pin, Docker picks an
+# arbitrary subnet on network creation and the gateway IP can shift,
+# breaking the OIDC token flow until every property is hand-edited.
+networks:
+  default:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.24.0.0/16
+          gateway: 172.24.0.1

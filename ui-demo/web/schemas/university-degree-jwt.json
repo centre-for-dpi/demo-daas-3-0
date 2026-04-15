@@ -1,0 +1,17 @@
+{
+  "id": "university-degree-jwt",
+  "name": "University Degree (JWT_VC_JSON)",
+  "description": "W3C Verifiable Credential for university degrees as a signed JWT. Fastest to issue, verified via walt.id OID4VP sessions.",
+  "category": "education",
+  "credentialType": "UniversityDegree",
+  "format": "jwt_vc_json",
+  "standard": "W3C-VCDM 1.1",
+  "compatibleDPGs": ["waltid"],
+  "fields": [
+    {"name": "name", "type": "string", "required": true},
+    {"name": "degree", "type": "string", "required": true},
+    {"name": "major", "type": "string", "required": true},
+    {"name": "graduationDate", "type": "date", "required": true},
+    {"name": "gpa", "type": "number", "required": false}
+  ]
+}

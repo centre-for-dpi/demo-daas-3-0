@@ -78,6 +78,39 @@
     "exploration_mode": true,
     "chatbot": true
   },
+  "backend": {
+    "type": "waltid",
+    "issuer_url": "$WALTID_ISSUER_URL",
+    "verifier_url": "$WALTID_VERIFIER_URL",
+    "wallet_url": "$WALTID_WALLET_URL",
+    "transport": "direct"
+  },
+  "sso": {
+    "enabled": true,
+    "base_url": "$APP_BASE_URL",
+    "skip_tls_verify": true,
+    "providers": [
+      {
+        "name": "Keycloak",
+        "discovery_url": "$KEYCLOAK_URL/realms/$KEYCLOAK_REALM/.well-known/openid-configuration",
+        "client_id": "$KEYCLOAK_CLIENT_ID",
+        "client_secret": "",
+        "scopes": "openid profile email"
+      },
+      {
+        "name": "WSO2",
+        "discovery_url": "$WSO2_URL/oauth2/token/.well-known/openid-configuration",
+        "client_id": "auto:$WSO2_CLIENT_ID_FILE",
+        "client_secret": "",
+        "scopes": "openid profile email"
+      }
+    ]
+  },
+  "translation": {
+    "deepl_api_key": "$DEEPL_API_KEY",
+    "libretranslate_url": "$LIBRETRANSLATE_URL",
+    "languages": ["EN", "ES", "FR"]
+  },
   "mode": "exploration",
   "locale": "en"
 }

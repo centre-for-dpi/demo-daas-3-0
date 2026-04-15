@@ -104,5 +104,11 @@ services:
     volumes:
       - ./docker/waltid/wallet-api/config:/waltid-wallet-api/config
 
+  # Inji Web stack (injistack/inji-web + injistack/mimoto + esignet +
+  # mock-identity-system + sidecars) lives in docker/waltid/docker-compose.yml
+  # alongside inji-certify / certify-nginx / walt.id / inji-verify, so
+  # everything shares the waltid_default network and Mimoto reaches
+  # certify-nginx by container DNS. See docker/injiweb/README.md.
+
 volumes:
   wallet-db:

@@ -21,7 +21,10 @@ import (
 	adapterstore "vcplatform/internal/store/adapter"
 	"vcplatform/internal/store/credebl"
 	"vcplatform/internal/store/inji"
+	"vcplatform/internal/store/injiweb"
+	"vcplatform/internal/store/localholder"
 	"vcplatform/internal/store/mock"
+	"vcplatform/internal/store/pdfwallet"
 	"vcplatform/internal/store/waltid"
 	"vcplatform/internal/transport"
 	"vcplatform/web"
@@ -96,6 +99,30 @@ func main() {
 	_ = inji.SetProxyRewrite // retained for future cases; not activated here.
 
 	h := handler.New(renderer, stores, cfg, ssoRegistry, dataSources)
+
+	// Build per-DPG registries for issuer, wallet, and verifier so the
+	// handler can resolve the right store at request time based on the
+	// logged-in user's onboarding choice. Every DPG the deployment supports
+	// gets an instance. There is no server-wide "mode" — users pick their
+	// own backend for each role they have.
+	h.SetIssuerRegistry(map[string]store.IssuerStore{
+		"waltid":  pickIssuerStore("waltid", cfg),
+		"inji":    pickIssuerStore("inji", cfg),
+		"credebl": pickIssuerStore("credebl", cfg),
+	})
+	h.SetWalletRegistry(map[string]store.WalletStore{
+		"waltid":   pickWalletStore("waltid", cfg),
+		"local":    pickWalletStore("local", cfg),
+		"credebl":  pickWalletStore("credebl", cfg),
+		"pdf":      pickWalletStore("pdf", cfg),
+		"inji_web": pickWalletStore("inji_web", cfg),
+	})
+	h.SetVerifierRegistry(map[string]store.VerifierStore{
+		"waltid":  pickVerifierStore("waltid", cfg),
+		"inji":    pickVerifierStore("inji", cfg),
+		"adapter": pickVerifierStore("adapter", cfg),
+		"credebl": pickVerifierStore("credebl", cfg),
+	})
 
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
@@ -193,10 +220,23 @@ func pickWalletStore(dpg string, cfg *config.Config) store.WalletStore {
 	case "waltid":
 		client := newTransportClient(cfg.Backend.WalletURL, "", cfg)
 		return waltid.NewWalletStore(client)
-	case "inji":
-		url := envOr("INJI_WEB_URL", "http://localhost:3001")
-		client := newTransportClient(url, "", cfg)
-		return inji.NewWalletStore(client)
+	case "local", "inji":
+		// "local" is the canonical name; "inji" kept as a deprecated alias
+		// for Trinidad-era demo scripts. Both select our in-process OID4VCI
+		// holder in internal/store/localholder — it has nothing to do with
+		// MOSIP Inji Web or Inji Mobile.
+		client := newTransportClient("", "", cfg)
+		return localholder.NewHolderStore(client)
+	case "pdf":
+		// Print PDF wallet: real WalletStore that runs the OID4VCI flow,
+		// then generates an offline-verifiable printable PDF with a
+		// PixelPass-encoded self-verifying QR per claimed credential.
+		return pdfwallet.New()
+	case "inji_web", "injiweb":
+		// MOSIP Inji Web — a browser-hosted wallet. ClaimCredential returns
+		// a redirect URL the holder opens in a new tab to complete the
+		// OID4VCI flow inside Inji Web. Credentials live there, not here.
+		return injiweb.New(envOr("INJI_WEB_URL", ""))
 	case "credebl":
 		return credebl.NewWalletStore()
 	default:
@@ -231,8 +271,8 @@ func pickAuthStore(walletDPG string, cfg *config.Config) store.AuthStore {
 	case "waltid":
 		client := newTransportClient(cfg.Backend.WalletURL, "", cfg)
 		return waltid.NewAuthStore(client)
-	case "inji":
-		return inji.NewAuthStore()
+	case "local", "inji":
+		return localholder.NewAuthStore()
 	case "credebl":
 		return credebl.NewAuthStore()
 	default:
@@ -294,6 +334,19 @@ func registerDataSources(reg *datasource.Registry) {
 		DSN:         dsn,
 		Table:       "citizens",
 		PrimaryKey:  "national_id",
+		// Columns searched by /api/datasources/search. Free-text ILIKE across
+		// all of these, so a user can type "Jelagat" or "KE-NID-8101" or a
+		// student ID and get matching rows.
+		SearchFields: []string{
+			"national_id",
+			"first_name",
+			"last_name",
+			"email",
+			"phone",
+			"student_id",
+			"farm_id",
+			"birth_registration_number",
+		},
 		Fields: []datasource.FieldDescriptor{
 			{Name: "national_id", Type: "string", Required: true, Description: "Unique national identifier"},
 			{Name: "country_code", Type: "string"},

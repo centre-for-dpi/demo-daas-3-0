@@ -30,14 +30,20 @@
       <div style="font-size:0.72rem;color:var(--text-tertiary);margin-top:0.35rem" id="source-summary"></div>
     </div>
 
-    <div class="form-row" id="lookup-row" style="display:none">
-      <div class="form-group" style="flex:1">
-        <label class="form-label">Citizen Lookup Key</label>
-        <input class="form-input" id="lookup-id" placeholder="e.g. KE-NID-81016525">
+    <div class="form-group" id="lookup-row" style="display:none;position:relative">
+      <label class="form-label">Find a record</label>
+      <div style="display:flex;gap:0.5rem">
+        <input class="form-input" id="lookup-query" placeholder="Type a name, ID, email, phone… (e.g. Jelagat, KE-NID-8101, 868)"
+               autocomplete="off"
+               oninput="onLookupQueryInput()"
+               onfocus="onLookupQueryFocus()"
+               style="flex:1">
+        <button class="btn btn-sm" type="button" onclick="showSampleRecords()" id="browse-btn">Browse</button>
       </div>
-      <div class="form-group" style="display:flex;align-items:flex-end">
-        <button class="btn btn-sm" type="button" onclick="lookupRecord()" id="lookup-btn">Lookup &amp; Fill</button>
+      <div id="lookup-results" role="listbox"
+           style="display:none;position:absolute;left:0;right:0;top:100%;margin-top:0.25rem;max-height:340px;overflow-y:auto;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-lg);z-index:50">
       </div>
+      <div style="font-size:0.72rem;color:var(--text-tertiary);margin-top:0.35rem">Matches across national_id, name, email, phone, student_id, farm_id, and more.</div>
     </div>
     <div id="lookup-status" style="display:none;font-size:0.78rem;padding:0.5rem 0.75rem;border-radius:var(--radius-sm);margin-bottom:0.75rem"></div>
     {{end}}
@@ -87,12 +93,17 @@
       </div>
     </div>
 
-    <!-- Link panel -->
+    <!-- Link panel —
+         Use a readonly single-line input so the clipboard API always sees
+         a clean URL and browsers can't inject stray whitespace (a <code>
+         block can pick up newlines when the user selects it manually). -->
     <div id="delivery-link">
       <label class="form-label">OID4VCI Offer URL</label>
-      <code id="offer-url-display" style="font-size:0.7rem;display:block;background:var(--bg-surface-alt);padding:0.75rem;border-radius:var(--radius-md);word-break:break-all;max-height:120px;overflow-y:auto"></code>
+      <input id="offer-url-display" type="text" readonly
+             onclick="this.select()"
+             style="width:100%;font-size:0.72rem;font-family:var(--font-mono),monospace;background:var(--bg-surface-alt);padding:0.75rem;border:1px solid var(--border);border-radius:var(--radius-md)">
       <div style="display:flex;align-items:center;gap:0.75rem;margin-top:0.75rem">
-        <button class="btn btn-sm btn-primary" onclick="navigator.clipboard.writeText(document.getElementById('offer-url-display').textContent);showToast('Copied','OID4VCI offer URL copied to clipboard')">Copy Link</button>
+        <button class="btn btn-sm btn-primary" onclick="copyOfferURL()">Copy Link</button>
         <span style="font-size:0.72rem;color:var(--text-tertiary)">The holder pastes this into their wallet to accept the credential.</span>
       </div>
     </div>
@@ -195,44 +206,130 @@ function setLookupStatus(kind, msg) {
   el.textContent = msg;
 }
 
-function lookupRecord() {
-  var source = document.getElementById('issue-source').value;
-  var id = document.getElementById('lookup-id').value.trim();
-  if (!source || !id) {
-    setLookupStatus('error', 'Choose a data source and enter a lookup key first.');
+// Debounced free-text search against /api/datasources/search. Called on
+// every keystroke in the lookup input; renders matching rows as clickable
+// dropdown items that trigger selectRecord() when picked.
+var _lookupTimer = null;
+function onLookupQueryInput() {
+  var q = document.getElementById('lookup-query').value.trim();
+  if (_lookupTimer) clearTimeout(_lookupTimer);
+  if (!q) {
+    // Empty query — fall back to sample records.
+    showSampleRecords();
     return;
   }
-  var btn = document.getElementById('lookup-btn');
-  btn.disabled = true;
-  btn.textContent = 'Looking up...';
-  setLookupStatus('info', 'Fetching record...');
-  fetch('/api/datasources/record?source=' + encodeURIComponent(source) + '&id=' + encodeURIComponent(id))
-    .then(function(r) { return r.json().then(function(d) { return {status: r.status, data: d}; }); })
-    .then(function(res) {
-      btn.disabled = false;
-      btn.textContent = 'Lookup & Fill';
-      if (res.status !== 200) {
-        setLookupStatus('error', res.data.error || 'Lookup failed');
-        _lastRecord = null;
-        _lastMappings = null;
-        return;
+  _lookupTimer = setTimeout(function() { runLookupSearch(q); }, 200);
+}
+
+function onLookupQueryFocus() {
+  var q = document.getElementById('lookup-query').value.trim();
+  if (!q) showSampleRecords();
+}
+
+// Hide the dropdown when the user clicks outside it.
+document.addEventListener('click', function(e) {
+  var row = document.getElementById('lookup-row');
+  if (row && !row.contains(e.target)) {
+    var res = document.getElementById('lookup-results');
+    if (res) res.style.display = 'none';
+  }
+});
+
+function runLookupSearch(q) {
+  var source = document.getElementById('issue-source').value;
+  if (!source) return;
+  setLookupStatus('info', 'Searching ' + source + '…');
+  fetch('/api/datasources/search?source=' + encodeURIComponent(source) + '&q=' + encodeURIComponent(q) + '&limit=25')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.error) { setLookupStatus('error', d.error); return; }
+      renderLookupResults(d.records || []);
+      if ((d.records || []).length === 0) {
+        setLookupStatus('info', 'No matches for "' + q + '".');
+      } else {
+        setLookupStatus('info', d.count + ' match' + (d.count === 1 ? '' : 'es') + ' — click one to auto-fill.');
       }
-      _lastRecord = res.data.record || {};
-      _lastMappings = res.data.suggestedMappings || {};
-      // If no schema chosen yet, tell the user
-      var schemaId = document.getElementById('issue-schema').value;
-      if (!schemaId) {
-        setLookupStatus('info', 'Record loaded — select a schema to auto-fill claims.');
-        return;
-      }
-      var filled = applyRecordToFields(_lastRecord, _lastMappings, schemaId);
-      setLookupStatus('success', filled + ' field(s) auto-filled from ' + res.data.source + '.');
     })
-    .catch(function(e) {
-      btn.disabled = false;
-      btn.textContent = 'Lookup & Fill';
-      setLookupStatus('error', e.message);
-    });
+    .catch(function(e) { setLookupStatus('error', e.message); });
+}
+
+function showSampleRecords() {
+  var source = document.getElementById('issue-source').value;
+  if (!source) return;
+  fetch('/api/datasources/sample?source=' + encodeURIComponent(source) + '&limit=10')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.error) { setLookupStatus('error', d.error); return; }
+      renderLookupResults(d.records || []);
+      setLookupStatus('info', 'Showing sample — start typing to search.');
+    })
+    .catch(function(e) { setLookupStatus('error', e.message); });
+}
+
+function renderLookupResults(records) {
+  var box = document.getElementById('lookup-results');
+  box.innerHTML = '';
+  if (!records || records.length === 0) {
+    box.style.display = 'none';
+    return;
+  }
+  records.forEach(function(rec) {
+    var row = document.createElement('div');
+    row.className = 'lookup-result';
+    row.style.cssText = 'padding:0.6rem 0.85rem;cursor:pointer;border-bottom:1px solid var(--border);font-size:0.82rem';
+    row.onmouseover = function() { row.style.background = 'var(--bg-surface-alt)'; };
+    row.onmouseout = function() { row.style.background = ''; };
+
+    var primaryId = rec.national_id || rec.id || rec.student_id || rec.farm_id || '';
+    var first = rec.first_name || '';
+    var last = rec.last_name || '';
+    var displayName = (first + ' ' + last).trim() || rec.fullName || rec.full_name || '(no name)';
+    var sub = [primaryId, rec.country_code, rec.email, rec.phone].filter(Boolean).join(' · ');
+
+    row.innerHTML =
+      '<div style="font-weight:500;color:var(--text)">' + displayName + '</div>' +
+      '<div style="font-size:0.72rem;color:var(--text-tertiary);margin-top:0.15rem">' + sub + '</div>';
+    row.onclick = function() { selectRecord(rec); };
+    box.appendChild(row);
+  });
+  box.style.display = '';
+}
+
+function selectRecord(rec) {
+  _lastRecord = rec;
+  // Fetch mappings once so we know how to map claims → columns for the
+  // current schema. We piggyback on /api/datasources since it already
+  // carries the `fields` + summary block; mappings come from /record.
+  var source = document.getElementById('issue-source').value;
+  var primaryId = rec.national_id || rec.id || '';
+  if (primaryId) {
+    fetch('/api/datasources/record?source=' + encodeURIComponent(source) + '&id=' + encodeURIComponent(primaryId))
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        _lastMappings = (d && d.suggestedMappings) || {};
+        finishSelect(rec, source);
+      })
+      .catch(function() { finishSelect(rec, source); });
+  } else {
+    finishSelect(rec, source);
+  }
+}
+
+function finishSelect(rec, source) {
+  // Close the dropdown and drop the id into the visible query field.
+  document.getElementById('lookup-results').style.display = 'none';
+  var display = (rec.first_name || '') + ' ' + (rec.last_name || '');
+  display = display.trim();
+  if (rec.national_id) display = display ? (display + ' — ' + rec.national_id) : rec.national_id;
+  document.getElementById('lookup-query').value = display;
+
+  var schemaId = document.getElementById('issue-schema').value;
+  if (!schemaId) {
+    setLookupStatus('info', 'Record loaded — pick a schema to auto-fill claims.');
+    return;
+  }
+  var filled = applyRecordToFields(_lastRecord, _lastMappings, schemaId);
+  setLookupStatus('success', filled + ' field(s) auto-filled from ' + source + '.');
 }
 
 // applyRecordToFields fills any [data-claim] inputs under #schema-fields using
@@ -351,14 +448,47 @@ function renderFieldInput(field) {
 
 var _currentOfferUrl = '';
 
+// sanitizeOfferURL strips any whitespace or control characters that could
+// sneak into the URL on the way to a wallet (copy-paste, clipboard quirks,
+// or servers that append newlines to their response bodies).
+function sanitizeOfferURL(url) {
+  if (!url) return '';
+  // Remove all whitespace and control characters, not just trim the ends —
+  // some wallets have been seen to include a stray \n inside the string.
+  return String(url).replace(/[\s\x00-\x1f]+/g, '');
+}
+
 function showOfferResult(offerUrl, issuerDid) {
-  _currentOfferUrl = offerUrl;
-  document.getElementById('offer-url-display').textContent = offerUrl;
+  var clean = sanitizeOfferURL(offerUrl);
+  _currentOfferUrl = clean;
+  var el = document.getElementById('offer-url-display');
+  // Input element: use .value, not .textContent — textContent on an input
+  // doesn't update the visible field.
+  if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+    el.value = clean;
+  } else {
+    el.textContent = clean;
+  }
   document.getElementById('offer-issuer-did').textContent = issuerDid || '';
   document.getElementById('offer-result').style.display = '';
   document.getElementById('offer-result').scrollIntoView({behavior:'smooth', block:'nearest'});
   selectDelivery('link');
   showToast('Credential Offer Created', 'Share the OID4VCI offer with the holder.');
+}
+
+// copyOfferURL writes the sanitized URL to the clipboard. Using the stored
+// _currentOfferUrl instead of reading from the DOM avoids any whitespace
+// the browser might have added.
+function copyOfferURL() {
+  var clean = sanitizeOfferURL(_currentOfferUrl);
+  navigator.clipboard.writeText(clean).then(function() {
+    showToast('Copied', 'OID4VCI offer URL copied to clipboard');
+  }).catch(function() {
+    // Fallback for browsers without clipboard API.
+    var el = document.getElementById('offer-url-display');
+    if (el && el.select) { el.select(); document.execCommand('copy'); }
+    showToast('Copied', 'OID4VCI offer URL copied');
+  });
 }
 
 function selectDelivery(mode) {
@@ -401,21 +531,33 @@ function claimOffer() {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({offerUrl: _currentOfferUrl})
   })
-  .then(function(r) { return r.json(); })
-  .then(function(d) {
+  .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
+  .then(function(res) {
     btn.disabled = false;
     btn.textContent = 'Accept into My Wallet';
-    if (d.error) {
+    var d = res.data || {};
+    if (!res.ok || d.error) {
+      renderClaimError(status, d);
+      return;
+    }
+    // Redirect wallets (Inji Web): open the redirect URL in a new tab and
+    // tell the user their wallet is handling the rest.
+    if (d.status === 'redirect' && d.redirect) {
       status.style.display = '';
-      status.style.background = 'var(--error-surface)';
-      status.style.color = 'var(--error)';
-      status.textContent = d.error;
+      status.style.background = 'var(--bg-surface-alt)';
+      status.style.color = 'var(--text)';
+      status.innerHTML = '<div style="font-weight:600;margin-bottom:0.25rem">Open ' + escapeHtml(d.wallet || 'your wallet') + ' to accept</div>' +
+        (d.explanation ? '<div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:0.5rem">' + escapeHtml(d.explanation) + '</div>' : '') +
+        '<a class="btn btn-primary btn-sm" href="' + escapeHtml(d.redirect) + '" target="_blank" rel="noopener">Open ' + escapeHtml(d.wallet || 'wallet') + ' →</a>';
+      window.open(d.redirect, '_blank', 'noopener');
+      showToast('Redirecting', 'Opening ' + (d.wallet || 'your wallet') + ' in a new tab.');
       return;
     }
     status.style.display = '';
     status.style.background = 'var(--accent-surface)';
     status.style.color = 'var(--accent)';
-    status.textContent = 'Credential accepted into your wallet.';
+    var note = d.note ? (' ' + d.note) : '';
+    status.textContent = 'Credential accepted into your wallet (' + (d.wallet || d.walletDpg || 'wallet') + ').' + note;
     showToast('Claimed', 'Credential is now in your wallet.');
   })
   .catch(function(e) {
@@ -428,6 +570,47 @@ function claimOffer() {
   });
 }
 
+// renderClaimError paints the claim-status panel with a structured error
+// produced by the server's buildClaimErrorResponse (walt.id↔Inji proof-JWT
+// mismatch, PDF wallet QR-too-large, missing wallet DPG, etc). Falls back
+// to a plain error string when the response isn't structured.
+function renderClaimError(panel, d) {
+  panel.style.display = '';
+  panel.style.background = 'var(--error-surface)';
+  panel.style.color = 'var(--error)';
+  var lines = [];
+  lines.push('<div style="font-weight:600;margin-bottom:0.25rem">' + escapeHtml(d.error || 'Claim failed') + '</div>');
+  if (d.wallet || d.walletDpg) {
+    lines.push('<div style="font-size:0.72rem;opacity:0.8;margin-bottom:0.25rem">Wallet: ' + escapeHtml(d.wallet || d.walletDpg) + '</div>');
+  }
+  if (d.explanation) {
+    lines.push('<div style="font-size:0.78rem;margin:0.5rem 0">' + escapeHtml(d.explanation) + '</div>');
+  }
+  if (d.rawBytes || d.encodedBytes) {
+    lines.push('<div style="font-size:0.72rem;opacity:0.8">Format ' + escapeHtml(d.format || '?') + ' · raw ' + (d.rawBytes || '?') + ' B · encoded ' + (d.encodedBytes || '?') + ' B</div>');
+  }
+  if (Array.isArray(d.recovery) && d.recovery.length) {
+    lines.push('<ul style="margin:0.5rem 0 0 1rem;padding:0;font-size:0.78rem">');
+    d.recovery.forEach(function(r) {
+      lines.push('<li style="margin:0.2rem 0">' + escapeHtml(r.label || (r.action + ' → ' + (r.to || ''))) + '</li>');
+    });
+    lines.push('</ul>');
+  }
+  if (d.redirect) {
+    lines.push('<div style="margin-top:0.75rem"><a class="btn btn-primary btn-sm" href="' + escapeHtml(d.redirect) + '">' + escapeHtml(d.action === 'onboarding' ? 'Finish onboarding →' : 'Go →') + '</a></div>');
+  }
+  panel.innerHTML = lines.join('');
+}
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function issueCredential() {
   {{if $isReal}}
   var schemaId = document.getElementById('issue-schema').value;
@@ -436,32 +619,49 @@ function issueCredential() {
     return;
   }
 
-  // Collect claims dynamically from rendered fields
-  var claims = {};
-  document.querySelectorAll('#schema-fields [data-claim]').forEach(function(el) {
-    var key = el.getAttribute('data-claim');
-    if (el.type === 'checkbox') {
-      claims[key] = el.checked;
-    } else if (el.type === 'number') {
-      claims[key] = parseFloat(el.value) || 0;
-    } else {
-      claims[key] = el.value;
-    }
-  });
-
-  var identifier = document.getElementById('issue-identifier').value.trim();
-  if (identifier) claims['id'] = identifier;
-
-  // Find the schema's configId and format
+  // Find the schema's configId, format, and declared field list. Anything
+  // not in the declared field list will be dropped from the claims payload
+  // so a DPG's credential template never receives unexpected claim keys.
   var configId = schemaId;
   var format = 'sdjwt_vc';
+  var declaredFields = null;
   for (var i = 0; i < schemaFieldDefs.length; i++) {
     if (schemaFieldDefs[i].id === schemaId) {
       configId = schemaFieldDefs[i].configId || schemaId;
       format = schemaFieldDefs[i].format || 'sdjwt_vc';
+      declaredFields = schemaFieldDefs[i].fields || [];
       break;
     }
   }
+  var allowedClaim = {};
+  (declaredFields || []).forEach(function(f) { allowedClaim[f.name] = f; });
+
+  // Collect claims from the rendered fields, filtered to only those the
+  // schema declares and whose value is non-empty.
+  var claims = {};
+  document.querySelectorAll('#schema-fields [data-claim]').forEach(function(el) {
+    var key = el.getAttribute('data-claim');
+    // Drop any field not in the schema's declared list.
+    if (declaredFields && !allowedClaim[key]) return;
+    if (el.type === 'checkbox') {
+      claims[key] = el.checked;
+      return;
+    }
+    var raw = el.value;
+    if (raw === '' || raw == null) return;
+    if (el.type === 'number') {
+      var n = parseFloat(raw);
+      if (!isNaN(n)) claims[key] = n;
+      return;
+    }
+    claims[key] = raw;
+  });
+
+  // NOTE: we intentionally DO NOT send the Holder Identifier as a claim.
+  // In OID4VCI the credential subject's binding is set via the wallet's
+  // proof JWT at claim time, not via the issuer's claims map. Sending a
+  // stray `id` key triggers `unknown_claims` on DPGs like Inji that
+  // strictly validate claims against the template.
 
   var btn = document.getElementById('issue-btn');
   btn.disabled = true;
@@ -477,7 +677,7 @@ function issueCredential() {
     btn.disabled = false;
     btn.textContent = 'Sign & Issue';
     if (d.error) { showToast('Error', d.error); return; }
-    showOfferResult(d.offerUrl, d.issuerDid);
+    showOfferResult(d.offerUrl, d.issuerDid, false);
   })
   .catch(function(e) {
     btn.disabled = false;

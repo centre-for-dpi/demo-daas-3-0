@@ -133,6 +133,36 @@ func (s *Source) SearchByField(ctx context.Context, field string, value any) ([]
 	return out, nil
 }
 
+// Search runs a case-insensitive substring match across every string-valued
+// field in every record. Fine for small datasets fetched via ListRecords;
+// real HTTP APIs should override this with a remote query.
+func (s *Source) Search(ctx context.Context, query string, limit int) ([]datasource.Record, error) {
+	query = strings.TrimSpace(strings.ToLower(query))
+	if query == "" {
+		return []datasource.Record{}, nil
+	}
+	all, err := s.ListRecords(ctx, datasource.Filter{})
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		limit = 25
+	}
+	var out []datasource.Record
+	for _, r := range all {
+		for _, v := range r {
+			if sv, ok := v.(string); ok && strings.Contains(strings.ToLower(sv), query) {
+				out = append(out, r)
+				break
+			}
+		}
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
 func (s *Source) do(ctx context.Context, method, path string, body io.Reader) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, method, s.cfg.BaseURL+path, body)
 	if err != nil {

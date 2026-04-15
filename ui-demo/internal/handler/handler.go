@@ -10,6 +10,7 @@ import (
 	"vcplatform/internal/datasource"
 	"vcplatform/internal/middleware"
 	"vcplatform/internal/model"
+	"vcplatform/internal/onboarding"
 	"vcplatform/internal/render"
 	"vcplatform/internal/store"
 	"vcplatform/internal/store/ldpsigner"
@@ -49,6 +50,16 @@ type Handler struct {
 	ssoRegistry *auth.Registry
 	dataSources *datasource.Registry
 	ldpSigner   *ldpsigner.Signer
+	localIssuer *LocalIssuer
+	onboarding  onboarding.Store
+
+	// issuerRegistry / walletRegistry / verifierRegistry hold a store
+	// instance for every DPG the deployment supports. They let the handler
+	// resolve the right store at request time based on the logged-in user's
+	// chosen DPG, rather than any server-level env var.
+	issuerRegistry   map[string]store.IssuerStore
+	walletRegistry   map[string]store.WalletStore
+	verifierRegistry map[string]store.VerifierStore
 
 	// In-memory stores, keyed by user ID.
 	// In production these would be persisted to a database.
@@ -57,6 +68,16 @@ type Handler struct {
 
 	schemasMu sync.RWMutex
 	schemas   map[string][]CredentialSchema
+
+	// agentArtifacts holds chatbot-generated documents (pitch decks, advisory
+	// notes, technical scopes) saved from the chat surface for the Outputs page.
+	// In-memory and shared across all browsers in this exploration deployment;
+	// when we add real users this becomes user-keyed.
+	agentArtifacts *agentArtifactStore
+
+	// shareStore holds credentials the holder has proactively staged for a
+	// verifier to view via a short-lived /share/v/{id} link.
+	shareStore *shareStore
 }
 
 // New creates a new Handler.
@@ -73,16 +94,96 @@ func New(r *render.Renderer, s *store.Stores, c *config.Config, sso *auth.Regist
 		// Non-fatal: LDP issuance simply won't be available until restart.
 		signer = nil
 	}
-	return &Handler{
-		render:      r,
-		stores:      s,
-		config:      c,
-		ssoRegistry: sso,
-		dataSources: ds,
-		ldpSigner:   signer,
-		issuerDIDs:  make(map[string][]IssuerDIDEntry),
-		schemas:     make(map[string][]CredentialSchema),
+	// LocalIssuer wraps the signer in a real OID4VCI Pre-Authorized Code
+	// flow surface, so any compliant wallet can claim LDP_VC credentials
+	// through the standard protocol instead of our old `local-bag://` shortcut.
+	var localIssuer *LocalIssuer
+	if signer != nil {
+		localIssuer = NewLocalIssuer(DefaultLocalIssuerBaseURL(), signer)
 	}
+	return &Handler{
+		render:           r,
+		stores:           s,
+		config:           c,
+		ssoRegistry:      sso,
+		dataSources:      ds,
+		ldpSigner:        signer,
+		localIssuer:      localIssuer,
+		onboarding:       onboarding.NewMemoryStore(),
+		issuerRegistry:   map[string]store.IssuerStore{},
+		walletRegistry:   map[string]store.WalletStore{},
+		verifierRegistry: map[string]store.VerifierStore{},
+		issuerDIDs:       make(map[string][]IssuerDIDEntry),
+		schemas:          make(map[string][]CredentialSchema),
+		agentArtifacts:   newAgentArtifactStore(),
+		shareStore:       newShareStore(),
+	}
+}
+
+// SetIssuerRegistry installs the map of DPG name → IssuerStore. Called once
+// at startup from main.go with all DPGs the deployment has enabled.
+func (h *Handler) SetIssuerRegistry(reg map[string]store.IssuerStore) {
+	h.issuerRegistry = reg
+}
+
+// SetWalletRegistry installs the map of DPG name → WalletStore.
+func (h *Handler) SetWalletRegistry(reg map[string]store.WalletStore) {
+	h.walletRegistry = reg
+}
+
+// SetVerifierRegistry installs the map of DPG name → VerifierStore.
+func (h *Handler) SetVerifierRegistry(reg map[string]store.VerifierStore) {
+	h.verifierRegistry = reg
+}
+
+// issuerFor returns the issuer store for the given user. Priority:
+//
+//  1. The DPG the user picked during onboarding (user.IssuerDPG), if the
+//     deployment has a registered issuer for that DPG.
+//  2. The server-wide default (h.stores.Issuer — picked by ISSUER_DPG env).
+//
+// This is the core of per-user backend routing.
+func (h *Handler) issuerFor(user *model.User) store.IssuerStore {
+	if user != nil && user.IssuerDPG != "" {
+		if s, ok := h.issuerRegistry[user.IssuerDPG]; ok && s != nil {
+			return s
+		}
+	}
+	return h.stores.Issuer
+}
+
+// walletFor returns the wallet store for the given user. Priority:
+//  1. The DPG the user picked during holder onboarding (user.WalletDPG).
+//  2. The server-wide default (h.stores.Wallet).
+func (h *Handler) walletFor(user *model.User) store.WalletStore {
+	if user != nil && user.WalletDPG != "" {
+		if s, ok := h.walletRegistry[user.WalletDPG]; ok && s != nil {
+			return s
+		}
+	}
+	return h.stores.Wallet
+}
+
+// verifierFor returns the verifier store for the given user. Priority:
+//  1. The DPG the user picked during verifier onboarding (user.VerifierDPG).
+//  2. The server-wide default (h.stores.Verifier).
+func (h *Handler) verifierFor(user *model.User) store.VerifierStore {
+	if user != nil && user.VerifierDPG != "" {
+		if s, ok := h.verifierRegistry[user.VerifierDPG]; ok && s != nil {
+			return s
+		}
+	}
+	return h.stores.Verifier
+}
+
+// issuerRegistryNames returns the DPG identifiers of every registered
+// issuer backend. Used by the onboarding wizard to render DPG cards.
+func (h *Handler) issuerRegistryNames() []string {
+	out := make([]string, 0, len(h.issuerRegistry))
+	for k := range h.issuerRegistry {
+		out = append(out, k)
+	}
+	return out
 }
 
 func (h *Handler) addIssuerDID(user *model.User, did, keyType string) {
@@ -130,6 +231,14 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 		// Agent chat proxy — forwards browser requests to the n8n webhook.
 		// Unauthenticated because the chatbot is available on the public landing page.
 		mux.HandleFunc("POST /api/agent/chat", h.AgentChat)
+
+		// Agent outputs — saved chatbot artifacts displayed on /agent-output.
+		mux.HandleFunc("POST /api/agent/outputs", h.AgentOutputsCreate)
+		mux.HandleFunc("GET /api/agent/outputs", h.AgentOutputsList)
+		mux.HandleFunc("GET /api/agent/outputs/{id}", h.AgentOutputsGet)
+		mux.HandleFunc("PUT /api/agent/outputs/{id}", h.AgentOutputsUpdate)
+		mux.HandleFunc("DELETE /api/agent/outputs/{id}", h.AgentOutputsDelete)
+		mux.HandleFunc("GET /api/agent/outputs/{id}/export", h.AgentOutputsExport)
 	} else {
 		// Production mode: / redirects to /login
 		mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
@@ -276,10 +385,14 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /api/wallet/present", auth(h.APIWalletPresent))
 	mux.Handle("GET /api/wallet/dids", auth(h.APIWalletDIDs))
 	mux.Handle("GET /api/wallet/export", auth(h.APIExportCredentialJSON))
+	mux.Handle("GET /api/wallet/pdf", auth(h.APIWalletPDF))
 	mux.Handle("POST /api/wallet/dids/create", auth(h.APICreateDID))
 	mux.Handle("POST /api/credential/issue", auth(h.APIIssueCredentialOffer))
 	mux.Handle("POST /api/wallet/claim-offer", auth(h.APIWalletClaimOffer))
 	mux.Handle("POST /api/share/create-session", auth(h.APICreateShareSession))
+	mux.Handle("POST /api/share/proactive", auth(h.APIShareProactive))
+	mux.HandleFunc("GET /share/v/{id}", h.ShareView)
+	mux.HandleFunc("POST /share/v/{id}/verify", h.APIShareVerify)
 	mux.Handle("GET /api/schemas", auth(h.APISchemas))
 	mux.Handle("POST /api/schemas/create", auth(h.APICreateSchema))
 	mux.Handle("GET /api/schemas/list", auth(h.APIListSchemas))
@@ -291,10 +404,37 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/capabilities", h.APICapabilities)
 	mux.HandleFunc("GET /api/datasources", h.APIListDataSources)
 	mux.Handle("GET /api/datasources/record", auth(h.APIFetchDataSourceRecord))
+	mux.Handle("GET /api/datasources/search", auth(h.APIDataSourceSearch))
+	mux.Handle("GET /api/datasources/sample", auth(h.APIDataSourceSample))
+
+	// Issuer onboarding wizard — per-user state machine that captures
+	// credential categories, DPG choice, pre-built schemas, and issuance mode.
+	mux.Handle("GET /portal/onboarding", auth(h.OnboardingPage))
+	mux.Handle("GET /api/onboarding/state", auth(h.APIOnboardingState))
+	mux.Handle("GET /api/onboarding/dpgs", auth(h.APIDPGCatalog))
+	mux.Handle("POST /api/onboarding/categories", auth(h.APIOnboardingCategories))
+	mux.Handle("POST /api/onboarding/dpg", auth(h.APIOnboardingDPG))
+	mux.Handle("POST /api/onboarding/confirm", auth(h.APIOnboardingConfirm))
+	mux.Handle("POST /api/onboarding/issuance-mode", auth(h.APIOnboardingIssuanceMode))
+	// Pre-built schema catalog (Phase 3) — see schemas.go.
+	mux.Handle("GET /api/schemas/catalog", auth(h.APISchemaCatalog))
+	mux.Handle("GET /api/schemas/catalog/{id}", auth(h.APISchemaCatalogEntry))
+	mux.Handle("POST /api/schemas/catalog/publish", auth(h.APIPublishCatalogSchema))
+	// Bulk issuance (Phase 4)
+	mux.Handle("GET /portal/issuer/bulk", auth(h.IssuerBulkPage))
+	mux.Handle("POST /api/issuer/bulk-csv", auth(h.APIIssueBulkCSV))
+	mux.Handle("POST /api/issuer/bulk-api", auth(h.APIIssueBulkAPI))
 
 	// Inji proxy — unauthenticated, used by external wallet OID4VCI clients
 	// to translate Inji's metadata shape into something Walt.id wallet can parse.
 	h.RegisterInjiProxy(mux)
+
+	// Real OID4VCI issuer surface wrapping our URDNA2015 LDP signer.
+	// Unauthenticated by design — any wallet (walt.id, inji holder, a real
+	// SSI wallet) can run a full Pre-Authorized Code claim flow against it.
+	if h.localIssuer != nil {
+		h.localIssuer.RegisterRoutes(mux)
+	}
 }
 
 // pageData builds the standard PageData for a request.

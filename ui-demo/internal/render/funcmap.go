@@ -1,6 +1,7 @@
 package render
 
 import (
+	"encoding/json"
 	"html/template"
 	"reflect"
 
@@ -78,6 +79,16 @@ func buildFuncMap(cfg *config.Config) template.FuncMap {
 				return m
 			}
 			return nil
+		},
+
+		// marshal serializes a value as JSON for inlining into a <script>
+		// block. Returns template.JS so html/template doesn't escape quotes.
+		"marshal": func(v any) template.JS {
+			b, err := json.Marshal(v)
+			if err != nil {
+				return template.JS("null")
+			}
+			return template.JS(b)
 		},
 
 		// mapGet retrieves a key from a map[string]any.

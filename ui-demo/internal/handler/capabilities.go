@@ -3,14 +3,48 @@ package handler
 import (
 	"context"
 	"net/http"
+	"strconv"
 
 	"vcplatform/internal/datasource"
+	"vcplatform/internal/model"
 )
 
-// APICapabilities returns the composed capability matrix for the active backends.
+// APICapabilities returns the composed capability matrix for the active
+// backends — reflecting the logged-in user's chosen issuer DPG when set.
 // The UI fetches this on page load to decide which flows to render.
+//
+// This endpoint is unauthenticated (landing pages call it too), so it
+// parses the session cookie directly instead of relying on middleware.
 func (h *Handler) APICapabilities(w http.ResponseWriter, r *http.Request) {
 	caps := h.stores.Capabilities()
+
+	// Parse the session cookie directly — no auth middleware on this route.
+	var user *model.User
+	if c, err := r.Cookie("session"); err == nil {
+		user = model.UserFromSession(c.Value)
+	}
+
+	// Override each capability block with the user's per-role DPG choice.
+	if user != nil {
+		if user.IssuerDPG != "" {
+			if issuer := h.issuerFor(user); issuer != nil {
+				caps.Issuer = issuer.Capabilities()
+				caps.IssuerName = issuer.Name()
+			}
+		}
+		if user.WalletDPG != "" {
+			if wallet := h.walletFor(user); wallet != nil {
+				caps.Wallet = wallet.Capabilities()
+				caps.WalletName = wallet.Name()
+			}
+		}
+		if user.VerifierDPG != "" {
+			if verifier := h.verifierFor(user); verifier != nil {
+				caps.Verifier = verifier.Capabilities()
+				caps.VerifierName = verifier.Name()
+			}
+		}
+	}
 
 	// Beta flags: an adaptor can return empty capabilities (all false + no formats)
 	// to indicate it's a stub. The UI shows a "Beta / Coming soon" banner for that service.
@@ -26,6 +60,8 @@ func (h *Handler) APICapabilities(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, caps)
 }
+
+var _ = model.User{} // ensure model import stays used even if future edits remove the ref
 
 // APIListDataSources returns all registered data sources with their descriptions.
 // Used by the issuance flow to let the user pick a source of citizen data.
@@ -96,6 +132,81 @@ func (h *Handler) APIFetchDataSourceRecord(w http.ResponseWriter, r *http.Reques
 		out["suggestedMappings"] = desc.SuggestedMappings
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// APIDataSourceSearch returns records matching a free-text query across the
+// data source's configured search fields. Used by the Single Issuance UI to
+// drive the autocomplete picker.
+//
+// Query params:
+//   - source: data source name
+//   - q:      free-text query (matches any configured search column)
+//   - limit:  max records to return (default 25)
+func (h *Handler) APIDataSourceSearch(w http.ResponseWriter, r *http.Request) {
+	sourceName := r.URL.Query().Get("source")
+	query := r.URL.Query().Get("q")
+	if sourceName == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "source query param required"})
+		return
+	}
+	ds := h.dataSources.Get(sourceName)
+	if ds == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "data source not found: " + sourceName})
+		return
+	}
+	limit := 25
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+			limit = n
+		}
+	}
+	records, err := ds.Search(r.Context(), query, limit)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"source":  ds.Name(),
+		"query":   query,
+		"count":   len(records),
+		"records": records,
+	})
+}
+
+// APIDataSourceSample returns the first N records from a data source, used by
+// the UI to show a "Browse records" preview when the user hasn't typed a query
+// yet.
+//
+// Query params:
+//   - source: data source name
+//   - limit:  max records (default 10, max 100)
+func (h *Handler) APIDataSourceSample(w http.ResponseWriter, r *http.Request) {
+	sourceName := r.URL.Query().Get("source")
+	if sourceName == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "source query param required"})
+		return
+	}
+	ds := h.dataSources.Get(sourceName)
+	if ds == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "data source not found: " + sourceName})
+		return
+	}
+	limit := 10
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+			limit = n
+		}
+	}
+	records, err := ds.ListRecords(r.Context(), datasource.Filter{Limit: limit})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"source":  ds.Name(),
+		"count":   len(records),
+		"records": records,
+	})
 }
 
 // Ensure context import is used (some Go versions complain about unused if body is empty).

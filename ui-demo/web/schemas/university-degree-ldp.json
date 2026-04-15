@@ -1,0 +1,19 @@
+{
+  "id": "university-degree-ldp",
+  "name": "University Degree (LDP_VC)",
+  "description": "W3C Verifiable Credential for university-issued academic degrees. JSON-LD format with Ed25519Signature2020. Works cross-DPG — verifiable by Inji Verify, walt.id, and any VCDM-compliant verifier.",
+  "category": "education",
+  "credentialType": "UniversityDegree",
+  "format": "ldp_vc",
+  "standard": "W3C-VCDM 1.1",
+  "compatibleDPGs": ["waltid", "inji"],
+  "fields": [
+    {"name": "holderName", "type": "string", "required": true},
+    {"name": "institution", "type": "string", "required": true},
+    {"name": "degree", "type": "string", "required": true},
+    {"name": "major", "type": "string", "required": true},
+    {"name": "graduationDate", "type": "date", "required": true},
+    {"name": "gpa", "type": "number", "required": false},
+    {"name": "studentId", "type": "string", "required": false}
+  ]
+}

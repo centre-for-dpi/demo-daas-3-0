@@ -19,8 +19,11 @@
   <div id="verify-setup" class="card" style="margin-bottom:1.25rem">
     <h3 style="font-size:0.9rem;margin-bottom:1rem">Verification Request</h3>
     <div class="form-row">
-      <div class="form-group" style="margin-bottom:0"><label class="form-label">Credential Type</label>
-        <input class="form-input" id="verify-cred-type" value="VerifiableCredential" placeholder="e.g. VerifiableCredential">
+      <div class="form-group" style="margin-bottom:0"><label class="form-label">Credential Type <span style="color:var(--error)">*</span></label>
+        <select class="form-select" id="verify-cred-type">
+          <option value="" disabled selected>Loading credential types…</option>
+        </select>
+        <div class="form-help" style="margin-top:0.25rem;font-size:0.72rem">Pick a specific type (e.g. <code>FarmerCredential</code>). The bare <code>VerifiableCredential</code> matches everything the wallet holds, which is almost never what you want.</div>
       </div>
       <div class="form-group" style="margin-bottom:0"><label class="form-label">Request Expiry</label>
         <select class="form-select" id="verify-expiry">
@@ -267,8 +270,68 @@ function checkPresentation() {
   });
 })();
 
+// Populate the credential type dropdown from the issuer DPG's live
+// credential configurations. We use the same endpoint the issuer workspace
+// hits (/api/credential-types) so the list always reflects what the
+// active issuer backend actually supports. Falls back to a free-text
+// input if the fetch fails so the verifier isn't stuck.
+(function loadCredTypes() {
+  var sel = document.getElementById('verify-cred-type');
+  if (!sel) return;
+  fetch('/api/credential-types')
+  .then(function(r) { return r.json(); })
+  .then(function(list) {
+    if (!Array.isArray(list)) throw new Error('bad response');
+    // Extract distinct "base" type names from each config (stripping format
+    // suffixes like _jwt_vc_json so the verifier asks for the semantic type,
+    // not a format-specific alias).
+    var seen = {};
+    var types = [];
+    list.forEach(function(c) {
+      var id = c.id || '';
+      var base = id
+        .replace(/_jwt_vc_json(-ld)?$/, '')
+        .replace(/_ldp_vc$/, '')
+        .replace(/_vc\+sd-jwt$/, '')
+        .replace(/_sd-jwt$/, '')
+        .replace(/_mso_mdoc$/, '');
+      if (base && !seen[base]) {
+        seen[base] = true;
+        types.push({value: base, label: (c.name || base) + ' (' + (c.format || 'any') + ')'});
+      }
+    });
+    types.sort(function(a, b) { return a.label.localeCompare(b.label); });
+    sel.innerHTML = '<option value="" disabled selected>Pick a credential type…</option>';
+    types.forEach(function(t) {
+      var opt = document.createElement('option');
+      opt.value = t.value;
+      opt.textContent = t.label;
+      sel.appendChild(opt);
+    });
+    if (types.length === 0) {
+      sel.innerHTML = '<option value="" disabled selected>No credential types published yet — have an issuer register one first</option>';
+    }
+  })
+  .catch(function() {
+    // Fallback: replace the select with a free-text input so the verifier
+    // isn't blocked when /api/credential-types is unreachable.
+    var parent = sel.parentNode;
+    var input = document.createElement('input');
+    input.className = 'form-input';
+    input.id = 'verify-cred-type';
+    input.placeholder = 'e.g. FarmerCredential';
+    parent.replaceChild(input, sel);
+  });
+})();
+
 function createVerifySession() {
-  var credType = document.getElementById('verify-cred-type').value.trim() || 'VerifiableCredential';
+  var credEl = document.getElementById('verify-cred-type');
+  var credType = (credEl && credEl.value || '').trim();
+  if (!credType || credType === 'VerifiableCredential') {
+    showToast('Pick a credential type', 'Select a specific credential type — the generic VerifiableCredential matches anything in the wallet and is almost never what you want.');
+    if (credEl && credEl.focus) credEl.focus();
+    return;
+  }
   var policies = [];
   document.querySelectorAll('.verify-policy-cb:checked').forEach(function(cb) { policies.push(cb.value); });
   if (policies.length === 0) policies = ['signature'];
@@ -276,6 +339,7 @@ function createVerifySession() {
   btn.disabled = true;
   btn.textContent = 'Creating...';
 
+  _requestedCredType = credType;
   fetch('/api/verifier/verify', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -339,19 +403,37 @@ function startPolling() {
   }, 3000);
 }
 
+var _requestedCredType = '';
+
 function showVerifyResult(passed, data) {
   var icon = document.getElementById('verify-status-icon');
   var text = document.getElementById('verify-status-text');
   var sub = document.getElementById('verify-status-sub');
   var card = document.getElementById('verify-status-card');
 
-  if (passed) {
+  // Sanity: did the presented credential's type match what the verifier
+  // asked for? Walt.id's verifier matches loosely on credential_type,
+  // so a request for "FarmerCredential" could still end up returning a
+  // different credential if the wallet's auto-selection picked one.
+  // We surface the mismatch so the verifier isn't misled into thinking
+  // they verified the type they asked for.
+  var returnedType = data.credentialType || '';
+  var typeMismatch = _requestedCredType && returnedType && returnedType.indexOf(_requestedCredType) === -1;
+
+  if (passed && !typeMismatch) {
     icon.textContent = '\u2713';
     icon.style.color = 'var(--success)';
     text.textContent = 'Verification Passed';
     text.style.color = 'var(--success)';
     sub.textContent = 'The credential is valid.';
     card.style.borderLeft = '3px solid var(--success)';
+  } else if (passed && typeMismatch) {
+    icon.textContent = '\u26a0';
+    icon.style.color = 'var(--warning)';
+    text.textContent = 'Signature valid, but credential type mismatch';
+    text.style.color = 'var(--warning)';
+    sub.textContent = 'Requested ' + _requestedCredType + ' — received ' + returnedType + '. The holder presented a different credential.';
+    card.style.borderLeft = '3px solid var(--warning)';
   } else {
     icon.textContent = '\u2717';
     icon.style.color = 'var(--error)';

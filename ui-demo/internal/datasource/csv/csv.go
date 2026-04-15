@@ -124,5 +124,27 @@ func (s *Source) SearchByField(ctx context.Context, field string, value any) ([]
 	return s.ListRecords(ctx, datasource.Filter{Field: field, Equals: value})
 }
 
-// _ keeps strings import alive for any future helpers.
-var _ = strings.HasPrefix
+// Search runs a case-insensitive substring match across all columns of all
+// rows. Returns at most `limit` records (default 25).
+func (s *Source) Search(_ context.Context, query string, limit int) ([]datasource.Record, error) {
+	query = strings.TrimSpace(strings.ToLower(query))
+	if query == "" {
+		return []datasource.Record{}, nil
+	}
+	if limit <= 0 {
+		limit = 25
+	}
+	out := []datasource.Record{}
+	for _, r := range s.rows {
+		for _, v := range r {
+			if sv, ok := v.(string); ok && strings.Contains(strings.ToLower(sv), query) {
+				out = append(out, r)
+				break
+			}
+		}
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}

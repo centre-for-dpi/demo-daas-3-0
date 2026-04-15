@@ -43,6 +43,12 @@ type DataSource interface {
 
 	// SearchByField finds records where field == value (convenience).
 	SearchByField(ctx context.Context, field string, value any) ([]Record, error)
+
+	// Search runs a free-text search across the source's searchable fields
+	// (typically primary key, name fields, email, etc.) and returns matching
+	// records. Adaptors that don't support free-text search should return
+	// an empty slice and a nil error — callers fall back to FetchRecord.
+	Search(ctx context.Context, query string, limit int) ([]Record, error)
 }
 
 // Description documents what fields a data source provides. This drives

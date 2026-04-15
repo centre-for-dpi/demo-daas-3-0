@@ -36,3 +36,7 @@ func (s *Source) ListRecords(_ context.Context, _ datasource.Filter) ([]datasour
 func (s *Source) SearchByField(_ context.Context, _ string, _ any) ([]datasource.Record, error) {
 	return []datasource.Record{}, nil
 }
+
+func (s *Source) Search(_ context.Context, _ string, _ int) ([]datasource.Record, error) {
+	return []datasource.Record{}, nil
+}
