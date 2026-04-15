@@ -123,8 +123,34 @@ if [[ $WITH_SERVER -eq 1 ]]; then
     if pgrep -fa "./server -config" >/dev/null 2>&1; then
         step "vc.infra server already running (pgrep matched)"
     else
-        step "starting vc.infra server on :8080"
         cd "$APP_DIR"
+        # Source ui-demo/.env so $KEYCLOAK_URL / $WSO2_URL / $WALTID_*
+        # placeholders in config/*.json get expanded by the Go config
+        # loader's os.Expand pass at startup. Without this the SSO
+        # discovery URLs come out as literal "$KEYCLOAK_URL/..." and the
+        # /login flow fails. Mirrors what the Makefile's run-sso target
+        # does.
+        if [[ -f .env ]]; then
+            set -o allexport
+            # shellcheck disable=SC1091
+            source .env
+            set +o allexport
+        fi
+
+        # Provision the WSO2 OIDC application and write its client_id to
+        # /tmp/wso2-client-id (the file the Go server reads via
+        # `auto:$WSO2_CLIENT_ID_FILE` in config/default.json). Idempotent —
+        # checks for an existing app first. This MUST run before the Go
+        # server boots, otherwise `sso: 2 provider(s) configured` becomes
+        # `1 provider(s)` and WSO2 login is unavailable. The script's own
+        # boot-wait loop tolerates a still-warming WSO2 (up to 5 min).
+        if [[ -f docker/stack/wso2-init.sh ]]; then
+            step "provisioning WSO2 OIDC app (writes /tmp/wso2-client-id)"
+            bash docker/stack/wso2-init.sh || \
+                echo "   wso2-init.sh failed — WSO2 SSO will be disabled until you re-run it"
+        fi
+
+        step "starting vc.infra server on :8080"
         if [[ ! -x ./server ]]; then
             echo "   ./server not built — running 'go build -o server ./cmd/server'"
             go build -o server ./cmd/server
