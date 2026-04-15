@@ -112,14 +112,25 @@
 <script>
 var _builtinConfigs = [];
 
-// Load configs from backend API (backend-agnostic)
+// Load configs from backend API (backend-agnostic). The API returns
+// model.CredentialConfig entries for the user's active issuer DPG, with
+// Fields populated for any backend that publishes per-type claim schemas
+// in its OID4VCI metadata (Inji Certify does this; walt.id doesn't, so
+// walt.id entries come back with an empty Fields slice and the user has
+// to define claims manually via "Add Field").
 (function loadConfigs() {
   fetch('/api/credential-types')
   .then(function(r) { return r.json(); })
   .then(function(configs) {
     if (!Array.isArray(configs)) return;
     _builtinConfigs = configs.map(function(c) {
-      return {id: c.id, name: c.name, cat: c.category || 'Other', fmt: c.format || 'jwt_vc_json', fields: []};
+      return {
+        id: c.id,
+        name: c.name,
+        cat: c.category || 'Other',
+        fmt: c.format || 'jwt_vc_json',
+        fields: c.fields || [],
+      };
     });
     filterConfigs();
   })
@@ -174,16 +185,21 @@ function populateFieldsFromConfig() {
 
   var list = document.getElementById('field-list');
   list.innerHTML = '';
+  // model.SchemaField on the wire is {name, type, required}. The legacy
+  // hand-coded {n, t, r} shape this loop used to expect is gone.
   config.fields.forEach(function(f) {
-    var reqClass = f.r ? 'tag tag-accent' : 'tag';
-    var reqLabel = f.r ? 'Required' : 'Optional';
+    var fieldName = f.name || f.n || '';
+    var fieldType = f.type || f.t || 'string';
+    var required  = (f.required === true) || (f.r === true);
+    var reqClass = required ? 'tag tag-accent' : 'tag';
+    var reqLabel = required ? 'Required' : 'Optional';
     var row = document.createElement('div');
     row.className = 'field-row';
     row.draggable = true;
     row.innerHTML =
       '<span class="field-drag">\u2800\u2800\u2800</span>' +
-      '<span class="field-name">credentialSubject.' + f.n + '</span>' +
-      '<span class="field-type">' + f.t + '</span>' +
+      '<span class="field-name">credentialSubject.' + fieldName + '</span>' +
+      '<span class="field-type">' + fieldType + '</span>' +
       '<span class="field-required ' + reqClass + '">' + reqLabel + '</span>' +
       '<div class="field-actions">' +
         '<button class="btn btn-ghost btn-sm" style="font-size:0.7rem" onclick="editField(this)">Edit</button>' +
