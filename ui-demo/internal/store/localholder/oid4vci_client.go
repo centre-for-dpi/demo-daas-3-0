@@ -221,12 +221,58 @@ func fetchCredentialOffer(ctx context.Context, rawURL string) (*credentialOffer,
 		return nil, err
 	}
 	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("fetch offer %d: %s", resp.StatusCode, truncate(string(body), 200))
 	}
+
+	// Inji Certify (and other MOSIP services) wrap responses in a
+	// {responseTime, response, errors} envelope and return HTTP 200 even
+	// for business errors like "credential offer not found or expired".
+	// Sniff for that shape first so we can surface the real error message
+	// instead of misreading a null response as a malformed offer.
+	var maybeEnvelope struct {
+		Response any `json:"response"`
+		Errors   []struct {
+			ErrorCode    string `json:"errorCode"`
+			ErrorMessage string `json:"errorMessage"`
+		} `json:"errors"`
+	}
+	hasEnvelope := false
+	if err := json.Unmarshal(body, &maybeEnvelope); err == nil {
+		// Treat as the MOSIP envelope if either field is present in any form.
+		// `errors` being a non-nil slice (even empty) signals the wrapper.
+		if maybeEnvelope.Errors != nil || maybeEnvelope.Response != nil {
+			hasEnvelope = true
+		}
+	}
+	if hasEnvelope {
+		if len(maybeEnvelope.Errors) > 0 {
+			e := maybeEnvelope.Errors[0]
+			return nil, fmt.Errorf("issuer rejected offer fetch: %s — %s "+
+				"(generate a fresh offer; pre-auth offers are short-lived "+
+				"and don't survive an issuer restart)", e.ErrorCode, e.ErrorMessage)
+		}
+		// Unwrap and re-marshal the inner response so we can decode it as
+		// the actual credential offer struct.
+		if maybeEnvelope.Response == nil {
+			return nil, fmt.Errorf("issuer returned an empty wrapped response with no errors — likely an offer-cache hit miss")
+		}
+		inner, err := json.Marshal(maybeEnvelope.Response)
+		if err != nil {
+			return nil, fmt.Errorf("re-marshal wrapped offer: %w", err)
+		}
+		var offer credentialOffer
+		if err := json.Unmarshal(inner, &offer); err != nil {
+			return nil, fmt.Errorf("parse wrapped offer: %w", err)
+		}
+		return &offer, nil
+	}
+
+	// Plain OID4VCI offer (this is what Inji Certify actually returns on the
+	// happy path — the envelope is only used for errors).
 	var offer credentialOffer
-	if err := json.NewDecoder(resp.Body).Decode(&offer); err != nil {
+	if err := json.Unmarshal(body, &offer); err != nil {
 		return nil, err
 	}
 	return &offer, nil
