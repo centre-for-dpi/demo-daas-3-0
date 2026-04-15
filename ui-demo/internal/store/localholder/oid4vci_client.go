@@ -179,17 +179,51 @@ func ClaimOID4VCICredential(ctx context.Context, offerURL string) ([]byte, error
 		return nil, fmt.Errorf("credential request %d: %s", resp.StatusCode, truncate(string(credBody), 500))
 	}
 
-	// Inji returns {"credential": {...}, "format": "...", "c_nonce": "..."}.
-	// Extract the credential so callers see a clean VC JSON.
+	return unwrapCredentialResponse(credBody), nil
+}
+
+// unwrapCredentialResponse returns the bare credential bytes from an OID4VCI
+// credential endpoint response. OID4VCI wraps the credential in
+// `{"credential": <c>, "format": "...", "c_nonce": "..."}`, and the inner
+// `credential` field can be either:
+//
+//  a) A JSON object (ldp_vc — the credential IS the JSON-LD VC). In this
+//     case we re-marshal the inner value back to bytes so the caller gets
+//     a clean VC JSON document.
+//
+//  b) A compact JWT string (jwt_vc_json / vc+sd-jwt — the credential is a
+//     string like "eyJhbGc...header.payload.signature"). Here we MUST NOT
+//     re-run json.Marshal on the string, because that would add surrounding
+//     JSON quotes and give us `"eyJhbGc..."` — 2 extra bytes that break
+//     downstream handling. The PDF wallet's detectFormat() sniffs the
+//     leading byte ("e" → JWT, else ldp_vc) and the quotes would
+//     mis-classify the credential as ldp_vc. Even worse, any verifier
+//     trying to check the JWT signature would canonicalize the wrong
+//     bytes and reject the credential as invalid — which is exactly what
+//     we saw when an Inji Verify scan of a PDF-wallet QR reported
+//     "invalid" while still displaying parsed claims.
+//
+// If credBody doesn't have the wrapper shape, returns it unchanged.
+func unwrapCredentialResponse(credBody []byte) []byte {
 	var wrapped map[string]any
-	if err := json.Unmarshal(credBody, &wrapped); err == nil {
-		if inner, ok := wrapped["credential"]; ok {
-			if innerBytes, err := json.Marshal(inner); err == nil {
-				return innerBytes, nil
-			}
-		}
+	if err := json.Unmarshal(credBody, &wrapped); err != nil {
+		return credBody
 	}
-	return credBody, nil
+	inner, ok := wrapped["credential"]
+	if !ok {
+		return credBody
+	}
+	switch v := inner.(type) {
+	case string:
+		// JWT / SD-JWT compact form — return the raw string bytes.
+		return []byte(v)
+	default:
+		// JSON-LD object — re-marshal cleanly.
+		if innerBytes, err := json.Marshal(v); err == nil {
+			return innerBytes
+		}
+		return credBody
+	}
 }
 
 // ---- URL + offer parsing ----------------------------------------------------
