@@ -31,7 +31,7 @@ type CatalogSchema struct {
 	Format         string        `json:"format"`
 	Standard       string        `json:"standard"`
 	CompatibleDPGs []string      `json:"compatibleDPGs"`
-	Fields         []SchemaField `json:"fields"`
+	Fields         []model.SchemaField `json:"fields"`
 }
 
 var (
@@ -130,21 +130,34 @@ func (h *Handler) APISchemaCatalog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build the catalog from LIVE configs. For each live config, try to
-	// match it to a static starter schema by credentialType — if found,
-	// we get a nice description + pre-defined field list. If not, the
-	// schema is blank and the user builds it from scratch in the editor.
+	// Build the catalog from LIVE configs. Field definitions come from
+	// whichever source knows them for this credential type, in priority
+	// order:
+	//
+	//   1. The DPG's own OID4VCI metadata (cfg.Fields) — the authoritative
+	//      source when the backend publishes a per-type schema. Inji Certify
+	//      does this for every credential config it ships. Walt.id doesn't
+	//      publish field schemas so its configs come back with Fields=nil.
+	//
+	//   2. A static starter overlay keyed by a stripped form of the config
+	//      ID — kept as a gap-filler for DPGs that don't publish schemas.
+	//      If the overlay is present, it also provides a nicer description
+	//      than "Live credential type from <DPG>".
+	//
+	//   3. Nothing — the user builds the schema from scratch in the editor
+	//      and it persists via the Schema Builder (h.schemas).
 	out := make([]CatalogSchema, 0, len(liveConfigs))
 	for _, cfg := range liveConfigs {
 		entry := CatalogSchema{
 			ID:             cfg.ID,
 			Name:           cfg.Name,
-			Description:    "", // filled in below from static overlay if present
+			Description:    "",
 			Category:       cfg.Category,
 			CredentialType: cfg.ID, // use the live ID verbatim so issue calls match
 			Format:         cfg.Format,
 			Standard:       "W3C-VCDM",
 			CompatibleDPGs: []string{dpg},
+			Fields:         cfg.Fields, // authoritative when the DPG publishes one
 		}
 		if entry.Name == "" {
 			entry.Name = cfg.ID
@@ -153,27 +166,35 @@ func (h *Handler) APISchemaCatalog(w http.ResponseWriter, r *http.Request) {
 			entry.Category = "General"
 		}
 
-		// Try each candidate credentialType (live ID, then progressively
-		// stripped variants) against the static starter catalog and use
-		// the first match to overlay fields + description.
-		matched := false
+		// Overlay description (and fields, if the DPG didn't publish any)
+		// from the static starter catalog using the stripped-candidate
+		// match. Never let the overlay clobber live metadata fields.
 		for _, ct := range credentialTypeCandidates(cfg.ID) {
-			if overlay, ok := staticByType[ct]; ok {
-				entry.Description = overlay.Description
-				entry.Fields = overlay.Fields
-				if entry.Standard == "" {
-					entry.Standard = overlay.Standard
-				}
-				if entry.Category == "General" && overlay.Category != "" {
-					entry.Category = overlay.Category
-				}
-				matched = true
-				break
+			overlay, ok := staticByType[ct]
+			if !ok {
+				continue
 			}
+			if entry.Description == "" {
+				entry.Description = overlay.Description
+			}
+			if len(entry.Fields) == 0 {
+				entry.Fields = overlay.Fields
+			}
+			if entry.Standard == "" {
+				entry.Standard = overlay.Standard
+			}
+			if entry.Category == "General" && overlay.Category != "" {
+				entry.Category = overlay.Category
+			}
+			break
 		}
-		if !matched {
-			entry.Description = "Live credential type from " + issuer.Name() +
-				". Define the claim fields in the editor."
+		if entry.Description == "" {
+			if len(entry.Fields) > 0 {
+				entry.Description = "Live credential type from " + issuer.Name() + "."
+			} else {
+				entry.Description = "Live credential type from " + issuer.Name() +
+					". Define the claim fields in the editor."
+			}
 		}
 		out = append(out, entry)
 	}
@@ -295,26 +316,34 @@ func (h *Handler) APISchemaCatalogEntry(w http.ResponseWriter, r *http.Request) 
 						CredentialType: cfg.ID,
 						Format:         cfg.Format,
 						Standard:       "W3C-VCDM",
+						Fields:         cfg.Fields,
 					}
 					if entry.Name == "" {
 						entry.Name = cfg.ID
 					}
-					matched := false
+					// Overlay description (and fields only if the DPG
+					// didn't publish any) — see APISchemaCatalog for the
+					// full priority rationale.
 					for _, ct := range credentialTypeCandidates(cfg.ID) {
-						if overlay, ok := staticByType[ct]; ok {
-							entry.Description = overlay.Description
-							entry.Fields = overlay.Fields
-							if entry.Standard == "" {
-								entry.Standard = overlay.Standard
-							}
-							if entry.Category == "" && overlay.Category != "" {
-								entry.Category = overlay.Category
-							}
-							matched = true
-							break
+						overlay, ok := staticByType[ct]
+						if !ok {
+							continue
 						}
+						if entry.Description == "" {
+							entry.Description = overlay.Description
+						}
+						if len(entry.Fields) == 0 {
+							entry.Fields = overlay.Fields
+						}
+						if entry.Standard == "" {
+							entry.Standard = overlay.Standard
+						}
+						if entry.Category == "" && overlay.Category != "" {
+							entry.Category = overlay.Category
+						}
+						break
 					}
-					if !matched {
+					if entry.Description == "" {
 						entry.Description = "Live credential type from " + issuer.Name() + "."
 					}
 					writeJSON(w, 200, entry)
@@ -366,7 +395,7 @@ func (h *Handler) APIPublishCatalogSchema(w http.ResponseWriter, r *http.Request
 		CredentialType string        `json:"credentialType"`
 		Description    string        `json:"description"`
 		Format         string        `json:"format"`
-		Fields         []SchemaField `json:"fields"`
+		Fields         []model.SchemaField `json:"fields"`
 		Custom         bool          `json:"custom"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

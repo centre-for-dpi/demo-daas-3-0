@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -270,14 +271,63 @@ func (s *issuerStore) ListCredentialConfigs(ctx context.Context) ([]model.Creden
 			}
 		}
 		cat := categorizeCredentialType(configID, name)
+		fields := extractFieldsFromMetadata(obj, format)
 		configs = append(configs, model.CredentialConfig{
 			ID:       configID,
 			Name:     name,
 			Category: cat,
 			Format:   format,
+			Fields:   fields,
 		})
 	}
 	return configs, nil
+}
+
+// extractFieldsFromMetadata pulls the live claim-field list for a
+// credential configuration out of Inji Certify's OID4VCI metadata.
+//
+// The field list lives in two different places depending on format:
+//
+//   - ldp_vc / mso_mdoc: credential_definition.credentialSubject is a
+//     map whose keys are claim names (e.g. "fullName", "primaryCropType")
+//     and whose values carry display labels. The keys are what we need
+//     — they're the JSON claim keys Inji will accept at issue time.
+//
+//   - vc+sd-jwt: claims is a flat map with the same shape as above,
+//     but promoted to the top level of the configuration because
+//     SD-JWT doesn't use the W3C credential_definition wrapper.
+//
+// Returns nil if the metadata doesn't publish a per-type schema so the
+// handler can fall back to a user-built schema or a static overlay.
+// No type info is published by Inji — every field is recorded as a
+// string with required=false; the user can refine before saving.
+func extractFieldsFromMetadata(cfg map[string]any, format string) []model.SchemaField {
+	var claims map[string]any
+	if format == "vc+sd-jwt" || format == "sdjwt_vc" {
+		if c, ok := cfg["claims"].(map[string]any); ok {
+			claims = c
+		}
+	} else {
+		if cd, ok := cfg["credential_definition"].(map[string]any); ok {
+			if cs, ok := cd["credentialSubject"].(map[string]any); ok {
+				claims = cs
+			}
+		}
+	}
+	if len(claims) == 0 {
+		return nil
+	}
+	out := make([]model.SchemaField, 0, len(claims))
+	for name := range claims {
+		out = append(out, model.SchemaField{
+			Name:     name,
+			Type:     "string",
+			Required: false,
+		})
+	}
+	// Stable ordering so repeated calls produce the same wire output.
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
 }
 
 func (s *issuerStore) RegisterCredentialType(ctx context.Context, typeName, displayName, description, format string) (string, error) {

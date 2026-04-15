@@ -8,6 +8,21 @@ type CredentialConfig struct {
 	Name     string `json:"name"`     // e.g. "University Degree"
 	Category string `json:"category"` // e.g. "Education", "Identity", "Finance"
 	Format   string `json:"format"`   // e.g. "jwt_vc_json", "vc+sd-jwt", "mso_mdoc"
+
+	// Fields is the list of claim fields the DPG publishes for this
+	// credential type in its OID4VCI metadata. Empty when the backend
+	// doesn't publish a per-type schema (e.g. walt.id), in which case
+	// the handler falls back to a static overlay or a user-built schema.
+	Fields []SchemaField `json:"fields,omitempty"`
+}
+
+// SchemaField is a single claim field in a credential schema. Shared
+// across the store layer (where it's populated from live DPG metadata)
+// and the handler layer (where it's serialized to the wizard).
+type SchemaField struct {
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Required bool   `json:"required"`
 }
 
 // IssueRequest for single credential issuance.

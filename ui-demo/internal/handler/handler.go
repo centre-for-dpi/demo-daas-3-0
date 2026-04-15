@@ -25,21 +25,14 @@ type IssuerDIDEntry struct {
 
 // CredentialSchema represents a credential schema created in the Schema Builder.
 type CredentialSchema struct {
-	ID        string            `json:"id"`
-	Name      string            `json:"name"`
-	ConfigID  string            `json:"configId"`  // Backend credential configuration ID
-	Version   string            `json:"version"`
-	Format    string            `json:"format"`    // jwt_vc_json, sdjwt_vc, ldp_vc, mso_mdoc
-	Standard  string            `json:"standard"`  // W3C-VCDM 2.0, SD-JWT, etc.
-	Fields    []SchemaField     `json:"fields"`
-	CreatedAt string            `json:"createdAt"`
-}
-
-// SchemaField is a single field in a credential schema.
-type SchemaField struct {
-	Name     string `json:"name"`
-	Type     string `json:"type"`
-	Required bool   `json:"required"`
+	ID        string              `json:"id"`
+	Name      string              `json:"name"`
+	ConfigID  string              `json:"configId"` // Backend credential configuration ID
+	Version   string              `json:"version"`
+	Format    string              `json:"format"`   // jwt_vc_json, sdjwt_vc, ldp_vc, mso_mdoc
+	Standard  string              `json:"standard"` // W3C-VCDM 2.0, SD-JWT, etc.
+	Fields    []model.SchemaField `json:"fields"`
+	CreatedAt string              `json:"createdAt"`
 }
 
 // Handler holds shared dependencies for all route handlers.

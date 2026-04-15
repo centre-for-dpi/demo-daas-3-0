@@ -770,9 +770,9 @@ func (h *Handler) APICreateSchema(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fields := make([]SchemaField, len(req.Fields))
+	fields := make([]model.SchemaField, len(req.Fields))
 	for i, f := range req.Fields {
-		fields[i] = SchemaField{Name: f.Name, Type: f.Type, Required: f.Required}
+		fields[i] = model.SchemaField{Name: f.Name, Type: f.Type, Required: f.Required}
 	}
 
 	schema := CredentialSchema{
