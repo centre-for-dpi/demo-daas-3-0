@@ -482,7 +482,8 @@ function wzLoadCatalog() {
 }
 
 function wzOpenEditor(id) {
-  fetch('/api/schemas/catalog/' + encodeURIComponent(id))
+  fetch('/api/schemas/catalog/' + encodeURIComponent(id) +
+        '?dpg=' + encodeURIComponent(wz.selectedDPG))
     .then(r => r.json()).then(s => {
       if (!s || s.error) { showToast('Error', s.error || 'schema not found'); return; }
       wz.editing = s;

@@ -105,8 +105,17 @@ func (h *Handler) APISchemaCatalog(w http.ResponseWriter, r *http.Request) {
 		// Also key by the catalog ID for /catalog/{id} lookups.
 	}
 
-	// Query the user's chosen issuer for its live credential configurations.
-	var issuer = h.issuerFor(user)
+	// Query the issuer for its live credential configurations. Prefer the
+	// store the explicit ?dpg= query asked for so the wizard can preview
+	// any DPG it shows on a card before the user has committed to one.
+	// Fall back to the per-user default (issuerFor) when no override is
+	// given or the named DPG isn't registered in this deployment.
+	issuer := h.issuerFor(user)
+	if dpg != "" {
+		if s, ok := h.issuerRegistry[dpg]; ok && s != nil {
+			issuer = s
+		}
+	}
 	liveConfigs, err := issuer.ListCredentialConfigs(r.Context())
 	if err != nil {
 		// Don't fail the whole catalog — fall back to the static list
@@ -252,11 +261,20 @@ func stripTrailingVersion(s string) string {
 func (h *Handler) APISchemaCatalogEntry(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
 	id := r.PathValue("id")
+	dpg := r.URL.Query().Get("dpg")
 
 	// Try the live configs first — the user most likely picked one from
-	// the live catalog, so the ID matches a live config.
+	// the live catalog, so the ID matches a live config. Honour ?dpg= for
+	// symmetry with APISchemaCatalog so the wizard's editor lookup hits
+	// the same store as the list it was rendered from.
 	if user != nil {
-		if issuer := h.issuerFor(user); issuer != nil {
+		issuer := h.issuerFor(user)
+		if dpg != "" {
+			if s, ok := h.issuerRegistry[dpg]; ok && s != nil {
+				issuer = s
+			}
+		}
+		if issuer != nil {
 			if liveConfigs, err := issuer.ListCredentialConfigs(r.Context()); err == nil {
 				for _, cfg := range liveConfigs {
 					if cfg.ID != id {
