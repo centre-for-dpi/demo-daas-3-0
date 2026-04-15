@@ -81,13 +81,15 @@ scope templates, transcripts). Agent ingestion reads from here.
    natively expose ldp_vc)           PixelPass QR PDFs)
 ```
 
-One compose file (`ui-demo/docker/waltid/docker-compose.yml`) brings up 27
-containers on a pinned `172.24.0.0/16` network: the Go app, walt.id issuer
-/ verifier / wallet stack, Inji Certify + certify-nginx + certify-postgres,
-Inji Verify UI + service + postgres, Citizens Postgres (mock government
-registry), verification-adapter, and the full Inji Web stack (Inji Web
-UI + Mimoto + esignet + mock-identity-system + oidc-ui + data-share +
-Minio + Redis + Postgres) under an opt-in `--profile injiweb`.
+One compose file (`ui-demo/docker/waltid/docker-compose.yml`) defines 25
+services on a pinned `172.24.0.0/16` network: walt.id issuer / verifier
+/ wallet stack, Inji Certify + certify-nginx + certify-postgres, Inji
+Verify UI + service + postgres, Citizens Postgres (mock government
+registry), verification-adapter, plus the full Inji Web stack (Inji
+Web UI + Mimoto + esignet + mock-identity-system + oidc-ui + data-share
++ Minio + Redis + Postgres) under an opt-in `--profile injiweb`. The
+Go `vcplatform` app runs directly on the host and talks to the stack
+over mapped ports.
 
 ---
 
@@ -531,7 +533,11 @@ has block comments explaining every override.
 │   ├── go.mod, go.sum
 │   ├── Makefile
 │   ├── Dockerfile
-│   ├── docker-compose.yml          — standalone (walt.id-only) compose
+│   ├── docker-compose.yml          — repo-root compose (vcplatform app +
+│   │                                 trimmed walt.id subset, via the
+│   │                                 `mock` and `waltid` profiles). The
+│   │                                 full 25-service stack lives under
+│   │                                 docker/waltid/docker-compose.yml.
 │   ├── implementation-plan.md      — full product spec, screen inventory
 │   ├── dpg-integration-plan.md
 │   ├── DEMO.md
@@ -545,7 +551,7 @@ has block comments explaining every override.
 │   │   │   ├── csv/
 │   │   │   ├── httpapi/
 │   │   │   └── manual/
-│   │   ├── handler/                — 23 handler files, all HTTP routes
+│   │   ├── handler/                — 22 handler files, all HTTP routes
 │   │   │   ├── handler.go          — Handler struct, registry wiring, mux
 │   │   │   ├── landing.go          — exploration pages
 │   │   │   ├── auth.go             — /login, /signup, /logout, SSO callback
@@ -594,7 +600,7 @@ has block comments explaining every override.
 │   │   └── schemas/                — starter JSON schemas
 │   └── docker/
 │       ├── waltid/
-│       │   ├── docker-compose.yml  — the real 36-service compose
+│       │   ├── docker-compose.yml  — the real 25-service compose
 │       │   ├── Caddyfile
 │       │   ├── issuer-api/, verifier-api/, wallet-api/ — walt.id configs
 │       │   ├── inji/certify/       — Inji Certify properties + CSV + init.sql
