@@ -417,6 +417,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /portal/issuer/bulk", auth(h.IssuerBulkPage))
 	mux.Handle("POST /api/issuer/bulk-csv", auth(h.APIIssueBulkCSV))
 	mux.Handle("POST /api/issuer/bulk-api", auth(h.APIIssueBulkAPI))
+	mux.Handle("POST /api/issuer/bulk-datasource", auth(h.APIIssueBulkDataSource))
 
 	// Inji proxy — unauthenticated, used by external wallet OID4VCI clients
 	// to translate Inji's metadata shape into something Walt.id wallet can parse.

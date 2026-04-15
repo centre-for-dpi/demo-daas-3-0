@@ -1,20 +1,30 @@
 package handler
 
-// bulk.go — Phase 4 handlers for bulk issuance.
+// bulk.go — handlers for bulk issuance.
 //
-// Two sub-modes:
+// Three honestly-labelled sub-modes the UI surfaces depending on what
+// the active DPG actually supports:
 //
-//  1. API — expose a POST endpoint that accepts a JSON array of claim records
-//     and issues one credential per record. The UI shows the user a curl
-//     snippet + live "try it" button.
+//  1. CSV upload — universal. The UI uploads a CSV, the user maps
+//     columns to credential claim fields, and the server streams each
+//     row through the issuer's single-issue endpoint. Available on
+//     every DPG because the iteration happens in our process.
 //
-//  2. Data-provider plugin — the UI uploads a CSV, the user maps columns to
-//     credential claim fields, and the server streams each row through the
-//     issuer. This is how Inji Certify and similar DPGs support bulk
-//     issuance without a HTTP batch endpoint.
+//  2. Database / preconfigured data source — universal whenever the
+//     deployment has registered at least one datasource.DataSource
+//     (Postgres, Sunbird RC, etc.). The server queries the source via
+//     ListRecords and feeds the rows into the same single-issue loop
+//     as the CSV path. For Inji Certify this is the spiritual
+//     equivalent of the csvdp-* data-provider plugins — same data
+//     model, just with the iteration driven by the platform instead
+//     of by Inji's per-issuance lookup hook.
 //
-// Both paths respect per-user DPG choice via h.issuerFor(user) and the
-// in-process LDP signer short-circuit for ldp_vc format.
+//  3. HTTP batch API — backend-native. Only enabled when the active
+//     issuer's Capabilities().Batch is true (walt.id today). One POST
+//     fans out to N credentials inside the DPG itself.
+//
+// All three paths respect per-user DPG choice via h.issuerFor(user)
+// and the in-process LDP signer short-circuit for ldp_vc format.
 
 import (
 	"encoding/csv"
@@ -24,13 +34,22 @@ import (
 	"strings"
 	"time"
 
+	"vcplatform/internal/datasource"
 	"vcplatform/internal/middleware"
 	"vcplatform/internal/model"
 	"vcplatform/internal/render"
 	"vcplatform/internal/store/walletbag"
 )
 
-// IssuerBulkPage renders the bulk issuance page with API + data-provider tabs.
+// IssuerBulkPage renders the bulk issuance page. All three sub-mode
+// tabs (spreadsheet upload, connected database, REST API) are universal
+// because every backend bulk path is implemented as a per-row loop in
+// the platform — none of the supported DPGs exposes a true batch
+// endpoint today, so there's nothing capability-specific to gate.
+//
+// The only conditional rendering is the database tab, which is hidden
+// when no datasource.DataSource is registered in this deployment so
+// the user isn't shown an empty picker.
 func (h *Handler) IssuerBulkPage(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
 	if user == nil {
@@ -38,14 +57,31 @@ func (h *Handler) IssuerBulkPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Determine which bulk modes the current DPG supports based on capabilities.
 	issuer := h.issuerFor(user)
-	caps := issuer.Capabilities()
-	supportsAPI := caps.Batch // batch = HTTP bulk endpoint at the backend level
-	// Data-provider plugin is always available if we have at least one
-	// registered data source (the UI uses our Go DataSource interface, not
-	// the backend's bulk endpoint).
-	supportsDataProvider := len(h.dataSources.List()) > 0
+
+	// Build a lightweight summary of every registered data source so the
+	// template can render a picker without making a second round-trip
+	// through APIListDataSources.
+	rawSources := h.dataSources.List()
+	type dsSummary struct {
+		Name         string `json:"name"`
+		Kind         string `json:"kind"`
+		DisplayName  string `json:"displayName"`
+		Summary      string `json:"summary"`
+		TotalRecords int    `json:"totalRecords"`
+	}
+	sources := make([]dsSummary, 0, len(rawSources))
+	for _, ds := range rawSources {
+		s := dsSummary{Name: ds.Name(), Kind: ds.Kind(), DisplayName: ds.Name()}
+		if desc, err := ds.Describe(r.Context()); err == nil && desc != nil {
+			if desc.DisplayName != "" {
+				s.DisplayName = desc.DisplayName
+			}
+			s.Summary = desc.Summary
+			s.TotalRecords = desc.TotalRecords
+		}
+		sources = append(sources, s)
+	}
 
 	schemas := h.getSchemas(user)
 
@@ -58,8 +94,8 @@ func (h *Handler) IssuerBulkPage(w http.ResponseWriter, r *http.Request) {
 		Data: map[string]any{
 			"schemas":              schemas,
 			"dpgName":              issuer.Name(),
-			"supportsAPI":          supportsAPI,
-			"supportsDataProvider": supportsDataProvider,
+			"supportsDataProvider": len(sources) > 0,
+			"dataSources":          sources,
 		},
 	}
 	if err := h.render.Render(w, "issuer/bulk", data); err != nil {
@@ -178,6 +214,93 @@ func (h *Handler) APIIssueBulkCSV(w http.ResponseWriter, r *http.Request) {
 	}
 
 	out := h.issueMany(r, user, configID, format, records)
+	writeJSON(w, http.StatusOK, out)
+}
+
+// APIIssueBulkDataSource handles POST /api/issuer/bulk-datasource — the
+// "Database / preconfigured data source" tab on the bulk page.
+//
+// The platform queries the named data source via ListRecords, optionally
+// remaps each row's field names to credential claim names using the
+// caller-supplied mapping, and feeds the records through the same
+// per-row issuance loop the CSV path uses.
+//
+// Body shape:
+//
+//	{
+//	  "source":   "Citizens Database",  // datasource.Name()
+//	  "configId": "FarmerCredential",
+//	  "format":   "ldp_vc",
+//	  "limit":    500,                  // optional, default 100, max 5000
+//	  "mapping":  {"fullName": "first_name", ...}  // optional; verbatim if absent
+//	}
+func (h *Handler) APIIssueBulkDataSource(w http.ResponseWriter, r *http.Request) {
+	user := middleware.GetUser(r.Context())
+	if user == nil || user.Demo {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	var req struct {
+		Source   string            `json:"source"`
+		ConfigID string            `json:"configId"`
+		Format   string            `json:"format"`
+		Limit    int               `json:"limit"`
+		Mapping  map[string]string `json:"mapping"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return
+	}
+	if req.Source == "" || req.ConfigID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "source and configId required"})
+		return
+	}
+	if req.Format == "" {
+		req.Format = "ldp_vc"
+	}
+	if req.Limit <= 0 {
+		req.Limit = 100
+	}
+	if req.Limit > 5000 {
+		req.Limit = 5000
+	}
+
+	ds := h.dataSources.Get(req.Source)
+	if ds == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "data source not found: " + req.Source})
+		return
+	}
+
+	rows, err := ds.ListRecords(r.Context(), datasource.Filter{Limit: req.Limit})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "list records: " + err.Error()})
+		return
+	}
+	if len(rows) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "data source returned 0 records"})
+		return
+	}
+
+	records := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		rec := map[string]any{}
+		if len(req.Mapping) == 0 {
+			// No mapping — use source field names verbatim as claim names.
+			for k, v := range row {
+				rec[k] = v
+			}
+		} else {
+			for claim, sourceField := range req.Mapping {
+				if v, ok := row[sourceField]; ok {
+					rec[claim] = v
+				}
+			}
+		}
+		records = append(records, rec)
+	}
+
+	out := h.issueMany(r, user, req.ConfigID, req.Format, records)
+	out["source"] = ds.Name()
 	writeJSON(w, http.StatusOK, out)
 }
 
