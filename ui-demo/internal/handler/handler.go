@@ -201,6 +201,30 @@ func (h *Handler) verifierFor(user *model.User) store.VerifierStore {
 	return h.stores.Verifier
 }
 
+// htmxAwareRedirect issues a redirect that works cleanly for both HTMX-
+// driven navigation and plain browser requests.
+//
+// The problem with plain http.Redirect inside an HTMX flow: HTMX's
+// underlying XHR transparently follows the 303, but the follow-up
+// request loses the HX-Request header, so the server renders a FULL
+// HTML page instead of the fragment HTMX expected. HTMX then tries to
+// swap the full page into the target element and ends up with blank /
+// inconsistent content — the symptom being "I can reach the wizard
+// only via a hard refresh, not by clicking in the sidebar".
+//
+// HTMX's HX-Location response header is the correct fix: the server
+// returns 200 with HX-Location set to the destination URL, and HTMX
+// does a client-side AJAX navigation to that URL, preserving the SPA
+// behavior. For non-HTMX requests we fall back to the standard 303.
+func (h *Handler) htmxAwareRedirect(w http.ResponseWriter, r *http.Request, location string) {
+	if middleware.IsHTMX(r.Context()) {
+		w.Header().Set("HX-Location", location)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	http.Redirect(w, r, location, http.StatusSeeOther)
+}
+
 // issuerRegistryNames returns the DPG identifiers of every registered
 // issuer backend. Used by the onboarding wizard to render DPG cards.
 func (h *Handler) issuerRegistryNames() []string {
@@ -335,7 +359,6 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 		mux.Handle("GET /portal/holder/wallet", holderAccess(h.HolderWallet))
 		mux.Handle("GET /portal/holder/cred-detail", holderAccess(h.HolderCredDetail))
 		mux.Handle("GET /portal/holder/claim", holderAccess(h.HolderClaim))
-		mux.Handle("GET /portal/holder/retrieval", holderAccess(h.HolderRetrieval))
 		mux.Handle("GET /portal/holder/dependents", holderAccess(h.HolderDependents))
 		mux.Handle("GET /portal/holder/inbox", holderAccess(h.HolderInbox))
 		mux.Handle("GET /portal/holder/disclosure", holderAccess(h.HolderDisclosure))

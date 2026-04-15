@@ -27,7 +27,7 @@
         {{if .Category}}<div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Category</span><span style="font-weight:500">{{.Category}}</span></div>{{end}}
         <div style="display:flex;justify-content:space-between"><span style="color:var(--text-secondary)">Issuer</span><span style="font-weight:500;font-size:0.72rem">{{.Issuer}}</span></div>
       </div>
-      <button class="btn btn-primary btn-sm" style="width:100%" hx-get="/portal/holder/retrieval" hx-target="#main-content" hx-push-url="true">Retrieve</button>
+      <button class="btn btn-primary btn-sm" style="width:100%" hx-get="/portal/holder/claim" hx-target="#main-content" hx-push-url="true">Claim</button>
     </div>
     {{end}}
   </div>

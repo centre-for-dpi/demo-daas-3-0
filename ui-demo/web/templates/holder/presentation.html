@@ -34,8 +34,8 @@
   <div class="card" style="text-align:center;padding:3rem 2rem;margin-bottom:1rem">
     <div style="font-size:2.5rem;margin-bottom:1rem">&#128220;</div>
     <h3 style="font-size:1rem;margin-bottom:0.5rem">No credentials available for presentation</h3>
-    <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:1.5rem">Your wallet is empty. Retrieve credentials first, then build a verifiable presentation to share with verifiers.</p>
-    <button class="btn btn-primary btn-sm" hx-get="/portal/holder/retrieval" hx-target="#main-content" hx-push-url="true">Retrieve Credentials</button>
+    <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:1.5rem">Your wallet is empty. Claim a credential from an issuer first, then build a verifiable presentation to share with verifiers.</p>
+    <button class="btn btn-primary btn-sm" hx-get="/portal/holder/claim" hx-target="#main-content" hx-push-url="true">Claim a Credential</button>
   </div>
 
   {{else}}

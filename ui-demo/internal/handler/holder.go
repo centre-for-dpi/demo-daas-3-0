@@ -49,7 +49,11 @@ func (h *Handler) HolderWallet(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
 
 	if user != nil && user.HasBackendAuth() && user.WalletDPG == "" {
-		http.Redirect(w, r, "/portal/onboarding", http.StatusSeeOther)
+		// HTMX-aware redirect: plain http.Redirect(303) breaks navigation
+		// from a sidebar click because HTMX drops the HX-Request header
+		// when following the redirect and ends up with a full HTML page
+		// where it expected a fragment. See htmxAwareRedirect.
+		h.htmxAwareRedirect(w, r, "/portal/onboarding")
 		return
 	}
 
@@ -132,31 +136,6 @@ func (h *Handler) HolderClaim(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) HolderRetrieval(w http.ResponseWriter, r *http.Request) {
-	user := middleware.GetUser(r.Context())
-	data := h.pageData(r, "holder-retrieval", nil)
-	data.Breadcrumb = []model.BreadcrumbItem{
-		{Label: "Holder"},
-		{Label: "Retrieve", Active: true},
-	}
-	if walletData := h.getWalletData(r.Context(), user); walletData != nil {
-		data.Data = walletData
-	}
-	// Also fetch schemas as available credential types for the retrieval form
-	if user != nil && !user.Demo {
-		schemas, err := h.stores.Schemas.ListSchemas(r.Context())
-		if err == nil {
-			if data.Data == nil {
-				data.Data = map[string]any{}
-			}
-			dm := data.Data.(map[string]any)
-			dm["schemas"] = schemas
-		}
-	}
-	if err := h.render.Render(w, "holder/retrieval", data); err != nil {
-		http.Error(w, "template error", http.StatusInternalServerError)
-	}
-}
 
 func (h *Handler) HolderDependents(w http.ResponseWriter, r *http.Request) {
 	user := middleware.GetUser(r.Context())
