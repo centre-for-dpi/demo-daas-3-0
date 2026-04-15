@@ -645,6 +645,17 @@ services:
       oidc_p12_password: ${INJIWEB_P12_PASSWORD:-xy4gh6swa2i}
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-dummy-client-id}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-dummy-client-secret}
+      # Trust the certify-nginx self-signed cert so mimoto can resolve
+      # the issuer's did:web:certify-nginx document over HTTPS during
+      # credential verification. The Eclipse Temurin base image's
+      # /__cacert_entrypoint.sh imports every *.crt under /certificates/
+      # into the JVM truststore on startup when USE_SYSTEM_CA_CERTS=1.
+      # Without this, mimoto receives the credential successfully and
+      # then fails verification with PKIX path building failed →
+      # "unable to find valid certification path to requested target",
+      # surfaced in the inji-web UI as "we were unable to download the
+      # card".
+      USE_SYSTEM_CA_CERTS: "1"
     volumes:
       - ../injiweb/config/mimoto-default.properties:/home/mosip/mimoto-default.properties:ro
       - ../injiweb/config/mimoto-bootstrap.properties:/home/mosip/mimoto-bootstrap.properties:ro
@@ -653,6 +664,8 @@ services:
       # the pristine original by fetch-config.sh) as writable so Mimoto
       # can persist those keys without mutating the user's real file.
       - ../injiweb/config/certs-runtime/oidckeystore.p12:/home/mosip/certs/oidckeystore.p12
+      # See USE_SYSTEM_CA_CERTS comment above.
+      - ./inji/certify-nginx/certs/nginx.crt:/certificates/certify-nginx.crt:ro
 
   injiweb-ui:
     image: injistack/inji-web:0.16.0
