@@ -332,6 +332,40 @@ function finishSelect(rec, source) {
   setLookupStatus('success', filled + ' field(s) auto-filled from ' + source + '.');
 }
 
+// credentialTypeCandidates expands a live credential configuration ID into
+// a list of candidate base credential-type names that data-source mappings
+// might be keyed by. Mirrors the Go-side helper of the same name in
+// internal/handler/schemas.go so that mapping lookups survive variant IDs
+// like "FarmerCredentialV2", "FarmerCredentialSdJwt", or
+// "UniversityDegree_jwt_vc_json", all of which should collapse to the
+// base type the citizens datasource defines a SuggestedMappings entry for.
+function credentialTypeCandidates(id) {
+  if (!id) return [];
+  var out = [id];
+  var cur = id;
+  // Strip OID4VCI-style underscore-joined format suffixes.
+  var underscoreSuffixes = ['_jwt_vc_json-ld', '_jwt_vc_json', '_ldp_vc', '_vc+sd-jwt', '_sd-jwt', '_sdjwt', '_mso_mdoc'];
+  for (var i = 0; i < underscoreSuffixes.length; i++) {
+    if (cur.length > underscoreSuffixes[i].length && cur.slice(-underscoreSuffixes[i].length) === underscoreSuffixes[i]) {
+      cur = cur.slice(0, cur.length - underscoreSuffixes[i].length);
+      break;
+    }
+  }
+  // Strip CamelCase variant suffixes common in Inji configs.
+  var camelSuffixes = ['SdJwt', 'SDJWT', 'JwtVc', 'JWT', 'LdpVc', 'LDP', 'Mdoc', 'MDOC'];
+  for (var j = 0; j < camelSuffixes.length; j++) {
+    if (cur.length > camelSuffixes[j].length && cur.slice(-camelSuffixes[j].length) === camelSuffixes[j]) {
+      cur = cur.slice(0, cur.length - camelSuffixes[j].length);
+      break;
+    }
+  }
+  // Strip a trailing "V<digits>" / "v<digits>" version marker.
+  var vmatch = cur.match(/^(.*?)[Vv]\d+$/);
+  if (vmatch && vmatch[1]) cur = vmatch[1];
+  if (cur && cur !== id && out.indexOf(cur) < 0) out.push(cur);
+  return out;
+}
+
 // applyRecordToFields fills any [data-claim] inputs under #schema-fields using
 // the suggested mappings for the selected schema's credential type. Returns
 // the number of fields it populated.
@@ -344,14 +378,15 @@ function applyRecordToFields(record, mappings, schemaId) {
   }
   if (!schema) return 0;
 
-  // Try multiple mapping keys: configId, name, and a normalized version of each.
-  var mappingKeys = [schema.configId, schema.name];
-  for (var k = 0; k < mappingKeys.length; k++) {
-    if (mappingKeys[k]) {
-      var norm = mappingKeys[k].split('_')[0]; // strip format suffix ("_jwt_vc_json")
-      if (mappingKeys.indexOf(norm) < 0) mappingKeys.push(norm);
-    }
-  }
+  // Build the ordered list of mapping keys to try: schema.configId, then
+  // schema.name, each expanded through credentialTypeCandidates so variant
+  // IDs collapse to the base type the SuggestedMappings is keyed by.
+  var mappingKeys = [];
+  [schema.configId, schema.name].forEach(function(k) {
+    credentialTypeCandidates(k).forEach(function(cand) {
+      if (mappingKeys.indexOf(cand) < 0) mappingKeys.push(cand);
+    });
+  });
 
   var map = {};
   if (mappings) {
