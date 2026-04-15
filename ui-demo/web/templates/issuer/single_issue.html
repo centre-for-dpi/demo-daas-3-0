@@ -5,6 +5,8 @@
   {{$dm := dataMap .Data}}
   {{$schemas := index ($dm) "schemas"}}
   {{$isReal := and .User (not .User.Demo)}}
+  {{$walletDpg := ""}}{{if $isReal}}{{$walletDpg = .User.WalletDPG}}{{end}}
+  {{$selfIssueWallet := or (eq $walletDpg "pdf") (eq $walletDpg "local")}}
 
   <div class="card">
     <div class="form-group"><label class="form-label">Schema</label>
@@ -119,8 +121,22 @@
 
     <!-- Direct claim panel -->
     <div id="delivery-claim" style="display:none">
-      <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:0.75rem">Accept this credential directly into your linked wallet.</p>
-      <button class="btn btn-primary btn-sm" id="claim-btn" onclick="claimOffer()">Accept into My Wallet</button>
+      {{if $selfIssueWallet}}
+      <!-- Honesty banner: when the holder's wallet is PDF or in-process
+           Local, "Claim to My Wallet" doesn't run the OID4VCI Pre-Auth
+           flow against the external issuer above. Instead the platform
+           re-signs the same claims with its own in-process Ed25519 LDP
+           signer and drops the resulting credential into the wallet.
+           This is the difference between a "credential that displays"
+           and a "credential that actually verifies in Inji Verify". -->
+      <div style="padding:0.85rem 1rem;margin-bottom:0.75rem;background:var(--bg-surface-alt);border-left:3px solid var(--accent);border-radius:var(--radius-md);font-size:0.78rem;line-height:1.55;color:var(--text-secondary)">
+        <strong>Self-claim into the {{if eq $walletDpg "pdf"}}PDF Wallet{{else}}in-process Local holder{{end}}.</strong>
+        Because your wallet is {{if eq $walletDpg "pdf"}}the offline PDF Wallet{{else}}the in-process Local holder{{end}}, accepting this credential goes through a separate, honest path: the platform re-signs the exact same claims you just entered using its own in-process Ed25519 LDP signer (URDNA2015 + <code>Ed25519Signature2020</code>), then drops the resulting <code>ldp_vc</code> credential into your wallet. The external issuer offer URL above isn't used at all for this button. The reason: walt.id's issuer-api only emits JWT VCs (which standalone Inji Verify can't verify), and the primary Inji Certify instance is rewired through esignet (which 401s our Pre-Auth requests). The local LDP signer sidesteps both, producing a credential Inji Verify, the verification adapter, and walt.id's verifier-api can all verify directly.
+      </div>
+      {{else}}
+      <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:0.75rem">Accept this credential directly into your linked wallet via the OID4VCI Pre-Authorized Code flow against the issuer above.</p>
+      {{end}}
+      <button class="btn btn-primary btn-sm" id="claim-btn" onclick="claimOffer()">{{if $selfIssueWallet}}Self-issue into my wallet{{else}}Accept into My Wallet{{end}}</button>
       <div id="claim-status" style="display:none;margin-top:0.75rem;padding:0.5rem 0.75rem;border-radius:var(--radius-sm);font-size:0.82rem"></div>
     </div>
 
@@ -483,6 +499,15 @@ function renderFieldInput(field) {
 
 var _currentOfferUrl = '';
 
+// Snapshot of the most recent issuance claims, kept on the page so the
+// "Claim to My Wallet" → self-issue path can re-submit the same claims
+// to /api/wallet/self-issue without going through the external issuer.
+// Only used when the holder's wallet DPG is pdf / local. See
+// APIIssueToSelf for the full rationale.
+var _lastClaimsSnapshot = null;
+var _walletDpg = {{marshal $walletDpg}};
+var _selfIssueWallet = {{if $selfIssueWallet}}true{{else}}false{{end}};
+
 // sanitizeOfferURL strips any whitespace or control characters that could
 // sneak into the URL on the way to a wallet (copy-paste, clipboard quirks,
 // or servers that append newlines to their response bodies).
@@ -561,15 +586,32 @@ function claimOffer() {
   btn.textContent = 'Claiming...';
   status.style.display = 'none';
 
-  fetch('/api/wallet/claim-offer', {
+  // PDF / in-process Local wallets short-circuit the external issuer
+  // entirely. The credential is re-signed locally so it actually verifies
+  // in standalone Inji Verify. See the on-page banner + APIIssueToSelf
+  // for the full rationale.
+  var endpoint = '/api/wallet/claim-offer';
+  var payload = {offerUrl: _currentOfferUrl};
+  if (_selfIssueWallet) {
+    if (!_lastClaimsSnapshot) {
+      btn.disabled = false;
+      btn.textContent = 'Self-issue into my wallet';
+      showToast('Required', 'Click Sign & Issue first so the platform knows which claims to re-sign.');
+      return;
+    }
+    endpoint = '/api/wallet/self-issue';
+    payload = _lastClaimsSnapshot;
+  }
+
+  fetch(endpoint, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({offerUrl: _currentOfferUrl})
+    body: JSON.stringify(payload)
   })
   .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
   .then(function(res) {
     btn.disabled = false;
-    btn.textContent = 'Accept into My Wallet';
+    btn.textContent = _selfIssueWallet ? 'Self-issue into my wallet' : 'Accept into My Wallet';
     var d = res.data || {};
     if (!res.ok || d.error) {
       renderClaimError(status, d);
@@ -597,7 +639,7 @@ function claimOffer() {
   })
   .catch(function(e) {
     btn.disabled = false;
-    btn.textContent = 'Accept into My Wallet';
+    btn.textContent = _selfIssueWallet ? 'Self-issue into my wallet' : 'Accept into My Wallet';
     status.style.display = '';
     status.style.background = 'var(--error-surface)';
     status.style.color = 'var(--error)';
@@ -697,6 +739,15 @@ function issueCredential() {
   // proof JWT at claim time, not via the issuer's claims map. Sending a
   // stray `id` key triggers `unknown_claims` on DPGs like Inji that
   // strictly validate claims against the template.
+
+  // Snapshot the claims + credential type for the self-issue path. The
+  // PDF / Local wallet "Claim to My Wallet" button re-submits this exact
+  // payload to /api/wallet/self-issue instead of running OID4VCI against
+  // the external issuer below. Stripping the format suffix matches
+  // deriveCredentialTypes() on the server side.
+  var credentialType = configId.replace(/_(jwt_vc_json(-ld)?|ldp_vc|vc\+sd-jwt|sd-jwt|sdjwt|mso_mdoc)$/, '');
+  if (!credentialType) credentialType = 'VerifiableCredential';
+  _lastClaimsSnapshot = {credentialType: credentialType, claims: claims};
 
   var btn = document.getElementById('issue-btn');
   btn.disabled = true;

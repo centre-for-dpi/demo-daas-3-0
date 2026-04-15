@@ -437,6 +437,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /api/wallet/dids/create", auth(h.APICreateDID))
 	mux.Handle("POST /api/credential/issue", auth(h.APIIssueCredentialOffer))
 	mux.Handle("POST /api/wallet/claim-offer", auth(h.APIWalletClaimOffer))
+	mux.Handle("POST /api/wallet/self-issue", auth(h.APIIssueToSelf))
 	mux.Handle("POST /api/share/create-session", auth(h.APICreateShareSession))
 	mux.Handle("POST /api/share/proactive", auth(h.APIShareProactive))
 	mux.HandleFunc("GET /share/v/{id}", h.ShareView)

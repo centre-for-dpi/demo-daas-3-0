@@ -10,13 +10,21 @@
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
       <div>
         <h1 style="font-size:1.25rem;margin:0">Shared Credential</h1>
-        <p style="color:var(--text-secondary);font-size:0.82rem;margin:0.25rem 0 0">A holder has shared a credential with you for verification.</p>
+        <p style="color:var(--text-secondary);font-size:0.82rem;margin:0.25rem 0 0">A holder has sent you this credential via a direct-share link. The claims below are just the display values — clicking <em>Verify</em> runs the real cryptographic check.</p>
       </div>
       <span class="tag tag-accent" style="font-size:0.68rem">{{$cred.Format}}</span>
     </div>
 
+    <!-- Honesty banner: this is NOT an OID4VP flow. OID4VP is verifier-
+         initiated; here the holder staged a credential on our server and
+         sent you a URL to this page. Explain so the verifier knows
+         exactly what's running. -->
+    <div style="padding:0.85rem 1rem;margin-bottom:1rem;background:var(--bg-surface-alt);border-left:3px solid var(--accent);border-radius:var(--radius-md);font-size:0.78rem;line-height:1.55;color:var(--text-secondary)">
+      <strong>How this works.</strong> The holder chose a credential from their wallet and asked this platform to stage it on a temporary page. You're viewing that page now. The claim values below are what their wallet had stored. When you click <em>Verify</em>, the platform's configured verifier backend runs cryptographic signature verification against the underlying credential (JSON-LD <code>ldp_vc</code>, compact JWT, or SD-JWT depending on the format tag above). This is <strong>not</strong> an OID4VP authorization flow — there's no session, no nonce, no <code>vp_token</code>. It's a convenience for "holder shows verifier that their credential is real".
+    </div>
+
     <div style="margin:1.25rem 0;padding:1rem;background:var(--bg-surface-alt);border-radius:var(--radius-md)">
-      <div style="font-size:0.7rem;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.5rem">Claims</div>
+      <div style="font-size:0.7rem;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.5rem">Claims (display values — not yet verified)</div>
       {{range $k, $v := $subj}}
       {{if ne $k "id"}}
       <div style="display:flex;justify-content:space-between;padding:0.3rem 0;border-bottom:1px solid var(--border);font-size:0.85rem">
@@ -29,7 +37,7 @@
 
     <div style="display:flex;gap:0.5rem;align-items:center">
       <button class="btn btn-primary btn-sm" id="verify-btn" onclick="verifyShare()">Verify Credential</button>
-      <span style="font-size:0.72rem;color:var(--text-tertiary)">Runs cryptographic verification against the configured backend.</span>
+      <span style="font-size:0.72rem;color:var(--text-tertiary)">Runs cryptographic verification against this platform's configured backend.</span>
     </div>
 
     <div id="verify-result" style="display:none;margin-top:1.25rem;padding:1rem;border-radius:var(--radius-md);font-size:0.85rem"></div>

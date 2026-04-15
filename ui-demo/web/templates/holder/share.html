@@ -5,8 +5,40 @@
   {{$dm := dataMap .Data}}
   {{$creds := index ($dm) "credentials"}}
   {{$isReal := and .User (not .User.Demo)}}
+  {{$verifierName := index ($dm) "verifierName"}}
+  {{$verifierDpg := index ($dm) "verifierDpg"}}
 
   {{if $isReal}}
+
+  <!-- Verifier-backend banner: when the holder clicks "Generate
+       direct-share link" or runs a Verify, this is the backend the
+       platform routes the cryptographic check through. The choice
+       lives in the verifier onboarding wizard; surface it here so a
+       layperson knows which backend will see their credential and
+       what it can actually verify. Rendered above the credentials
+       check so the layperson sees it even when their wallet is
+       empty. -->
+  <div class="card" style="padding:0.85rem 1.1rem;margin-bottom:1rem;background:var(--bg-surface-alt);border-left:3px solid var(--accent);font-size:0.78rem;line-height:1.55;color:var(--text-secondary)">
+    {{if $verifierName}}
+    <strong>Verifying through: {{$verifierName}}.</strong>
+    {{if eq $verifierDpg "inji"}}
+    Inji Verify is a JSON-LD verifier — it natively verifies <code>ldp_vc</code> credentials with an embedded LDP proof, plus SD-JWT credentials via the <code>x5c</code> certificate-chain path. <strong>It cannot verify compact JWT VCs</strong> (the format walt.id's issuer-api emits) — for those you need to switch to the verification adapter or walt.id's verifier.
+    {{else if eq $verifierDpg "waltid"}}
+    Walt.id's verifier-api handles JWT VCs (<code>jwt_vc_json</code>), SD-JWT, and mDOC via OID4VP session flows. It does not natively verify <code>ldp_vc</code> with an embedded LDP proof — for that you'd switch to Inji Verify or the verification adapter.
+    {{else if eq $verifierDpg "adapter"}}
+    The <strong>verification adapter</strong> is backend-agnostic — it inspects the credential's DID method and format and routes the verification request to whichever backend can actually handle it (Inji Verify for <code>ldp_vc</code>, walt.id's verifier-api for JWT VCs, Credebl for AnonCreds). Best choice when you don't know in advance which format your credential is in.
+    {{else if eq $verifierDpg "credebl"}}
+    Credebl agent (beta) — verifies AnonCreds / Sovrin <code>did:indy</code> credentials only. Does not handle JWT VCs or W3C JSON-LD credentials.
+    {{else}}
+    The platform routes verification requests to <code>{{$verifierDpg}}</code>.
+    {{end}}
+    <div style="margin-top:0.4rem;font-size:0.74rem;color:var(--text-tertiary)">
+      Want a different verifier backend? <a href="/portal/onboarding?step=dpg-choice" hx-get="/portal/onboarding?step=dpg-choice" hx-target="#main-content" hx-push-url="true" style="color:var(--accent)">Re-pick in onboarding →</a>
+    </div>
+    {{else}}
+    <strong>No verifier backend selected.</strong> Verification falls back to whichever backend the platform has set as default. Pick a verifier explicitly in onboarding to control which backend runs the cryptographic check.
+    {{end}}
+  </div>
 
   {{if hasItems $creds}}
   <!-- Mode toggle -->
@@ -32,8 +64,26 @@
     </div>
   </div>
 
-  <!-- MODE 2: Holder-initiated presentation -->
+  <!-- MODE 2: Holder-initiated direct share.
+       This is NOT OID4VP. The OID4VP protocol is verifier-initiated by
+       design — the verifier creates an authorization request, the
+       holder's wallet responds with a vp_token. There is no "holder
+       proactively pushes a credential" flow in OID4VP. What we offer
+       here is a convenience: the platform hosts a short-lived page
+       where the verifier can open the credential in a browser and
+       click Verify, and the platform's own verifier backend runs the
+       check. It's useful, it's honest, but it's not OID4VP — hence
+       the relabel away from "OID4VP Verification Link". -->
   <div id="mode-initiate" style="display:none">
+    <!-- Honesty banner so a layperson understands what this button does. -->
+    <div class="card" style="padding:1rem 1.25rem;margin-bottom:1.25rem;background:var(--bg-surface-alt);border-left:3px solid var(--accent)">
+      <div style="font-size:0.82rem;line-height:1.55;color:var(--text-secondary)">
+        <strong>This is a direct-share link, not an OID4VP request.</strong>
+        OID4VP is always started by the verifier — they send you a request, your wallet replies. There's no standard "holder pushes a credential to a verifier" flow. What you're about to create is a convenience: the platform stages a copy of your credential on a temporary page. Anyone you send the link to can open it, see the claims, and click <em>Verify</em>. The platform's own verifier backend runs the cryptographic check on their behalf.
+        <div style="font-size:0.74rem;margin-top:0.5rem;color:var(--text-tertiary)">Use this when you just need to show a verifier that your credential is real. For a full OID4VP round-trip, use the <strong>Respond to Verifier</strong> tab instead — that's where the verifier-initiated flow lives.</div>
+      </div>
+    </div>
+
     <div class="card" style="margin-bottom:1.25rem">
       <h3 style="font-size:0.9rem;margin-bottom:1rem">Select Credential to Share</h3>
       <div id="share-cred-list" style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:1rem">
@@ -52,26 +102,28 @@
         {{end}}
       </div>
       <div style="text-align:right">
-        <button class="btn btn-primary btn-sm" id="share-gen-btn" onclick="generateSharePresentation()">Generate Shareable Link</button>
+        <button class="btn btn-primary btn-sm" id="share-gen-btn" onclick="generateSharePresentation()">Generate direct-share link</button>
       </div>
     </div>
 
     <!-- Share result (hidden until generated) -->
     <div id="share-result" style="display:none">
       <div class="card" style="border-left:3px solid var(--color-accent)">
-        <h3 style="font-size:0.9rem;margin-bottom:1rem">Credential Presentation</h3>
+        <h3 style="font-size:0.9rem;margin-bottom:1rem">Direct-share link ready</h3>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem">
           <div>
-            <label class="form-label">OID4VP Verification Link</label>
+            <label class="form-label">Direct verification link (platform-hosted)</label>
             <code id="share-vp-url" style="font-size:0.68rem;display:block;background:var(--bg-surface-alt);padding:0.75rem;border-radius:var(--radius-md);word-break:break-all;max-height:100px;overflow-y:auto"></code>
             <div style="margin-top:0.75rem;display:flex;gap:0.5rem">
-              <button class="btn btn-sm btn-primary" onclick="navigator.clipboard.writeText(document.getElementById('share-vp-url').textContent);showToast('Copied','Verification link copied')">Copy Link</button>
+              <button class="btn btn-sm btn-primary" onclick="navigator.clipboard.writeText(document.getElementById('share-vp-url').textContent);showToast('Copied','Direct-share link copied')">Copy Link</button>
             </div>
-            <p style="font-size:0.72rem;color:var(--text-tertiary);margin-top:0.5rem">Send this link to the verifier. They can check the result in their verification portal.</p>
+            <p style="font-size:0.72rem;color:var(--text-tertiary);margin-top:0.5rem">
+              Send this link to a verifier. They open it in a browser, see the claim values, and click <em>Verify</em>. Link expires in 30 minutes. <strong>Not an OID4VP authorization request.</strong>
+            </p>
           </div>
           <div style="text-align:center">
             <div id="share-qr" style="margin:0 auto"></div>
-            <p style="font-size:0.72rem;color:var(--text-tertiary);margin-top:0.5rem">Verifier scans to check credential</p>
+            <p style="font-size:0.72rem;color:var(--text-tertiary);margin-top:0.5rem">QR encodes the same direct-share URL — a verifier opens it in a browser. Not for wallet apps.</p>
           </div>
         </div>
       </div>

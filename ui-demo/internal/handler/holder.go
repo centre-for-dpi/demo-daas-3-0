@@ -10,6 +10,13 @@ import (
 
 // getWalletData fetches credentials and DIDs for an authenticated user,
 // resolving the wallet store per the user's WalletDPG choice.
+//
+// Also surfaces the active wallet + verifier names + the verifier's
+// DPG identifier so templates (Present, Share) can render an honest
+// "Verifying through: X" banner without making a second context-aware
+// lookup. The verifier is the one the user picked in onboarding via
+// h.verifierFor(user) — same routing used by APIShareVerify and the
+// share/v/{id}/verify path.
 func (h *Handler) getWalletData(ctx context.Context, user *model.User) map[string]any {
 	if user == nil || !user.HasBackendAuth() {
 		return nil
@@ -21,6 +28,21 @@ func (h *Handler) getWalletData(ctx context.Context, user *model.User) map[strin
 		return nil
 	}
 	result["walletID"] = wallets[0].ID
+	result["walletName"] = wallet.Name()
+	result["walletDpg"] = user.WalletDPG
+
+	verifier := h.verifierFor(user)
+	if verifier != nil {
+		result["verifierName"] = verifier.Name()
+		caps := verifier.Capabilities()
+		result["verifierCaps"] = map[string]any{
+			"directVerify":           caps.DirectVerify,
+			"createRequest":          caps.CreateRequest,
+			"presentationDefinition": caps.PresentationDefinition,
+			"didMethods":             caps.DIDMethods,
+		}
+	}
+	result["verifierDpg"] = user.VerifierDPG
 
 	creds, err := wallet.ListCredentials(ctx, user.WalletToken, wallets[0].ID)
 	if err == nil {

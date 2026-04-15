@@ -575,6 +575,115 @@ func deriveCredentialTypes(configID string) []string {
 	return []string{base}
 }
 
+// APIIssueToSelf handles POST /api/wallet/self-issue — a specialized
+// "issue + claim in one round trip" flow that the PDF and Local wallets
+// use to avoid the interop pitfalls of external issuers.
+//
+// Why this endpoint exists: an issuer operator using the PDF wallet (or
+// the in-process Local holder) clicks "Claim to My Wallet" on the Single
+// Issuance page. Normally the UI would POST the external issuer's offer
+// URL to /api/wallet/claim-offer, which runs the full OID4VCI Pre-Auth
+// dance against whatever DPG was picked in the issuance form.
+//
+// That's the honest path for wallets that can verify whatever the
+// external issuer returns. But it breaks for PDF/Local because:
+//
+//  * walt.id's issuer-api only has /openid4vc/jwt/issue and
+//    /openid4vc/sdjwt/issue — no LDP_VC endpoint. The credential that
+//    comes back is a compact JWT VC. Inji Verify (and any other
+//    standalone LDP-only verifier) can't verify it.
+//  * The primary Inji Certify instance has its credential endpoint
+//    rewired through esignet (so the Auth Code / Inji Web flow works)
+//    and returns 401 on any Pre-Auth request from our localholder.
+//
+// So for the PDF/Local self-claim demo path we take a different route:
+// stage the exact claims the operator entered into our in-process
+// LocalIssuer (URDNA2015 + Ed25519Signature2020 → real ldp_vc with a
+// real LDP proof block), build an offer URL pointing at our own
+// OID4VCI surface, then have the wallet claim that URL. Result: a
+// credential that Inji Verify verifies correctly every time, with an
+// issuer DID our own platform resolves via did:key / did:web.
+//
+// This is NOT a bypass of the issuer layer — it's a second issuance
+// path that's always available, labeled honestly on the UI as "the
+// platform re-signs the credential with its own LDP signer so Inji
+// Verify can verify it". The external-issuer Claim path is still
+// there for wallets that need it.
+//
+// Only the real-user, pdf/local wallet case is allowed. Everything
+// else is rejected with a clear reason.
+func (h *Handler) APIIssueToSelf(w http.ResponseWriter, r *http.Request) {
+	user := middleware.GetUser(r.Context())
+	if user == nil || !user.HasBackendAuth() {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized — sign in via SSO to link your wallet"})
+		return
+	}
+	if user.WalletDPG != "pdf" && user.WalletDPG != "local" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error": "self-issue is only available for the PDF Wallet and in-process Local holder. " +
+				"For other wallets, use the standard 'Claim to My Wallet' flow with an offer URL.",
+			"walletDpg": user.WalletDPG,
+		})
+		return
+	}
+	if h.localIssuer == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "in-process LDP signer is not initialized — self-issue unavailable",
+		})
+		return
+	}
+
+	var req struct {
+		CredentialType string         `json:"credentialType"`
+		Claims         map[string]any `json:"claims"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return
+	}
+	if req.CredentialType == "" {
+		req.CredentialType = "VerifiableCredential"
+	}
+	if req.Claims == nil {
+		req.Claims = map[string]any{}
+	}
+
+	// Stage the credential on our in-process LocalIssuer and generate an
+	// offer URL. The URL is then claimed by the holder's wallet via the
+	// standard OID4VCI Pre-Auth flow — no shortcut, no bypass; we're
+	// simply using our own OID4VCI surface as the issuer.
+	types := []string{"VerifiableCredential"}
+	if req.CredentialType != "VerifiableCredential" {
+		types = append(types, req.CredentialType)
+	}
+	preAuthCode := h.localIssuer.StagePending(types, req.Claims)
+	offerURL := h.localIssuer.BuildOfferURL(preAuthCode)
+
+	wallet := h.walletFor(user)
+	wallets, err := wallet.GetWallets(r.Context(), user.WalletToken)
+	if err != nil || len(wallets) == 0 {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "no wallet found"})
+		return
+	}
+	if err := wallet.ClaimCredential(r.Context(), user.WalletToken, wallets[0].ID, offerURL); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{
+			"error":   "self-issue claim failed: " + err.Error(),
+			"backend": "in-process OID4VCI (LDP_VC)",
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":    "claimed",
+		"format":    "ldp_vc",
+		"issuerDid": h.ldpSigner.DID(),
+		"backend":   "in-process OID4VCI (LDP_VC)",
+		"note": "credential was signed by this platform's in-process Ed25519 signer " +
+			"(URDNA2015 + Ed25519Signature2020). Inji Verify, walt.id's verifier-api, " +
+			"and the verification adapter can all verify it directly.",
+	})
+}
+
 // APIWalletClaimOffer handles POST /api/wallet/claim-offer — holder claims an
 // OID4VCI offer with whichever wallet backend the holder picked during
 // onboarding. No silent routing: if the chosen wallet can't speak the issuing

@@ -5,6 +5,33 @@
   {{$dm := dataMap .Data}}
   {{$creds := index ($dm) "credentials"}}
   {{$isReal := and .User (not .User.Demo)}}
+  {{$verifierName := index ($dm) "verifierName"}}
+  {{$verifierDpg := index ($dm) "verifierDpg"}}
+
+  {{if and $isReal $verifierName}}
+  <!-- Verifier-backend banner. Same content as holder/share.html — keep
+       these two in sync if either changes. The intent: a layperson
+       picking up the platform should see, in plain English, which
+       backend is going to receive their presentation and what it can
+       actually verify. -->
+  <div class="card" style="padding:0.85rem 1.1rem;margin-bottom:1rem;background:var(--bg-surface-alt);border-left:3px solid var(--accent);font-size:0.78rem;line-height:1.55;color:var(--text-secondary)">
+    <strong>Verifying through: {{$verifierName}}.</strong>
+    {{if eq $verifierDpg "inji"}}
+    Inji Verify is a JSON-LD verifier — it natively verifies <code>ldp_vc</code> credentials with an embedded LDP proof, plus SD-JWT credentials via the <code>x5c</code> certificate-chain path. <strong>It cannot verify compact JWT VCs</strong> (the format walt.id's issuer-api emits) — for those you need to switch to the verification adapter or walt.id's verifier.
+    {{else if eq $verifierDpg "waltid"}}
+    Walt.id's verifier-api handles JWT VCs (<code>jwt_vc_json</code>), SD-JWT, and mDOC via OID4VP session flows. It does not natively verify <code>ldp_vc</code> with an embedded LDP proof — for that you'd switch to Inji Verify or the verification adapter.
+    {{else if eq $verifierDpg "adapter"}}
+    The <strong>verification adapter</strong> is backend-agnostic — it inspects the credential's DID method and format and routes the verification request to whichever backend can actually handle it (Inji Verify for <code>ldp_vc</code>, walt.id's verifier-api for JWT VCs, Credebl for AnonCreds). Best choice when you don't know in advance which format your credential is in.
+    {{else if eq $verifierDpg "credebl"}}
+    Credebl agent (beta) — verifies AnonCreds / Sovrin <code>did:indy</code> credentials only. Does not handle JWT VCs or W3C JSON-LD credentials.
+    {{else}}
+    The platform routes verification requests to <code>{{$verifierDpg}}</code>.
+    {{end}}
+    <div style="margin-top:0.4rem;font-size:0.74rem;color:var(--text-tertiary)">
+      Want a different verifier backend? <a href="/portal/onboarding?step=dpg-choice" hx-get="/portal/onboarding?step=dpg-choice" hx-target="#main-content" hx-push-url="true" style="color:var(--accent)">Re-pick in onboarding →</a>
+    </div>
+  </div>
+  {{end}}
 
   {{if and $isReal (hasItems $creds)}}
   <!-- LIVE DATA from backend -->
