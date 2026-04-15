@@ -5,6 +5,17 @@
   {{$dm := dataMap .Data}}
   {{$isReal := and .User (not .User.Demo)}}
 
+  {{if $isReal}}
+  <!-- OID4VP honesty banner. Same flow recap as on qr_generator.html so a
+       layperson can pick this up cold and understand the round-trip
+       before they start clicking. -->
+  <div class="card" style="padding:1rem 1.25rem;margin-bottom:1.25rem;background:var(--bg-surface-alt);border-left:3px solid var(--accent);font-size:0.82rem;line-height:1.55;color:var(--text-secondary)">
+    <strong>You're building an OID4VP verification request.</strong>
+    Clicking <em>Generate Request</em> below asks walt.id's verifier-api to mint a fresh OID4VP authorization request — the standards-compliant way for a verifier to ask for a verifiable presentation. The next page renders that request as a copyable URL plus a QR code. Send either to a holder; their wallet picks a matching credential, builds a <code>vp_token</code>, and POSTs it back to walt.id's <code>response_uri</code>. The QR generator page then polls the session and shows the verified claims as soon as the holder responds.
+    <div style="font-size:0.74rem;margin-top:0.5rem;color:var(--text-tertiary)">This is the verifier-initiated path. The holder also has a sibling "Share Proactively" path on their <em>Present Credential</em> page that pushes a credential to a one-off /share/v/&lt;id&gt; URL — that's a platform convenience, not OID4VP. Use this page when you actually need a real OID4VP round-trip a wallet can respond to.</div>
+  </div>
+  {{end}}
+
   <div class="card" style="margin-bottom:1.25rem">
     <h3 style="font-size:0.9rem;margin-bottom:1rem">Build Request</h3>
     <div style="display:flex;flex-direction:column;gap:1rem">

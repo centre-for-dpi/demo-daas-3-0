@@ -6,6 +6,16 @@
   {{$isReal := and .User (not .User.Demo)}}
 
   {{if $isReal}}
+  <!-- Honesty banner — what OID4VP actually is, vs the holder-initiated
+       direct-share path that lives on /portal/holder/share. A layperson
+       opening this page should understand the round trip before they
+       start clicking. -->
+  <div class="card" style="padding:1rem 1.25rem;margin-bottom:1.25rem;background:var(--bg-surface-alt);border-left:3px solid var(--accent);font-size:0.82rem;line-height:1.55;color:var(--text-secondary)">
+    <strong>This is OID4VP — the verifier-initiated presentation flow.</strong>
+    What just happened: the request builder asked walt.id's verifier-api to mint an OID4VP authorization request. Below you'll see the resulting <code>openid4vp://authorize?...</code> URL plus a QR encoding the same URL. Send the URL or QR to a holder, they open it in their wallet, the wallet picks a matching credential and POSTs a <code>vp_token</code> back to walt.id's <code>response_uri</code>, walt.id verifies the proof, and the result appears on this page automatically (polling every 3 seconds).
+    <div style="font-size:0.74rem;margin-top:0.5rem;color:var(--text-tertiary)">Different from the <em>holder-initiated</em> direct-share path on the holder's "Present Credential" page — that one is a platform-hosted convenience (no OID4VP, no <code>vp_token</code>, no verifier authorization request) where the holder pushes a credential to a one-off /share/v/&lt;id&gt; URL. OID4VP is the standards-compliant flow; direct-share is a pragmatic shortcut.</div>
+  </div>
+
   <!-- ===== REAL USER: Fetch session data from API ===== -->
   <div id="qr-loading" style="text-align:center;padding:3rem">
     <div style="font-size:1.5rem;margin-bottom:0.75rem">&#9203;</div>
@@ -51,14 +61,25 @@
       <!-- Right column -->
       <div style="display:flex;flex-direction:column;gap:1.25rem">
         <div class="card" style="display:flex;flex-direction:column;align-items:center;padding:2rem">
-          <div style="width:220px;height:220px;background:var(--bg-surface-alt);border:2px dashed var(--border);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:0.5rem;margin-bottom:1rem">
-            <span style="font-size:2.5rem">&#9641;</span>
-            <span style="font-size:0.78rem;color:var(--text-secondary);font-weight:500">OID4VP Request QR</span>
-            <span style="font-size:0.68rem;color:var(--text-tertiary)">Scan with wallet app</span>
+          <div id="qr-canvas" style="margin-bottom:1rem"></div>
+          <div style="font-size:0.78rem;color:var(--text-secondary);font-weight:500">OID4VP Request QR</div>
+          <div style="font-size:0.68rem;color:var(--text-tertiary);margin-top:0.25rem">Holder scans with their wallet app</div>
+        </div>
+
+        <!-- Live result panel — populated by qr_pollSession() -->
+        <div class="card" id="qr-result-card" style="padding:1.25rem">
+          <h3 style="font-size:0.9rem;margin-bottom:0.75rem">Verification Result</h3>
+          <div id="qr-result-pending" style="font-size:0.82rem;color:var(--text-secondary);display:flex;align-items:center;gap:0.5rem">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--accent);animation:pulse 1.4s infinite ease-in-out"></span>
+            Waiting for the holder to respond&hellip;
           </div>
-          <div style="display:flex;gap:0.75rem">
-            <button class="btn btn-secondary btn-sm" onclick="showToast('Downloaded','QR code SVG downloaded.')">Download SVG</button>
-            <button class="btn btn-ghost btn-sm" onclick="showToast('Print','Opening print dialog...')">Print</button>
+          <div id="qr-result-success" style="display:none;font-size:0.82rem">
+            <div style="font-weight:600;color:var(--success);margin-bottom:0.5rem">&#10003; Verified</div>
+            <div id="qr-result-detail" style="color:var(--text-secondary);line-height:1.5"></div>
+          </div>
+          <div id="qr-result-failure" style="display:none;font-size:0.82rem">
+            <div style="font-weight:600;color:var(--error);margin-bottom:0.5rem">&#10005; Verification failed</div>
+            <div id="qr-result-failure-detail" style="color:var(--text-secondary)"></div>
           </div>
         </div>
       </div>
@@ -110,6 +131,9 @@
 </div>
 
 <script>
+var _qrPollTimer = null;
+var _qrCurrentState = '';
+
 (function() {
   var isReal = {{$isReal}};
   if (!isReal) return;
@@ -123,7 +147,7 @@
     return;
   }
 
-  // Fetch session data
+  // Initial fetch — populates the deeplink + state display + renders QR.
   fetch('/api/verifier/session/' + encodeURIComponent(state))
   .then(function(r) { return r.json(); })
   .then(function(data) {
@@ -132,15 +156,95 @@
       document.getElementById('qr-no-state').style.display = '';
       return;
     }
-    document.getElementById('qr-state-display').textContent = data.state || state;
-    document.getElementById('qr-deeplink').value = data.request_url || 'openid4vp://...';
+    _qrCurrentState = data.state || state;
+    document.getElementById('qr-state-display').textContent = _qrCurrentState;
+    var deeplink = data.request_url || '';
+    document.getElementById('qr-deeplink').value = deeplink;
     document.getElementById('qr-content').style.display = '';
+
+    // Render the actual QR. Same qrcode lib the issuer single-issue and
+    // holder share pages use. Picks the smallest version that fits the
+    // payload, which is typically large for OID4VP request URLs.
+    if (deeplink && typeof qrcode !== 'undefined') {
+      var canvas = document.getElementById('qr-canvas');
+      canvas.innerHTML = '';
+      var qr = qrcode(0, 'L');
+      qr.addData(deeplink);
+      qr.make();
+      canvas.innerHTML = qr.createSvgTag(4, 0);
+      var svg = canvas.querySelector('svg');
+      if (svg) {
+        svg.setAttribute('width', '220');
+        svg.setAttribute('height', '220');
+      }
+    }
+
+    // Apply the result if it's already there (handler restart, late nav).
+    qr_renderResult(data);
+
+    // Start polling. Verifier can stay on this page and watch the
+    // status flip from "waiting" → "verified" once the holder responds.
+    _qrPollTimer = setInterval(qr_pollSession, 3000);
   })
   .catch(function() {
     document.getElementById('qr-loading').style.display = 'none';
     document.getElementById('qr-no-state').style.display = '';
   });
 })();
+
+// qr_pollSession hits the existing /api/verifier/session/{state} endpoint
+// and updates the on-page result panel. Stops polling on a terminal state
+// (verified true/false) or after the page is navigated away.
+function qr_pollSession() {
+  if (!_qrCurrentState) return;
+  fetch('/api/verifier/session/' + encodeURIComponent(_qrCurrentState))
+  .then(function(r) { return r.json(); })
+  .then(function(data) { qr_renderResult(data); })
+  .catch(function() {});
+}
+
+function qr_renderResult(data) {
+  if (!data || data.error) return;
+  if (data.verified === true) {
+    qr_stopPolling();
+    document.getElementById('qr-status').textContent = 'Verified';
+    document.getElementById('qr-status').style.background = 'var(--accent-surface)';
+    document.getElementById('qr-result-pending').style.display = 'none';
+    document.getElementById('qr-result-success').style.display = '';
+    var lines = [];
+    if (data.credentialType) lines.push('<div><strong>Type:</strong> ' + escHtml(data.credentialType) + '</div>');
+    if (data.issuerDid)      lines.push('<div><strong>Issuer:</strong> <code style="font-size:0.72rem;word-break:break-all">' + escHtml(data.issuerDid) + '</code></div>');
+    if (data.holderDid)      lines.push('<div><strong>Holder:</strong> <code style="font-size:0.72rem;word-break:break-all">' + escHtml(data.holderDid) + '</code></div>');
+    if (data.claims) {
+      var keys = Object.keys(data.claims).filter(function(k){return k!=='id';});
+      if (keys.length) {
+        lines.push('<div style="margin-top:0.5rem"><strong>Claims:</strong></div>');
+        keys.forEach(function(k) {
+          var v = data.claims[k];
+          if (v && typeof v === 'object') v = JSON.stringify(v);
+          lines.push('<div style="margin-left:0.75rem">&middot; ' + escHtml(k) + ': ' + escHtml(String(v)) + '</div>');
+        });
+      }
+    }
+    document.getElementById('qr-result-detail').innerHTML = lines.join('');
+  } else if (data.verified === false) {
+    qr_stopPolling();
+    document.getElementById('qr-status').textContent = 'Failed';
+    document.getElementById('qr-status').style.background = 'var(--error-surface)';
+    document.getElementById('qr-result-pending').style.display = 'none';
+    document.getElementById('qr-result-failure').style.display = '';
+    document.getElementById('qr-result-failure-detail').textContent = 'The holder responded but the credential failed verification. Check the verifier logs for the underlying reason.';
+  }
+}
+
+function qr_stopPolling() {
+  if (_qrPollTimer) { clearInterval(_qrPollTimer); _qrPollTimer = null; }
+}
+
+function escHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
 
 function qrCreateSession() {
   var btn = document.getElementById('qr-create-btn');
