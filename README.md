@@ -677,9 +677,10 @@ issuers config, and the seed scripts. You MUST also re-run
 client's registered `redirect_uri` matches what the browser actually
 follows.
 
-Edit `.env.example` if you want the checked-in defaults to change (the
-live `.env` is gitignored because it tends to hold deployment-specific
-values).
+The live `.env` is currently tracked with the demo defaults baked in.
+If you start putting real secrets in it (production Google OAuth, EC2
+hostname, etc.), add `ui-demo/docker/stack/.env` to `.gitignore` and
+keep `.env.example` as the source of truth.
 
 ### Manual bring-up (if you want to skip the script)
 
