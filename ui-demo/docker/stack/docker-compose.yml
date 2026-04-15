@@ -431,6 +431,24 @@ services:
       # start without patching the init SQL.
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
+      # Persist mock-identity's kernel keymanager PKCS12 keystore on a
+      # named volume instead of the container's writable layer. The
+      # default config-path is /home/mosip/mock_local.p12 — but
+      # /home/mosip also holds the JAR and entrypoint script, so we
+      # can't mount the whole directory. Override the config path to
+      # /home/mosip/keystore/mock_local.p12 (a directory we mount
+      # cleanly) and the keystore survives container recreation.
+      #
+      # Without this override the symptom is exactly the same crash
+      # as inji-certify and esignet: on container recreate the writable
+      # layer is wiped, mock-identity's keymanager finds key alias rows
+      # in its postgres schema (mockidentitysystem.key_alias) but no
+      # matching alias in the freshly-empty keystore, and exits with
+      # NoSuchSecurityProviderException: KER-KMA-004 → No such alias.
+      # Mirrors the same fix applied to injiweb-esignet above.
+      MOSIP_KERNEL_KEYMANAGER_HSM_CONFIG_PATH: /home/mosip/keystore/mock_local.p12
+    volumes:
+      - injiweb-mockid-keystore:/home/mosip/keystore
 
   injiweb-esignet:
     image: mosipid/esignet-with-plugins:1.5.1
@@ -685,6 +703,7 @@ volumes:
   injiweb-db:
   injiweb-minio:
   injiweb-esignet-keystore:
+  injiweb-mockid-keystore:
 
 # Pin the default network to a fixed subnet + gateway so that every service
 # URL hardcoded against 172.24.0.1 (esignet MOSIP_ESIGNET_DOMAIN_URL, Mimoto
