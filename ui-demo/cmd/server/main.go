@@ -106,9 +106,10 @@ func main() {
 	// gets an instance. There is no server-wide "mode" — users pick their
 	// own backend for each role they have.
 	h.SetIssuerRegistry(map[string]store.IssuerStore{
-		"waltid":  pickIssuerStore("waltid", cfg),
-		"inji":    pickIssuerStore("inji", cfg),
-		"credebl": pickIssuerStore("credebl", cfg),
+		"waltid":       pickIssuerStore("waltid", cfg),
+		"inji":         pickIssuerStore("inji", cfg),
+		"inji_preauth": pickIssuerStore("inji_preauth", cfg),
+		"credebl":      pickIssuerStore("credebl", cfg),
 	})
 	h.SetWalletRegistry(map[string]store.WalletStore{
 		"waltid":   pickWalletStore("waltid", cfg),
@@ -204,8 +205,23 @@ func pickIssuerStore(dpg string, cfg *config.Config) store.IssuerStore {
 		client := newTransportClient(cfg.Backend.IssuerURL, "", cfg)
 		return waltid.NewIssuerStore(client)
 	case "inji":
+		// Primary Inji Certify instance — Auth Code flow via esignet +
+		// Inji Web. Its credential endpoint only accepts Bearer tokens
+		// signed by esignet's JWKS (see the service block in
+		// docker/stack/docker-compose.yml for the full rationale).
 		url := envOr("INJI_CERTIFY_URL", "http://localhost:8090")
 		publicURL := envOr("INJI_CERTIFY_PUBLIC_URL", "http://certify-nginx:80")
+		client := newTransportClient(url, "", cfg)
+		return inji.NewIssuerStore(client, publicURL)
+	case "inji_preauth":
+		// Second Inji Certify instance — Pre-Authorized Code flow. Runs
+		// in its own container with zero shared state (separate
+		// postgres, separate PKCS12 keystore) so its credential
+		// endpoint trusts its own self-issued tokens. Used by the
+		// pasted-offer / Local / PDF / walt.id-wallet claim flows that
+		// the primary `inji` instance can't serve.
+		url := envOr("INJI_CERTIFY_PREAUTH_URL", "http://localhost:8094")
+		publicURL := envOr("INJI_CERTIFY_PREAUTH_PUBLIC_URL", "http://inji-certify-preauth:8090")
 		client := newTransportClient(url, "", cfg)
 		return inji.NewIssuerStore(client, publicURL)
 	case "credebl":

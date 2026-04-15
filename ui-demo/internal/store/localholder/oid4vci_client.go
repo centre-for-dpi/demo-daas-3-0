@@ -356,14 +356,24 @@ func extractConfig(md map[string]any, configID string) (map[string]any, bool) {
 // equivalents. Needed because our Go server runs on the host, not inside
 // the waltid_default docker network:
 //
-//   certify-nginx:80       → localhost:8091  (Inji Certify via nginx)
-//   inji-certify:8090      → localhost:8090  (Inji Certify direct)
-//   host.docker.internal:X → localhost:X     (our own OID4VCI server
-//                                              advertised for docker wallets)
+//   certify-nginx:80             → localhost:8091  (primary Inji via nginx)
+//   inji-certify:8090            → localhost:8090  (primary Inji direct)
+//   inji-certify-preauth:8090    → localhost:8094  (Pre-Auth Inji instance —
+//                                                    a fully isolated second
+//                                                    inji-certify container
+//                                                    whose credential endpoint
+//                                                    trusts its own JWKS,
+//                                                    see the service block in
+//                                                    docker/stack/docker-compose.yml
+//                                                    for why both instances
+//                                                    exist)
+//   host.docker.internal:X       → localhost:X     (our own OID4VCI server
+//                                                    advertised for docker wallets)
 func rewriteForHost(u string) string {
 	u = strings.ReplaceAll(u, "http://certify-nginx:80", "http://localhost:8091")
 	u = strings.ReplaceAll(u, "https://certify-nginx:80", "https://localhost:8091")
 	u = strings.ReplaceAll(u, "http://inji-certify:8090", "http://localhost:8090")
+	u = strings.ReplaceAll(u, "http://inji-certify-preauth:8090", "http://localhost:8094")
 	u = strings.ReplaceAll(u, "http://host.docker.internal", "http://localhost")
 	u = strings.ReplaceAll(u, "https://host.docker.internal", "https://localhost")
 	return u
@@ -375,6 +385,11 @@ func exchangePreAuthCode(ctx context.Context, tokenEndpoint, code string) (*toke
 	form := url.Values{}
 	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:pre-authorized_code")
 	form.Set("pre-authorized_code", code)
+	// Must match the tx_code posted when the offer was pre-staged. Inji's
+	// PreAuthorizedCodeService uses this to look up the cached claims map
+	// and (critically) to skip the DataProviderPlugin path — see the note
+	// in internal/store/inji/inji.go IssueCredential for the full story.
+	form.Set("tx_code", "12345")
 
 	req, _ := http.NewRequestWithContext(ctx, "POST", tokenEndpoint, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")

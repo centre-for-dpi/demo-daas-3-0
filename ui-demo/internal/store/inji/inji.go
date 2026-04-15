@@ -138,9 +138,20 @@ func (s *issuerStore) OnboardIssuer(ctx context.Context, keyType string) (*model
 func (s *issuerStore) IssueCredential(ctx context.Context, issuer *model.OnboardIssuerResult, configID, format string, claims map[string]any) (string, error) {
 	// Inji Certify pre-auth endpoint: snake_case field names.
 	// It returns {"credential_offer_uri": "openid-credential-offer://?credential_offer_uri=..."}
+	//
+	// tx_code is the critical bit that bypasses Inji's DataProviderPlugin
+	// lookup: when the pre-auth POST carries tx_code, PreAuthorizedCodeService
+	// caches the staged claims map directly on the tx_code-bound session and
+	// the credential endpoint serves from that cache instead of invoking
+	// MockCSVDataProviderPlugin (which would 500 with ERROR_FETCHING_IDENTITY_DATA
+	// on any input that isn't in its CSV). The holder's token exchange must
+	// pass the SAME tx_code as a form field. Hardcoded for now; a holder-input
+	// loop can come later.
 	preAuthBody := map[string]any{
 		"credential_configuration_id": configID,
 		"claims":                      claims,
+		"expires_in":                  600,
+		"tx_code":                     "12345",
 	}
 	resp, code, err := s.client.Do(ctx, "POST", "/v1/certify/pre-authorized-data", preAuthBody)
 	if err != nil {

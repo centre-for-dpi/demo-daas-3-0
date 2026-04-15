@@ -58,16 +58,46 @@ var dpgCatalogByRole = map[string][]DPGCard{
 		},
 		{
 			ID:      "inji",
-			Name:    "Inji Certify",
-			Tagline: "MOSIP-aligned OID4VCI Pre-Authorized Code flow",
+			Name:    "Inji Certify (Auth Code flow, via Inji Web)",
+			Tagline: "MOSIP Inji Certify wired for OAuth2 Authorization Code flow through esignet",
 			Formats: []string{"ldp_vc", "vc+sd-jwt", "mso_mdoc"},
 			IssuanceFlows: []string{
-				"issuer-initiated (offer → holder claim)",
+				"Authorization Code flow — holder logs in via esignet (OTP) and redirects back through Mimoto",
 			},
 			BulkIssuance: "dataProvider",
-			Description: "MOSIP Inji Certify issuance. Bulk issuance via the " +
-				"CSV/Postgres data-provider plugin, not a HTTP batch endpoint. " +
-				"Native support for W3C VCDM 1.0 and 2.0 credentials.",
+			Description: "Pick this if you want the real end-to-end Inji Web + " +
+				"Mimoto + esignet login experience: the holder clicks your " +
+				"issuer in the Inji Web catalog, authenticates with an OTP at " +
+				"esignet, and the credential flows back into their browser-hosted " +
+				"wallet. This instance's credential endpoint only accepts Bearer " +
+				"tokens signed by esignet, so pasted-offer / Pre-Auth flows won't " +
+				"work against it — use the sibling \"Inji Certify (Pre-Auth flow)\" " +
+				"option below for those.",
+		},
+		{
+			ID:      "inji_preauth",
+			Name:    "Inji Certify (Pre-Auth flow, for pasted offers)",
+			Tagline: "MOSIP Inji Certify wired for the OID4VCI Pre-Authorized Code flow",
+			Formats: []string{"ldp_vc", "vc+sd-jwt", "mso_mdoc"},
+			IssuanceFlows: []string{
+				"Pre-Authorized Code flow — holder pastes the offer URL into a wallet and claims without a login step",
+			},
+			BulkIssuance: "dataProvider",
+			Description: "A separate Inji Certify deployment running in its own " +
+				"container with zero shared state (different Postgres database, " +
+				"different PKCS12 keystore). Two pieces of config make the " +
+				"Pre-Authorized Code flow actually work end to end on this " +
+				"instance: (1) it trusts its OWN JWKS at the credential " +
+				"endpoint, so the Bearer token Inji hands out at /oauth/token " +
+				"is accepted; (2) it runs the upstream PreAuthDataProviderPlugin " +
+				"instead of MockCSVDataProviderPlugin, so the staged claims " +
+				"posted via /pre-authorized-data are pulled from Inji's session " +
+				"cache at credential-issuance time — no CSV lookup, no " +
+				"individualId resolution. Pick this if you're testing the PDF " +
+				"wallet, the in-process Local holder, or any other wallet that " +
+				"claims from a pasted OID4VCI offer URL. The \"Auth Code flow\" " +
+				"sibling above stays routed through esignet for the Inji Web " +
+				"experience — neither instance interferes with the other.",
 		},
 		{
 			ID:      "credebl",

@@ -198,6 +198,114 @@ services:
       start_period: 120s
       retries: 10
 
+  # ==========================================================================
+  # Inji Certify — PRE-AUTHORIZED CODE FLOW INSTANCE
+  #
+  # A second, fully isolated Inji Certify deployment whose ONLY purpose is
+  # to serve the OID4VCI Pre-Authorized Code flow for pasted-offer wallets
+  # (PDF wallet, in-process Local holder, walt.id wallet-as-client, etc.).
+  #
+  # Why a second instance exists at all: the primary inji-certify is
+  # wired for the Authorization Code flow via esignet + Inji Web + Mimoto
+  # — its mosip.certify.authn.jwk-set-uri points at esignet's JWKS so it
+  # only trusts esignet-issued Bearer tokens at the credential endpoint.
+  # That's the right setup for Inji Web's catalog-initiated login flow,
+  # but it silently breaks the Pre-Auth Code flow: our localholder exchanges
+  # a pre-auth code at inji's own /v1/certify/oauth/token endpoint and gets
+  # back a token signed with inji's OWN keys, which then fails signature
+  # validation at the credential endpoint with a 401. The two flows cannot
+  # coexist on a single instance with a single JWKS trust list.
+  #
+  # So we run two instances with ZERO shared state — separate Postgres DB
+  # (certify-preauth-postgres, different container + different named volume),
+  # separate PKCS12 keystore volume (certify-preauth-pkcs12), separate
+  # container name, separate host port. The Go issuer-store registry
+  # registers this instance as `inji_preauth` and the onboarding wizard
+  # labels it clearly as "Inji Certify (Pre-Auth flow)" so the user knows
+  # which instance they're picking and why.
+  #
+  # The only file this instance SHARES with the primary is the bind-mount
+  # config files under ./inji/certify/, which are read-only. All writeable
+  # state (database + keystore) lives on the isolated volumes above.
+  # ==========================================================================
+  certify-preauth-postgres:
+    image: postgres:15
+    restart: unless-stopped
+    container_name: certify-preauth-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - ./inji/certify/init.sql:/docker-entrypoint-initdb.d/certify_init.sql
+      - certify-preauth-db:/var/lib/postgresql/data
+    ports:
+      - "5436:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  inji-certify-preauth:
+    image: injistack/inji-certify-with-plugins:0.14.0
+    restart: unless-stopped
+    container_name: inji-certify-preauth
+    user: root
+    ports:
+      - "8094:8090"
+    environment:
+      - container_user=mosip
+      - active_profile_env=default,csvdp-farmer
+      - SPRING_CONFIG_NAME=certify
+      - SPRING_CONFIG_LOCATION=/home/mosip/config/
+      - enable_certify_artifactory=false
+      - download_hsm_client=false
+      # Critical difference from the primary inji-certify: the domain URL
+      # points at THIS container (its own hostname on the default network),
+      # and we do NOT override any of the mosip.certify.authn.* or
+      # mosip.certify.oauth.* properties. They inherit from the base
+      # certify-default.properties where they all default to
+      # ${mosip.certify.authorization.url} which in turn defaults to
+      # ${mosip.certify.domain.url} — so this instance validates the
+      # Bearer tokens it hands out against its OWN JWKS. That's what
+      # makes the Pre-Auth Code flow work end-to-end.
+      - mosip_certify_domain_url=http://inji-certify-preauth:8090
+      # Point at the isolated postgres instance, not the primary
+      # certify-postgres. Zero shared database state.
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://certify-preauth-postgres:5432/inji_certify
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=postgres
+    volumes:
+      # Shared READ-ONLY config files — identical between the two instances
+      # because the credential types and their claim mappings don't depend
+      # on which flow is in use.
+      - ./inji/certify/certify-default.properties:/home/mosip/config/certify-default.properties:ro
+      # Use the preauth-specific variant that selects PreAuthDataProviderPlugin
+      # instead of MockCSVDataProviderPlugin. The preauth plugin reads cached
+      # claims from VCICacheService keyed by the access token hash — this is
+      # the right behavior for the Pre-Authorized Code flow because claims
+      # posted to /pre-authorized-data are stashed on the session and the
+      # plugin pulls them back at credential-issuance time without doing any
+      # CSV lookup. Mounted as a different filename inside the container so
+      # the active profile env var (default,csvdp-farmer) still finds it.
+      - ./inji/certify/certify-csvdp-farmer-preauth.properties:/home/mosip/config/certify-csvdp-farmer.properties:ro
+      - ./inji/certify/farmer_identity_data.csv:/home/mosip/config/farmer_identity_data.csv:ro
+      - ./inji/certify/vp_request_config.json:/home/mosip/config/vp_request_config.json:ro
+      # Isolated keystore volume — not shared with primary certify-pkcs12.
+      # Mounted at the default keystore directory Inji Certify expects
+      # (mosip.kernel.keymanager.hsm.config-path = CERTIFY_PKCS12/local.p12)
+      # so we don't need an env-var override.
+      - certify-preauth-pkcs12:/home/mosip/CERTIFY_PKCS12
+    depends_on:
+      certify-preauth-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8090/v1/certify/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      start_period: 120s
+      retries: 10
+
   certify-nginx:
     image: nginx:stable
     restart: unless-stopped
@@ -717,6 +825,11 @@ volumes:
   injiweb-minio:
   injiweb-esignet-keystore:
   injiweb-mockid-keystore:
+  # Pre-auth Inji instance — fully isolated from the primary
+  # certify-db / certify-pkcs12 volumes. See the inji-certify-preauth
+  # service block for rationale.
+  certify-preauth-db:
+  certify-preauth-pkcs12:
 
 # Pin the default network to a fixed subnet + gateway so that every service
 # URL hardcoded against 172.24.0.1 (esignet MOSIP_ESIGNET_DOMAIN_URL, Mimoto
