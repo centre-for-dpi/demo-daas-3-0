@@ -276,9 +276,11 @@ function wzShow(step) {
     el.style.color = (s === step) ? 'var(--accent)' : 'var(--text-tertiary)';
   });
   wz.step = step;
-  // Lazy-load schema catalog when needed.
+  // Lazy-load schema catalog when needed. Reload if the user picked a
+  // different DPG since the catalog was last fetched — otherwise the
+  // schema-catalog panel keeps showing the previous DPG's entries.
   if (step === 'schema-catalog') {
-    if (wz.catalog.length === 0) {
+    if (wz.catalog.length === 0 || wz.catalogDPG !== wz.selectedDPG) {
       wzLoadCatalog();
     }
     wzRefreshSavedList();
@@ -455,9 +457,11 @@ function wzConfirm() {
 
 // Step 4 — schema catalog -----------------------------------------------------
 function wzLoadCatalog() {
-  fetch('/api/schemas/catalog?dpg=' + encodeURIComponent(wz.selectedDPG))
+  const dpg = wz.selectedDPG;
+  fetch('/api/schemas/catalog?dpg=' + encodeURIComponent(dpg))
     .then(r => r.json()).then(list => {
       wz.catalog = list || [];
+      wz.catalogDPG = dpg;
       const grid = document.getElementById('schema-grid');
       grid.innerHTML = '';
       if (!wz.catalog.length) {
