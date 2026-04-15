@@ -8,7 +8,7 @@ backend-agnostic verifiable credentials platform to government stakeholders.
 ```bash
 cd /home/adam/cdpi/n8n-demo/ui-demo
 make docker-up          # starts Walt.id + Keycloak + WSO2 + LibreTranslate
-docker compose -f docker/waltid/docker-compose.yml up -d \
+docker compose -f docker/stack/docker-compose.yml up -d \
   certify-postgres inji-verify-postgres inji-certify certify-nginx \
   inji-verify-service inji-verify-ui citizens-postgres vc-adapter
 ```
@@ -217,11 +217,11 @@ Refresh the browser. Point to:
 ```bash
 # Reseed the citizens database from scratch
 docker exec -i citizens-postgres psql -U citizens -d citizens \
-  < docker/waltid/citizens-db/init.sql
+  < docker/stack/citizens-db/init.sql
 ```
 
 ```bash
 # Full reset (wipes all Walt.id state)
-cd docker/waltid && docker compose down -v && docker compose up -d
+cd docker/stack && docker compose down -v && docker compose up -d
 # Wait 3 minutes for Inji Certify
 ```

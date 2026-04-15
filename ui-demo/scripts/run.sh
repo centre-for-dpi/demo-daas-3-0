@@ -23,7 +23,7 @@ go build -o server ./cmd/server/
 
 # Bring up the verification-adapter sidecar if not already running.
 if ! docker ps --format '{{.Names}}' | grep -q '^vc-adapter$'; then
-  (cd docker/waltid && docker compose up -d vc-adapter) || true
+  (cd docker/stack && docker compose up -d vc-adapter) || true
 fi
 
 # No DPG env var overrides: the handler picks the right backend per-request

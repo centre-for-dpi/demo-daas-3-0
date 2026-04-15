@@ -58,7 +58,7 @@ services:
       - "7002:7002"
       - "7003:7003"
     volumes:
-      - ./docker/waltid/Caddyfile:/etc/caddy/Caddyfile
+      - ./docker/stack/Caddyfile:/etc/caddy/Caddyfile
 
   issuer-api:
     image: waltid/issuer-api:latest
@@ -70,7 +70,7 @@ services:
       SERVICE_HOST: localhost
       ISSUER_API_PORT: 7002
     volumes:
-      - ./docker/waltid/issuer-api/config:/waltid-issuer-api/config
+      - ./docker/stack/issuer-api/config:/waltid-issuer-api/config
 
   verifier-api:
     image: waltid/verifier-api:latest
@@ -82,7 +82,7 @@ services:
       SERVICE_HOST: localhost
       VERIFIER_API_PORT: 7003
     volumes:
-      - ./docker/waltid/verifier-api/config:/waltid-verifier-api/config
+      - ./docker/stack/verifier-api/config:/waltid-verifier-api/config
 
   wallet-api:
     image: waltid/wallet-api:latest
@@ -102,10 +102,10 @@ services:
       DB_USERNAME: waltid
       DB_PASSWORD: waltid
     volumes:
-      - ./docker/waltid/wallet-api/config:/waltid-wallet-api/config
+      - ./docker/stack/wallet-api/config:/waltid-wallet-api/config
 
   # Inji Web stack (injistack/inji-web + injistack/mimoto + esignet +
-  # mock-identity-system + sidecars) lives in docker/waltid/docker-compose.yml
+  # mock-identity-system + sidecars) lives in docker/stack/docker-compose.yml
   # alongside inji-certify / certify-nginx / walt.id / inji-verify, so
   # everything shares the waltid_default network and Mimoto reaches
   # certify-nginx by container DNS. See docker/injiweb/README.md.

@@ -26,13 +26,29 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# Pick up PUBLIC_HOST / port overrides from the shared .env file if it
+# exists. Lets a single file (docker/stack/.env) drive both docker
+# compose + this seed script so the client's registered redirect_uri
+# matches what the browser actually follows after esignet authorizes.
+ENV_FILE="../stack/.env"
+if [[ -f "$ENV_FILE" ]]; then
+    set -o allexport
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+    set +o allexport
+fi
+
+: "${PUBLIC_HOST:=172.24.0.1}"
+: "${INJIWEB_UI_PUBLIC_PORT:=3004}"
+: "${INJIWEB_P12_PASSWORD:=xy4gh6swa2i}"
+
 P12=config/certs/oidckeystore.p12
-P12_PASS="${INJIWEB_P12_PASSWORD:-xy4gh6swa2i}"
+P12_PASS="$INJIWEB_P12_PASSWORD"
 ALIAS="wallet-demo-client"
 CLIENT_ID="wallet-demo-client"
 CLIENT_NAME="Inji Web Demo Client"
 ESIGNET_URL="${ESIGNET_URL:-http://localhost:8088}"
-REDIRECT_URI="${MIMOTO_REDIRECT_URI:-http://localhost:3004/redirect}"
+REDIRECT_URI="${MIMOTO_REDIRECT_URI:-http://${PUBLIC_HOST}:${INJIWEB_UI_PUBLIC_PORT}/redirect}"
 
 if [[ ! -f "$P12" ]]; then
     echo "error: $P12 not found — copy your oidckeystore.p12 into place first" >&2

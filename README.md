@@ -81,7 +81,7 @@ scope templates, transcripts). Agent ingestion reads from here.
    natively expose ldp_vc)           PixelPass QR PDFs)
 ```
 
-One compose file (`ui-demo/docker/waltid/docker-compose.yml`) defines 25
+One compose file (`ui-demo/docker/stack/docker-compose.yml`) defines 25
 services on a pinned `172.24.0.0/16` network: walt.id issuer / verifier
 / wallet stack, Inji Certify + certify-nginx + certify-postgres, Inji
 Verify UI + service + postgres, Citizens Postgres (mock government
@@ -317,7 +317,7 @@ server-default wallet they never picked.
 - Direct verify against Inji Verify's `/direct-verify` endpoint for LDP_VC
   and SD-JWT with x5c
 - Backend-agnostic **verification adapter** (`internal/store/adapter`)
-  calls a separate Go service (`docker/waltid/vc-adapter`) that routes by
+  calls a separate Go service (`docker/stack/vc-adapter`) that routes by
   DID method: LDP_VC verified in-process via URDNA2015 + Ed25519, SD-JWT
   with x5c verified via certificate chain, JWT VCs delegated to walt.id
   OID4VP session flow. Designed to run with `--network none` for true
@@ -389,7 +389,7 @@ typing by hand.
 
 ### Docker stack
 
-One compose file: `ui-demo/docker/waltid/docker-compose.yml`. Services:
+One compose file: `ui-demo/docker/stack/docker-compose.yml`. Services:
 
 | Service | Purpose | Port |
 |---|---|---|
@@ -537,7 +537,7 @@ has block comments explaining every override.
 │   │                                 trimmed walt.id subset, via the
 │   │                                 `mock` and `waltid` profiles). The
 │   │                                 full 25-service stack lives under
-│   │                                 docker/waltid/docker-compose.yml.
+│   │                                 docker/stack/docker-compose.yml.
 │   ├── implementation-plan.md      — full product spec, screen inventory
 │   ├── dpg-integration-plan.md
 │   ├── DEMO.md
@@ -623,59 +623,88 @@ has block comments explaining every override.
 
 ## Running it locally
 
-### Core stack (walt.id + Inji Certify + Inji Verify + vc-adapter)
+### One-command bring-up
 
 ```sh
-cd ui-demo/docker/waltid
-docker compose up -d
+./scripts/start-all.sh
 ```
 
-Brings up walt.id (3 services), Inji Certify (3 services), Inji Verify (3
-services), Citizens Postgres, verification-adapter, Keycloak, WSO2IS,
-LibreTranslate. ~15 containers.
+Does everything in the right order: copies `.env.example` → `.env` on
+first run, renders `mimoto-issuers-config.json` from its template
+against the current `.env` values, brings up the DPG stack (including
+Inji Web), brings up the agent stack (Qdrant + embeddings; n8n
+auto-starts via its own restart policy), builds the Go server if
+needed, and launches it via `nohup` on `:8080`. Idempotent — re-running
+only touches what isn't already up. Flags: `--no-injiweb`, `--no-agent`,
+`--no-server`.
 
-Then start the Go app:
+After ~60-90s for the Java services to finish booting, seed the first-
+run data (also idempotent):
 
 ```sh
-cd ui-demo
+./ui-demo/docker/injiweb/seed-esignet-client.sh   # registers wallet-demo-client in esignet
+./ui-demo/docker/injiweb/seed-mock-identity.sh    # seeds fake identity 8267411072 / 111111
+```
+
+Open the browser at:
+
+- `http://localhost:8080` — vc.infra white-label app
+- `http://172.24.0.1:3004/issuers` — Inji Web catalog (the 172.24.0.1 is
+  the pinned docker network gateway; see `.env`)
+- `http://172.24.0.1:3005/authorize` — eSignet login page
+- `http://localhost:5678` — n8n workflow editor
+
+### Configuration (single `.env` file)
+
+All URL-related configuration lives in one file: `ui-demo/docker/stack/.env`
+(copied from `.env.example` on first run). The key variable is
+`PUBLIC_HOST`, which controls every URL the browser hits AND that
+Mimoto posts to internally. Defaults:
+
+```sh
+PUBLIC_HOST=172.24.0.1        # laptop with browser on the same host
+ESIGNET_PUBLIC_PORT=3005
+INJIWEB_UI_PUBLIC_PORT=3004
+INJIWEB_P12_PASSWORD=xy4gh6swa2i
+```
+
+For an EC2 or remote-browser deployment, change `PUBLIC_HOST` to the
+instance's reachable hostname or IP and re-run `./scripts/start-all.sh`.
+The render step rewrites `mimoto-issuers-config.json` from its template
+so the new values land consistently across docker-compose, the Mimoto
+issuers config, and the seed scripts. You MUST also re-run
+`seed-esignet-client.sh` after a `PUBLIC_HOST` change so the OIDC
+client's registered `redirect_uri` matches what the browser actually
+follows.
+
+Edit `.env.example` if you want the checked-in defaults to change (the
+live `.env` is gitignored because it tends to hold deployment-specific
+values).
+
+### Manual bring-up (if you want to skip the script)
+
+```sh
+# DPG stack (walt.id + Inji Certify + Inji Verify + vc-adapter + Inji Web)
+cd ui-demo/docker/injiweb && ./fetch-config.sh && ./render-config.sh
+cd ../stack && docker compose --profile injiweb up -d
+
+# Agent stack
+cd ../../../agent-service
+docker compose -f docker-compose.agents.yml up -d
+
+# vc.infra Go app
+cd ../ui-demo
 go build -o server ./cmd/server
 ./server -config config/default.json
+
+# First-time seeding
+cd docker/injiweb
+./seed-esignet-client.sh
+./seed-mock-identity.sh
 ```
 
-Open http://localhost:8080.
-
-### Full stack including Inji Web (Authorization Code Flow)
-
-```sh
-# one-time: pull upstream Mimoto + esignet config files
-cd ui-demo/docker/injiweb
-./fetch-config.sh
-
-# bring up everything
-cd ../waltid
-docker compose --profile injiweb up -d
-
-# wait ~90s for Mimoto + esignet to finish booting, then:
-cd ../injiweb
-./seed-esignet-client.sh     # registers wallet-demo-client in esignet
-./seed-mock-identity.sh      # seeds fake identity 8267411072 / 111111
-```
-
-Open http://localhost:3004/issuers. Pick Agriculture Department, log in
-with `8267411072` / `111111`, and you'll get a Demo Farmer credential
-delivered as a PDF via the full OID4VCI Auth Code flow.
-
-### Agent service (chatbot + RAG)
-
-```sh
-cd agent-service
-docker compose -f docker-compose.agents.yml up -d   # Qdrant + Voyage
-# import the n8n workflow, configure the Anthropic + Voyage credentials,
-# then run the ingest script to populate Qdrant from ../references/
-python scripts/build_and_import.py
-```
-
-See `agent-service/README.md` for full details.
+See `ui-demo/docker/injiweb/README.md` and `agent-service/README.md`
+for service-specific details.
 
 ---
 

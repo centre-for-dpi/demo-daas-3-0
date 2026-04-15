@@ -472,7 +472,7 @@ func (s *issuerStore) RegisterCredentialType(ctx context.Context, typeName, disp
 	}
 
 	// Write to the mounted config file
-	configPath := "docker/waltid/issuer-api/config/credential-issuer-metadata.conf"
+	configPath := "docker/stack/issuer-api/config/credential-issuer-metadata.conf"
 	existing, _ := os.ReadFile(configPath)
 	var content string
 	if len(existing) == 0 {
@@ -492,7 +492,7 @@ func (s *issuerStore) RegisterCredentialType(ctx context.Context, typeName, disp
 
 	// Restart the issuer container
 	cmd := exec.Command("docker", "restart", "waltid-issuer-api-1")
-	cmd.Dir = "docker/waltid"
+	cmd.Dir = "docker/stack"
 	if out, err := cmd.CombinedOutput(); err != nil {
 		fmt.Printf("credtype: container restart failed: %s %v\n", string(out), err)
 	}

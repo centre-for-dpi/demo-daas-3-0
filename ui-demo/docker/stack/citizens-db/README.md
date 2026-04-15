@@ -143,5 +143,5 @@ To reseed an existing container without restarting:
 
 ```bash
 docker exec -i citizens-postgres psql -U citizens -d citizens \
-  < docker/waltid/citizens-db/init.sql
+  < docker/stack/citizens-db/init.sql
 ```

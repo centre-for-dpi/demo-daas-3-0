@@ -9,7 +9,7 @@ run-waltid: build
 
 # Run with Walt.id + Keycloak + WSO2 SSO (requires Docker stack running)
 run-sso: build
-	@set -a && . ./.env && set +a && cd docker/waltid && bash wso2-init.sh && cd ../..
+	@set -a && . ./.env && set +a && cd docker/stack && bash wso2-init.sh && cd ../..
 	set -a && . ./.env && set +a && ./server -config config/waltid-sso.json
 
 # Run with mock backend (no Docker needed)
@@ -48,23 +48,23 @@ docker:
 
 # Start Walt.id Docker stack + initialize SSO providers
 docker-up:
-	cd docker/waltid && docker compose --env-file ../../.env up -d
+	cd docker/stack && docker compose --env-file ../../.env up -d
 	@echo "Waiting for services to start..."
 	@sleep 20
 	@echo "Initializing WSO2 application..."
-	@set -a && . ./.env && set +a && cd docker/waltid && bash wso2-init.sh
+	@set -a && . ./.env && set +a && cd docker/stack && bash wso2-init.sh
 
 # Stop Walt.id Docker stack
 docker-down:
-	cd docker/waltid && docker compose down
+	cd docker/stack && docker compose down
 
 # Restart Walt.id Docker stack
 docker-restart:
-	cd docker/waltid && docker compose down && docker compose up -d
+	cd docker/stack && docker compose down && docker compose up -d
 
 # Full reset: destroy all data (users, credentials, DIDs) and start fresh
 docker-clean:
-	cd docker/waltid && docker compose down -v && docker compose up -d
+	cd docker/stack && docker compose down -v && docker compose up -d
 
 # Create a WSO2 user (admin-provisioned). Usage: make wso2-user NAME=jane.doe PASS=Secret123! FIRST=Jane LAST=Doe EMAIL=jane@example.com
 wso2-user:
@@ -82,11 +82,11 @@ wso2-users:
 
 # Show Walt.id Docker stack status
 docker-ps:
-	cd docker/waltid && docker compose ps
+	cd docker/stack && docker compose ps
 
 # Run the DPG lifecycle test (requires Docker stack running)
 lifecycle-test:
-	cd docker/waltid && bash test-lifecycle.sh
+	cd docker/stack && bash test-lifecycle.sh
 
 # Start everything: Docker stack + server with Walt.id config
 up: docker-up

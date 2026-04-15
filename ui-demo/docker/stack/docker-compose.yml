@@ -1,6 +1,16 @@
+# Pin the project name to `waltid` so that volumes and the default
+# network keep their existing `waltid_*` prefixes after renaming the
+# parent directory from `docker/waltid` to `docker/stack`. Without
+# this, `docker compose up` would create a new `stack_*` network and
+# orphan every volume (Postgres data, esignet keystore, Mimoto state),
+# losing the seeded wallet-demo-client row and the mock identity. The
+# directory name is cosmetic; the project name is load-bearing.
+name: waltid
+
 services:
   postgres:
     image: postgres:latest
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "pg_isready", "-q", "-U", "${POSTGRES_USER:-waltid}"]
       interval: 5s
@@ -31,6 +41,7 @@ services:
 
   issuer-api:
     image: waltid/issuer-api:latest
+    restart: unless-stopped
     depends_on:
       - caddy
     environment:
@@ -41,6 +52,7 @@ services:
 
   verifier-api:
     image: waltid/verifier-api:latest
+    restart: unless-stopped
     depends_on:
       - caddy
     environment:
@@ -51,6 +63,7 @@ services:
 
   wallet-api:
     image: waltid/wallet-api:latest
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
@@ -73,6 +86,7 @@ services:
 
   keycloak:
     image: quay.io/keycloak/keycloak:latest
+    restart: unless-stopped
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
@@ -85,6 +99,7 @@ services:
 
   wso2is:
     image: wso2/wso2is:7.0.0
+    restart: unless-stopped
     ports:
       - "${WSO2_PORT:-9443}:9443"
     environment:
@@ -92,6 +107,7 @@ services:
 
   libretranslate:
     image: libretranslate/libretranslate:latest
+    restart: unless-stopped
     ports:
       - "${LIBRETRANSLATE_PORT:-5000}:5000"
     environment:
@@ -101,11 +117,12 @@ services:
 
   # ==========================================================================
   # Inji Certify — MOSIP's credential issuance service (OID4VCI)
-  # See docker/waltid/inji/README.md for full setup documentation
+  # See docker/stack/inji/README.md for full setup documentation
   # ==========================================================================
 
   certify-postgres:
     image: postgres:15
+    restart: unless-stopped
     container_name: certify-postgres
     environment:
       POSTGRES_USER: postgres
@@ -123,6 +140,7 @@ services:
 
   inji-certify:
     image: injistack/inji-certify-with-plugins:0.14.0
+    restart: unless-stopped
     container_name: inji-certify
     user: root
     ports:
@@ -160,10 +178,10 @@ services:
       # The jwk-set-uri is proxied through our oidc-ui nginx which
       # rewrites /.well-known/jwks.json to esignet's internal path, so
       # that URL stays at the bare domain root.
-      - mosip_certify_authorization_url=http://172.24.0.1:3005
-      - mosip_certify_authn_issuer_uri=http://172.24.0.1:3005/v1/esignet
-      - mosip_certify_authn_jwk_set_uri=http://172.24.0.1:3005/.well-known/jwks.json
-      - mosip_certify_oauth_issuer=http://172.24.0.1:3005/v1/esignet
+      - mosip_certify_authorization_url=http://${PUBLIC_HOST:-172.24.0.1}:${ESIGNET_PUBLIC_PORT:-3005}
+      - mosip_certify_authn_issuer_uri=http://${PUBLIC_HOST:-172.24.0.1}:${ESIGNET_PUBLIC_PORT:-3005}/v1/esignet
+      - mosip_certify_authn_jwk_set_uri=http://${PUBLIC_HOST:-172.24.0.1}:${ESIGNET_PUBLIC_PORT:-3005}/.well-known/jwks.json
+      - mosip_certify_oauth_issuer=http://${PUBLIC_HOST:-172.24.0.1}:${ESIGNET_PUBLIC_PORT:-3005}/v1/esignet
     volumes:
       - ./inji/certify/certify-default.properties:/home/mosip/config/certify-default.properties
       - ./inji/certify/certify-csvdp-farmer.properties:/home/mosip/config/certify-csvdp-farmer.properties
@@ -182,6 +200,7 @@ services:
 
   certify-nginx:
     image: nginx:stable
+    restart: unless-stopped
     container_name: certify-nginx
     ports:
       - "8091:80"
@@ -206,6 +225,7 @@ services:
 
   inji-verify-postgres:
     image: postgres:13
+    restart: unless-stopped
     container_name: inji-verify-postgres
     environment:
       POSTGRES_USER: postgres
@@ -223,6 +243,7 @@ services:
 
   inji-verify-service:
     image: mosipid/inji-verify-service:0.16.0
+    restart: unless-stopped
     container_name: inji-verify-service
     user: root
     ports:
@@ -255,6 +276,7 @@ services:
 
   inji-verify-ui:
     image: mosipid/inji-verify-ui:0.16.0
+    restart: unless-stopped
     container_name: inji-verify-ui
     ports:
       - "3001:8000"
@@ -275,6 +297,7 @@ services:
 
   citizens-postgres:
     image: postgres:16
+    restart: unless-stopped
     container_name: citizens-postgres
     environment:
       POSTGRES_USER: citizens
@@ -307,6 +330,7 @@ services:
 
   vc-adapter:
     image: verification-adapter-adapter:latest
+    restart: unless-stopped
     container_name: vc-adapter
     ports:
       - "8085:8085"
@@ -342,12 +366,13 @@ services:
   #
   # Bring-up:
   #   cd docker/injiweb && ./fetch-config.sh   # pulls upstream configs
-  #   docker compose -f docker/waltid/docker-compose.yml --profile injiweb up -d
+  #   docker compose -f docker/stack/docker-compose.yml --profile injiweb up -d
   #   docker/injiweb/seed-esignet-client.sh
   # ==========================================================================
 
   injiweb-postgres:
     image: postgres:15
+    restart: unless-stopped
     container_name: injiweb-postgres
     profiles:
       - injiweb
@@ -372,6 +397,7 @@ services:
 
   injiweb-redis:
     image: redis:7-alpine
+    restart: unless-stopped
     container_name: injiweb-redis
     profiles:
       - injiweb
@@ -383,6 +409,7 @@ services:
 
   injiweb-mock-identity:
     image: mosipid/mock-identity-system:0.10.1
+    restart: unless-stopped
     container_name: injiweb-mock-identity
     profiles:
       - injiweb
@@ -407,6 +434,7 @@ services:
 
   injiweb-esignet:
     image: mosipid/esignet-with-plugins:1.5.1
+    restart: unless-stopped
     container_name: injiweb-esignet
     profiles:
       - injiweb
@@ -461,7 +489,7 @@ services:
       #   - Mimoto inside waltid_default: http://172.24.0.1:3005 →
       #     bridge gateway (host) → docker port forward → same target
       # Same URL, works in both contexts, no /etc/hosts edits needed.
-      MOSIP_ESIGNET_DOMAIN_URL: http://172.24.0.1:3005
+      MOSIP_ESIGNET_DOMAIN_URL: http://${PUBLIC_HOST:-172.24.0.1}:${ESIGNET_PUBLIC_PORT:-3005}
       # Persist esignet's kernel keymanager PKCS12 keystore into a named
       # volume instead of the container's writable layer. Without this
       # override, esignet uses the local profile default of
@@ -506,6 +534,7 @@ services:
   # issuer redirects them for OIDC authorization.
   injiweb-oidc-ui:
     image: mosipid/oidc-ui:1.5.1
+    restart: unless-stopped
     container_name: injiweb-oidc-ui
     profiles:
       - injiweb
@@ -516,7 +545,7 @@ services:
     ports:
       # Host :3005 → container :3000. Avoids conflict with inji-verify-ui
       # (:3001) and injiweb-ui (:3004). Must match MOSIP_ESIGNET_DOMAIN_URL.
-      - "3005:3000"
+      - "${ESIGNET_PUBLIC_PORT:-3005}:3000"
     environment:
       container_user: mosip
       DEFAULT_WELLKNOWN: '%5B%7B%22name%22%3A%22OpenID%20Configuration%22%2C%22value%22%3A%22%2F.well-known%2Fopenid-configuration%22%7D%2C%7B%22name%22%3A%22Jwks%20Json%22%2C%22value%22%3A%22%2F.well-known%2Fjwks.json%22%7D%2C%7B%22name%22%3A%22Authorization%20Server%22%2C%22value%22%3A%22%2F.well-known%2Foauth-authorization-server%22%7D%5D'
@@ -526,6 +555,7 @@ services:
 
   injiweb-minio:
     image: minio/minio:latest
+    restart: unless-stopped
     container_name: injiweb-minio
     profiles:
       - injiweb
@@ -538,6 +568,7 @@ services:
 
   injiweb-datashare:
     image: mosipid/data-share-service:1.3.0-beta.2
+    restart: unless-stopped
     container_name: injiweb-datashare
     profiles:
       - injiweb
@@ -559,6 +590,7 @@ services:
 
   injiweb-mimoto:
     image: injistack/mimoto:0.21.0
+    restart: unless-stopped
     container_name: injiweb-mimoto
     profiles:
       - injiweb
@@ -606,6 +638,7 @@ services:
 
   injiweb-ui:
     image: injistack/inji-web:0.16.0
+    restart: unless-stopped
     container_name: injiweb-ui
     profiles:
       - injiweb
@@ -621,10 +654,10 @@ services:
       - injiweb-mimoto
     ports:
       # Upstream maps 3004:3004 (the image's nginx listens on 3004, not 80).
-      - "3004:3004"
+      - "${INJIWEB_UI_PUBLIC_PORT:-3004}:3004"
     environment:
       DEFAULT_LANG: en
-      MIMOTO_URL: http://localhost:3004/v1/mimoto
+      MIMOTO_URL: http://${PUBLIC_HOST:-localhost}:${INJIWEB_UI_PUBLIC_PORT:-3004}/v1/mimoto
       IGNORED_ISSUER_IDS: MockMdl
     volumes:
       # The UI container reads the issuer list directly from these JSON
