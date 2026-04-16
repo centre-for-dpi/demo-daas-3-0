@@ -11,3 +11,9 @@ go-build-plan.md
 
 # Runtime state
 ui-demo/cache/
+ui-demo/walletbag.json
+ui-demo/server
+
+# E2E test dependencies
+ui-demo/node_modules/
+ui-demo/package-lock.json
