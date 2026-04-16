@@ -124,7 +124,10 @@ var dpgCatalogByRole = map[string][]DPGCard{
 			},
 			Description: "Full wallet-api backend with persistent credential " +
 				"storage, DID management, and OID4VP presentations. Best for " +
-				"JWT-format credentials.",
+				"JWT-format credentials. " +
+				"Compatible issuers: walt.id (JWT). Cannot claim from Inji Certify " +
+				"(either variant) — walt.id's proof JWT includes an `iss` claim " +
+				"that Inji rejects.",
 		},
 		{
 			ID:      "local",
@@ -136,7 +139,11 @@ var dpgCatalogByRole = map[string][]DPGCard{
 			},
 			Description: "A Go struct inside this server that acts as a holder. " +
 				"Holds credentials in an in-memory bag, runs a real OID4VCI " +
-				"Pre-Auth client. Demo-only — credentials are lost on restart.",
+				"Pre-Auth client. Demo-only — credentials are lost on restart. " +
+				"Compatible issuers: Inji Certify (Pre-Auth), walt.id, self-issue. " +
+				"Cannot claim from Inji Certify (Auth Code) — the primary " +
+				"instance validates tokens against esignet's JWKS. " +
+				"Cannot do OID4VP presentation — use the Credential QR tab instead.",
 		},
 		{
 			ID:      "inji_web",
@@ -152,7 +159,9 @@ var dpgCatalogByRole = map[string][]DPGCard{
 				"and runs the OID4VCI exchange itself. It does NOT accept external credential_offer " +
 				"URLs — so when you claim a credential here we redirect you to Inji Web's /issuers " +
 				"page, where you pick the issuer and complete the flow. Credentials live inside " +
-				"Mimoto, not on this server.",
+				"Mimoto, not on this server. " +
+				"Compatible issuers: Inji Certify (Auth Code) only — this is the only wallet " +
+				"that works with the esignet-authenticated primary instance.",
 		},
 		{
 			ID:      "credebl",
@@ -165,22 +174,9 @@ var dpgCatalogByRole = map[string][]DPGCard{
 			Beta: true,
 			Description: "Credebl wallet agent (beta). Limited to AnonCreds/LDP credentials in v1.",
 		},
-		{
-			ID:      "pdf",
-			Name:    "Print PDF Wallet",
-			Tagline: "Offline, self-verifying printable credential",
-			Formats: []string{"ldp_vc", "jwt_vc_json", "vc+sd-jwt"},
-			IssuanceFlows: []string{
-				"OID4VCI claim → printable PDF + self-verifying QR",
-			},
-			Description: "Real WalletStore that runs the OID4VCI claim flow, " +
-				"then generates a PDF containing the human-readable claims and " +
-				"a PixelPass-encoded QR (base45(zlib(credJSON))) that any offline " +
-				"verifier can decode and cryptographically check without contacting " +
-				"the issuer. Best for holders without a smartphone or in low-connectivity " +
-				"settings. Formats that don't fit in a single QR surface a clear error " +
-				"at claim time with suggested alternatives.",
-		},
+		// PDF removed as a standalone wallet DPG — it's an export format, not
+		// a wallet. Any wallet's credentials can be exported to PDF via the
+		// Export page (GET /api/wallet/export-credential?format=pdf).
 	},
 	"verifier": {
 		{
@@ -192,7 +188,9 @@ var dpgCatalogByRole = map[string][]DPGCard{
 				"OID4VP session + presentation submission",
 			},
 			Description: "OID4VP-compliant verifier with presentation definitions, " +
-				"QR code flows, and policy engine. Best for JWT VCs.",
+				"QR code flows, and policy engine. Best for JWT VCs. " +
+				"Cannot directly verify LDP_VC credentials — needs the verification " +
+				"adapter or Inji Verify for JSON-LD proof checking.",
 		},
 		{
 			ID:      "inji",

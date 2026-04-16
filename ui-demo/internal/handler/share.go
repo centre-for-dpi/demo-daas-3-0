@@ -214,16 +214,38 @@ func (h *Handler) APIShareVerify(w http.ResponseWriter, r *http.Request) {
 			contentType = "application/jwt"
 		}
 	}
-	// Use the verifier the holder has configured for themselves. For a
-	// truly anonymous verify link we could pin to the server-default
-	// verifier instead; for now, the server-default is fine since no
-	// per-user auth is required to access the share link.
+	// Try the server-default verifier's DirectVerify first. If it fails
+	// (e.g., walt.id doesn't support direct-verify), try the adapter or
+	// fallback verifier. The share page is unauthenticated, so we can't
+	// use driveOID4VPVerify (needs a wallet session).
 	result, err := h.stores.Verifier.DirectVerify(r.Context(), []byte(doc), contentType)
-	if err != nil {
-		writeJSON(w, 500, map[string]string{"error": "verify failed: " + err.Error()})
+	if err == nil && result != nil {
+		writeJSON(w, 200, result)
 		return
 	}
-	writeJSON(w, 200, result)
+
+	// Try fallback verifier if available (e.g., adapter or Inji Verify)
+	if h.stores.FallbackVerifier != nil {
+		fbResult, fbErr := h.stores.FallbackVerifier.DirectVerify(r.Context(), []byte(doc), contentType)
+		if fbErr == nil && fbResult != nil {
+			writeJSON(w, 200, fbResult)
+			return
+		}
+	}
+
+	// All verifiers failed — return an honest error explaining why
+	errMsg := "verify failed"
+	if err != nil {
+		errMsg = err.Error()
+	}
+	writeJSON(w, 500, map[string]any{
+		"error": "verify failed: " + errMsg,
+		"explanation": "The configured verifier backend does not support direct " +
+			"credential verification (it requires an OID4VP session). To verify " +
+			"this credential, scan the holder's Credential QR with Inji Verify " +
+			"or another verifier app, or use the Verifier portal's Request Builder " +
+			"to start an OID4VP session.",
+	})
 }
 
 // lookupHolderCredential pulls a specific credential out of the holder's

@@ -24,7 +24,8 @@ import (
 	"vcplatform/internal/store/injiweb"
 	"vcplatform/internal/store/localholder"
 	"vcplatform/internal/store/mock"
-	"vcplatform/internal/store/pdfwallet"
+
+	"vcplatform/internal/store/walletbag"
 	"vcplatform/internal/store/waltid"
 	"vcplatform/internal/transport"
 	"vcplatform/web"
@@ -46,6 +47,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("render: %v", err)
 	}
+
+	// Persistent credential bag — survives server restarts.
+	walletbag.InitShared("walletbag.json")
 
 	stores := initStores(cfg)
 
@@ -115,7 +119,6 @@ func main() {
 		"waltid":   pickWalletStore("waltid", cfg),
 		"local":    pickWalletStore("local", cfg),
 		"credebl":  pickWalletStore("credebl", cfg),
-		"pdf":      pickWalletStore("pdf", cfg),
 		"inji_web": pickWalletStore("inji_web", cfg),
 	})
 	h.SetVerifierRegistry(map[string]store.VerifierStore{
@@ -168,11 +171,19 @@ func initStores(cfg *config.Config) *store.Stores {
 	stores.Wallet = pickWalletStore(walletDPG, cfg)
 	stores.Verifier = pickVerifierStore(verifierDPG, cfg)
 
-	// Hybrid fallback: when the primary verifier is the backend-agnostic
-	// adapter, we also pin a walt.id verifier + wallet pair so that credential
-	// formats the adapter can't handle (JWT_VC, SD-JWT without x5c) can fall
-	// back to walt.id's OID4VP session flow.
-	if verifierDPG == "adapter" {
+	// Hybrid fallback: each primary verifier gets a complementary fallback so
+	// the direct-verify endpoint works across all credential formats.
+	switch verifierDPG {
+	case "adapter":
+		// Adapter can't do JWT without x5c → fall back to walt.id OID4VP.
+		stores.FallbackVerifier = pickVerifierStore("waltid", cfg)
+		stores.FallbackWallet = pickWalletStore("waltid", cfg)
+	case "waltid":
+		// Walt.id can't direct-verify LDP_VC → fall back to the adapter
+		// (URDNA2015 offline verification) which handles LDP natively.
+		stores.FallbackVerifier = pickVerifierStore("adapter", cfg)
+	case "inji":
+		// Inji Verify can't handle JWT VCs → fall back to walt.id OID4VP.
 		stores.FallbackVerifier = pickVerifierStore("waltid", cfg)
 		stores.FallbackWallet = pickWalletStore("waltid", cfg)
 	}
@@ -243,11 +254,6 @@ func pickWalletStore(dpg string, cfg *config.Config) store.WalletStore {
 		// MOSIP Inji Web or Inji Mobile.
 		client := newTransportClient("", "", cfg)
 		return localholder.NewHolderStore(client)
-	case "pdf":
-		// Print PDF wallet: real WalletStore that runs the OID4VCI flow,
-		// then generates an offline-verifiable printable PDF with a
-		// PixelPass-encoded self-verifying QR per claimed credential.
-		return pdfwallet.New()
 	case "inji_web", "injiweb":
 		// MOSIP Inji Web — a browser-hosted wallet. ClaimCredential returns
 		// a redirect URL the holder opens in a new tab to complete the
@@ -268,7 +274,7 @@ func pickVerifierStore(dpg string, cfg *config.Config) store.VerifierStore {
 	case "inji":
 		url := envOr("INJI_VERIFY_URL", "http://localhost:8082")
 		client := newTransportClient(url, "", cfg)
-		return inji.NewVerifierStore(client)
+		return inji.NewVerifierStore(client, url)
 	case "adapter":
 		// Backend-agnostic verifier: routes LDP_VC / SD-JWT / JWT credentials
 		// through the standalone verification-adapter, which handles URDNA2015
