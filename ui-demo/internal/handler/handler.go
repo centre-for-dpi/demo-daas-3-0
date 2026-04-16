@@ -160,6 +160,43 @@ func (h *Handler) issuerFor(user *model.User) store.IssuerStore {
 // walletFor returns the wallet store for the given user. Priority:
 //  1. The DPG the user picked during holder onboarding (user.WalletDPG).
 //  2. The server-wide default (h.stores.Wallet).
+// resolvedWalletDPG returns the effective wallet DPG key for a user,
+// consulting the onboarding state when the session cookie field is empty.
+// This mirrors the lookup order in walletFor() but returns the string key
+// so callers can branch on it without inspecting the store instance.
+func (h *Handler) resolvedWalletDPG(user *model.User) string {
+	if user != nil && user.WalletDPG != "" {
+		if _, ok := h.walletRegistry[user.WalletDPG]; ok {
+			return user.WalletDPG
+		}
+	}
+	if user != nil && user.ID != "" {
+		if st := h.onboarding.Get(user.ID); st != nil && st.WalletDPG != "" {
+			if _, ok := h.walletRegistry[st.WalletDPG]; ok {
+				return st.WalletDPG
+			}
+		}
+	}
+	return ""
+}
+
+// resolvedVerifierDPG returns the effective verifier DPG key for a user.
+func (h *Handler) resolvedVerifierDPG(user *model.User) string {
+	if user != nil && user.VerifierDPG != "" {
+		if _, ok := h.verifierRegistry[user.VerifierDPG]; ok {
+			return user.VerifierDPG
+		}
+	}
+	if user != nil && user.ID != "" {
+		if st := h.onboarding.Get(user.ID); st != nil && st.VerifierDPG != "" {
+			if _, ok := h.verifierRegistry[st.VerifierDPG]; ok {
+				return st.VerifierDPG
+			}
+		}
+	}
+	return ""
+}
+
 func (h *Handler) walletFor(user *model.User) store.WalletStore {
 	if user != nil && user.WalletDPG != "" {
 		if s, ok := h.walletRegistry[user.WalletDPG]; ok && s != nil {
@@ -304,7 +341,26 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 	// --- Middleware helpers ---
 	auth := func(fn http.HandlerFunc) http.Handler {
-		return middleware.AuthRequired(http.HandlerFunc(fn))
+		return middleware.AuthRequired(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Enrich user with onboarding DPG choices when the session
+			// cookie doesn't carry them (SSO re-login drops DPG fields).
+			if user := middleware.GetUser(r.Context()); user != nil && user.ID != "" {
+				if user.WalletDPG == "" || user.IssuerDPG == "" || user.VerifierDPG == "" {
+					if st := h.onboarding.Get(user.ID); st != nil {
+						if user.IssuerDPG == "" && st.IssuerDPG != "" {
+							user.IssuerDPG = st.IssuerDPG
+						}
+						if user.WalletDPG == "" && st.WalletDPG != "" {
+							user.WalletDPG = st.WalletDPG
+						}
+						if user.VerifierDPG == "" && st.VerifierDPG != "" {
+							user.VerifierDPG = st.VerifierDPG
+						}
+					}
+				}
+			}
+			fn(w, r)
+		}))
 	}
 	adminOnly := func(fn http.HandlerFunc) http.Handler {
 		return middleware.AuthRequired(middleware.RequireRole("admin")(http.HandlerFunc(fn)))
@@ -437,9 +493,12 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /api/wallet/dids/create", auth(h.APICreateDID))
 	mux.Handle("POST /api/credential/issue", auth(h.APIIssueCredentialOffer))
 	mux.Handle("POST /api/wallet/claim-offer", auth(h.APIWalletClaimOffer))
-	mux.Handle("POST /api/wallet/self-issue", auth(h.APIIssueToSelf))
+	// Self-issue removed: the platform signing credentials with its own
+	// ephemeral key doesn't produce real verifiable credentials.
 	mux.Handle("POST /api/share/create-session", auth(h.APICreateShareSession))
 	mux.Handle("POST /api/share/proactive", auth(h.APIShareProactive))
+	mux.Handle("POST /api/wallet/credential-qr", auth(h.APICredentialQR))
+	mux.Handle("GET /api/wallet/export-credential", auth(h.APIExportSingleCredential))
 	mux.HandleFunc("GET /share/v/{id}", h.ShareView)
 	mux.HandleFunc("POST /share/v/{id}/verify", h.APIShareVerify)
 	mux.Handle("GET /api/schemas", auth(h.APISchemas))

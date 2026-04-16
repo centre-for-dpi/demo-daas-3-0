@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -240,11 +241,22 @@ func (h *Handler) APIDirectVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fallback for JWT / SD-JWT credentials: the direct verifier couldn't
-	// handle it, so drive walt.id's OID4VP session flow instead. This gives
-	// the UI a single /api/verifier/direct-verify entry point that works
-	// across all formats regardless of which DPG issued them.
-	if isJWTLike {
+	// Fallback chain: try every available verification path before giving up.
+	//
+	// 1. FallbackVerifier direct-verify (e.g., adapter can verify LDP_VC that
+	//    walt.id can't, or Inji Verify for LDP credentials).
+	if h.stores.FallbackVerifier != nil {
+		fbResult, fbErr := h.stores.FallbackVerifier.DirectVerify(r.Context(), []byte(doc), contentType)
+		if fbErr == nil && fbResult != nil && fbResult.Verified != nil && *fbResult.Verified {
+			writeJSON(w, http.StatusOK, fbResult)
+			return
+		}
+	}
+
+	// 2. OID4VP session flow for JWT/SD-JWT. Only works when the wallet
+	//    supports OID4VP (walt.id wallet). Local/PDF wallets can't present
+	//    via OID4VP — their PresentCredential is a no-op.
+	if isJWTLike && user.WalletDPG != "local" {
 		oid4vpResult, oid4vpErr := h.driveOID4VPVerify(r.Context(), user)
 		if oid4vpErr == nil && oid4vpResult != nil && oid4vpResult.Verified != nil && *oid4vpResult.Verified {
 			writeJSON(w, http.StatusOK, oid4vpResult)
@@ -293,9 +305,11 @@ func (h *Handler) driveOID4VPVerify(ctx context.Context, user *model.User) (*mod
 	if err != nil {
 		return nil, err
 	}
-	ids := make([]string, 0, len(creds))
-	for _, c := range creds {
-		ids = append(ids, c.ID)
+	// Pick one credential — walt.id maps selectedCredentials[i] to
+	// input_descriptors[i], so we must not exceed the descriptor count.
+	var ids []string
+	if len(creds) > 0 {
+		ids = []string{creds[0].ID}
 	}
 
 	presentReq := model.PresentRequest{
@@ -345,20 +359,37 @@ func (h *Handler) APIWalletPresent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Auto-select all wallet credentials if the UI didn't specify — Walt.id's
-	// usePresentationRequest expects a non-null selectedCredentials array.
+	// Auto-select one credential if the UI didn't specify. Walt.id's
+	// usePresentationRequest maps selectedCredentials[i] to input_descriptors[i]
+	// — sending more credential IDs than input_descriptors causes an
+	// IndexOutOfBoundsException in the wallet-api. We pick the first (most recent)
+	// credential, matching the single input_descriptor our verifier generates.
 	if len(req.SelectedCredentials) == 0 {
 		creds, err := wallet.ListCredentials(r.Context(), user.WalletToken, wallets[0].ID)
-		if err == nil {
-			for _, c := range creds {
-				req.SelectedCredentials = append(req.SelectedCredentials, c.ID)
-			}
+		if err == nil && len(creds) > 0 {
+			req.SelectedCredentials = []string{creds[0].ID}
 		}
 	}
 
 	err = wallet.PresentCredential(r.Context(), user.WalletToken, wallets[0].ID, req)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "presentation failed: " + err.Error()})
+		resp := map[string]any{
+			"error":     "presentation failed: " + err.Error(),
+			"walletDpg": user.WalletDPG,
+		}
+		// Structured error: if the wallet can't speak OID4VP, explain why
+		// and offer the credential-QR path as an alternative.
+		low := strings.ToLower(err.Error())
+		if strings.Contains(low, "400") || strings.Contains(low, "404") {
+			resp["explanation"] = "The wallet backend rejected the OID4VP presentation request. " +
+				"This usually means the credential isn't in the wallet's native store (e.g., " +
+				"a credential in the in-process bag can't be presented through walt.id's OID4VP endpoint)."
+			resp["recovery"] = []map[string]string{
+				{"action": "suggestion", "label": "Use the Credential QR tab to show your credential as a scannable QR instead"},
+				{"action": "suggestion", "label": "Use the verifier's Request Builder — it drives the OID4VP session server-side"},
+			}
+		}
+		writeJSON(w, http.StatusInternalServerError, resp)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "presented"})
@@ -408,34 +439,11 @@ func (h *Handler) APIPolicies(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, policies)
 }
 
-// APIWalletPDF handles GET /api/wallet/pdf?id=... — serves the printable
-// PDF for a credential claimed into the PDF wallet. Only usable when the
-// user's current wallet DPG is "pdf"; other backends don't generate PDFs.
+// APIWalletPDF is a legacy endpoint — redirects to the generic export endpoint.
+// Kept for backwards compatibility with any bookmarked URLs.
 func (h *Handler) APIWalletPDF(w http.ResponseWriter, r *http.Request) {
-	user := middleware.GetUser(r.Context())
-	if user == nil || !user.HasBackendAuth() {
-		http.Error(w, "unauthorized", 401)
-		return
-	}
 	id := r.URL.Query().Get("id")
-	if id == "" {
-		http.Error(w, "id required", 400)
-		return
-	}
-	wallet := h.walletFor(user)
-	pdfWallet, ok := wallet.(*pdfwallet.Store)
-	if !ok {
-		http.Error(w, "current wallet backend is not a PDF wallet — switch to the Print PDF Wallet first", 400)
-		return
-	}
-	data, ok := pdfWallet.GetPDF(user.WalletToken, id)
-	if !ok {
-		http.Error(w, "pdf not found for that credential", 404)
-		return
-	}
-	w.Header().Set("Content-Type", "application/pdf")
-	w.Header().Set("Content-Disposition", "attachment; filename=credential-"+id+".pdf")
-	w.Write(data)
+	http.Redirect(w, r, "/api/wallet/export-credential?id="+id+"&format=pdf", http.StatusTemporaryRedirect)
 }
 
 // APIExportCredentialJSON handles GET /api/wallet/export — downloads all wallet credentials as JSON.
@@ -459,6 +467,102 @@ func (h *Handler) APIExportCredentialJSON(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", "attachment; filename=credentials.json")
 	json.NewEncoder(w).Encode(creds)
+}
+
+// APICredentialQR handles POST /api/wallet/credential-qr — returns the
+// PixelPass-encoded payload for a credential so the holder can display it
+// as a QR code. A verifier scans this with Inji Verify or any compatible
+// app and verifies offline — no server round-trip needed.
+func (h *Handler) APICredentialQR(w http.ResponseWriter, r *http.Request) {
+	user := middleware.GetUser(r.Context())
+	if user == nil || !user.HasBackendAuth() {
+		writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	var req struct {
+		CredentialID string `json:"credentialId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "invalid request"})
+		return
+	}
+
+	cred, err := h.lookupHolderCredential(r.Context(), user, req.CredentialID)
+	if err != nil {
+		writeJSON(w, 404, map[string]string{"error": err.Error()})
+		return
+	}
+
+	resp := map[string]any{
+		"format":   cred.Format,
+		"rawBytes": len(cred.Document),
+	}
+
+	payload, err := pdfwallet.PixelPassEncode([]byte(cred.Document))
+	if err != nil {
+		resp["error"] = "credential too large for QR encoding: " + err.Error()
+		resp["fitsInQR"] = false
+		writeJSON(w, 200, resp)
+		return
+	}
+	resp["qrPayload"] = payload
+	resp["encodedBytes"] = len(payload)
+
+	// Check if it fits in a single QR code (max ~4296 alphanumeric chars at Low EC)
+	fitsInQR := len(payload) <= 4296
+	resp["fitsInQR"] = fitsInQR
+	if !fitsInQR {
+		resp["warning"] = fmt.Sprintf("encoded payload is %d bytes — exceeds single QR capacity (~4296 chars at Low EC). The QR may not scan reliably.", len(payload))
+	}
+
+	writeJSON(w, 200, resp)
+}
+
+// APIExportSingleCredential handles GET /api/wallet/export-credential?id=...&format=json|pdf
+// — exports a single credential in the requested format.
+func (h *Handler) APIExportSingleCredential(w http.ResponseWriter, r *http.Request) {
+	user := middleware.GetUser(r.Context())
+	if user == nil || !user.HasBackendAuth() {
+		http.Error(w, "unauthorized", 401)
+		return
+	}
+
+	id := r.URL.Query().Get("id")
+	format := r.URL.Query().Get("format")
+	if id == "" {
+		http.Error(w, "id required", 400)
+		return
+	}
+	if format == "" {
+		format = "json"
+	}
+
+	cred, err := h.lookupHolderCredential(r.Context(), user, id)
+	if err != nil {
+		http.Error(w, err.Error(), 404)
+		return
+	}
+
+	switch format {
+	case "json":
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=credential-%s.json", id))
+		w.Write([]byte(cred.Document))
+
+	case "pdf":
+		pdfBytes, err := pdfwallet.RenderCredentialPDF(cred.ParsedDocument, []byte(cred.Document), cred.Format)
+		if err != nil {
+			http.Error(w, "PDF render failed: "+err.Error(), 500)
+			return
+		}
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=credential-%s.pdf", id))
+		w.Write(pdfBytes)
+
+	default:
+		http.Error(w, "unsupported format: "+format+" (supported: json, pdf)", 400)
+	}
 }
 
 // APICreateDID handles POST /api/wallet/dids/create — creates a new DID in the wallet.
@@ -618,9 +722,9 @@ func (h *Handler) APIIssueToSelf(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized — sign in via SSO to link your wallet"})
 		return
 	}
-	if user.WalletDPG != "pdf" && user.WalletDPG != "local" {
+	if user.WalletDPG != "local" {
 		writeJSON(w, http.StatusBadRequest, map[string]any{
-			"error": "self-issue is only available for the PDF Wallet and in-process Local holder. " +
+			"error": "self-issue is only available for the in-process Local holder. " +
 				"For other wallets, use the standard 'Claim to My Wallet' flow with an offer URL.",
 			"walletDpg": user.WalletDPG,
 		})
@@ -820,13 +924,43 @@ func buildClaimErrorResponse(walletName, walletDPG, offerURL string, err error) 
 				"label":  "Switch to the in-process holder (speaks Inji's proof-JWT dialect)",
 			},
 			{
-				"action": "switch-wallet",
-				"to":     "pdf",
-				"label":  "Use the Print-PDF wallet (offline, self-verifying QR)",
-			},
-			{
 				"action": "reissue",
 				"label":  "Ask the issuer to re-issue from a walt.id-compatible DPG",
+			},
+		}
+	}
+
+	// Known incompatibility: local/pdf wallet claiming from the PRIMARY Inji
+	// Certify instance. The primary instance validates credential-request
+	// tokens against esignet's JWKS (for the Auth Code / Inji Web flow), but
+	// the local holder's Pre-Auth flow produces tokens signed by Inji's own
+	// keymanager — they'll never pass validation. The fix is to issue from
+	// inji_preauth (the second instance whose JWKS trusts its own keys).
+	isPrimaryInji := isInjiOffer &&
+		!strings.Contains(offerURL, "inji-certify-preauth") &&
+		!strings.Contains(offerURL, "localhost:8094")
+	is401 := strings.Contains(low, "401")
+	if isPrimaryInji && is401 && walletDPG == "local" {
+		resp["incompatibility"] = "local-wallet-primary-inji"
+		resp["explanation"] = "This offer came from the primary Inji Certify instance, which validates " +
+			"tokens against esignet's JWKS (needed for the Auth Code / Inji Web flow). The " +
+			walletName + " wallet uses the Pre-Authorized Code flow and gets tokens signed by " +
+			"Inji's own keymanager — the primary instance rejects them with 401. " +
+			"To claim Inji-issued credentials with this wallet, the issuer must use " +
+			"the \"Inji Certify (Pre-Auth)\" issuer backend, which has its own JWKS trust."
+		resp["recovery"] = []map[string]string{
+			{
+				"action": "reissue",
+				"label":  "Ask the issuer to re-issue using the Inji Certify (Pre-Auth) backend",
+			},
+			{
+				"action": "switch-wallet",
+				"to":     "inji_web",
+				"label":  "Switch to Inji Web (uses esignet Auth Code flow — compatible with the primary instance)",
+			},
+			{
+				"action": "suggestion",
+				"label":  "Use single-issuance with \"Sign & Issue to My Wallet\" — it routes through the platform's own LDP signer",
 			},
 		}
 	}
