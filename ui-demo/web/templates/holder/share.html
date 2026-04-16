@@ -5,19 +5,13 @@
   {{$dm := dataMap .Data}}
   {{$creds := index ($dm) "credentials"}}
   {{$isReal := and .User (not .User.Demo)}}
+  {{$walletDpg := ""}}{{if $isReal}}{{$walletDpg = .User.WalletDPG}}{{end}}
   {{$verifierName := index ($dm) "verifierName"}}
   {{$verifierDpg := index ($dm) "verifierDpg"}}
 
   {{if $isReal}}
 
-  <!-- Verifier-backend banner: when the holder clicks "Generate
-       direct-share link" or runs a Verify, this is the backend the
-       platform routes the cryptographic check through. The choice
-       lives in the verifier onboarding wizard; surface it here so a
-       layperson knows which backend will see their credential and
-       what it can actually verify. Rendered above the credentials
-       check so the layperson sees it even when their wallet is
-       empty. -->
+  <!-- Verifier-backend banner -->
   <div class="card" style="padding:0.85rem 1.1rem;margin-bottom:1rem;background:var(--bg-surface-alt);border-left:3px solid var(--accent);font-size:0.78rem;line-height:1.55;color:var(--text-secondary)">
     {{if $verifierName}}
     <strong>Verifying through: {{$verifierName}}.</strong>
@@ -44,11 +38,26 @@
   <!-- Mode toggle -->
   <div class="auth-tabs" style="margin-bottom:1.25rem">
     <button class="auth-tab active" onclick="switchPresentMode(this,'respond')">Respond to Verifier</button>
-    <button class="auth-tab" onclick="switchPresentMode(this,'initiate')">Share Proactively</button>
+    <button class="auth-tab" onclick="switchPresentMode(this,'qr')">Credential QR</button>
   </div>
 
-  <!-- MODE 1: Respond to verifier request -->
+  <!-- MODE 1: Respond to verifier request (OID4VP) -->
   <div id="mode-respond">
+    {{if eq $walletDpg "local"}}
+    <!-- Local wallet can't do OID4VP presentation natively -->
+    <div class="card" style="padding:1.25rem;margin-bottom:1.25rem;background:var(--bg-surface-alt);border-left:3px solid var(--color-warning,#c9a227)">
+      <div style="font-size:0.82rem;line-height:1.55;color:var(--text-secondary)">
+        <strong>OID4VP presentation is not available with the in-process holder.</strong>
+        OID4VP requires the wallet to receive the verifier's authorization request, build a <code>vp_token</code>, and POST it back. The in-process holder is a lightweight store that doesn't include an OID4VP responder.
+        <ul style="margin:0.5rem 0 0;padding-left:1.25rem;font-size:0.78rem">
+          <li>Use the <strong>Credential QR</strong> tab to show your credential as a scannable QR code</li>
+          <li>Switch to <strong>walt.id wallet</strong> in onboarding for full OID4VP support</li>
+          <li>Or ask the verifier to use the <strong>Request Builder</strong> in their verifier portal — the platform drives the session server-side</li>
+        </ul>
+      </div>
+    </div>
+    {{end}}
+
     <div id="present-input" class="card" style="margin-bottom:1.25rem">
       <h3 style="font-size:0.9rem;margin-bottom:1rem">Verifier Request</h3>
       <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:1rem">Paste the OID4VP link from the verifier, or scan their QR code.</p>
@@ -64,68 +73,47 @@
     </div>
   </div>
 
-  <!-- MODE 2: Holder-initiated direct share.
-       This is NOT OID4VP. The OID4VP protocol is verifier-initiated by
-       design — the verifier creates an authorization request, the
-       holder's wallet responds with a vp_token. There is no "holder
-       proactively pushes a credential" flow in OID4VP. What we offer
-       here is a convenience: the platform hosts a short-lived page
-       where the verifier can open the credential in a browser and
-       click Verify, and the platform's own verifier backend runs the
-       check. It's useful, it's honest, but it's not OID4VP — hence
-       the relabel away from "OID4VP Verification Link". -->
-  <div id="mode-initiate" style="display:none">
-    <!-- Honesty banner so a layperson understands what this button does. -->
+  <!-- MODE 2: Credential QR — display the credential as a scannable QR code.
+       A verifier scans this with Inji Verify or any compatible app. The QR
+       contains the credential itself (PixelPass-encoded: base45 + zlib),
+       NOT a URL. This is the standard "holder shows credential" path. -->
+  <div id="mode-qr" style="display:none">
     <div class="card" style="padding:1rem 1.25rem;margin-bottom:1.25rem;background:var(--bg-surface-alt);border-left:3px solid var(--accent)">
       <div style="font-size:0.82rem;line-height:1.55;color:var(--text-secondary)">
-        <strong>This is a direct-share link, not an OID4VP request.</strong>
-        OID4VP is always started by the verifier — they send you a request, your wallet replies. There's no standard "holder pushes a credential to a verifier" flow. What you're about to create is a convenience: the platform stages a copy of your credential on a temporary page. Anyone you send the link to can open it, see the claims, and click <em>Verify</em>. The platform's own verifier backend runs the cryptographic check on their behalf.
-        <div style="font-size:0.74rem;margin-top:0.5rem;color:var(--text-tertiary)">Use this when you just need to show a verifier that your credential is real. For a full OID4VP round-trip, use the <strong>Respond to Verifier</strong> tab instead — that's where the verifier-initiated flow lives.</div>
+        <strong>Show your credential as a QR code.</strong>
+        The QR contains the full credential payload (PixelPass-encoded: base45 + zlib). A verifier scans it with Inji Verify or any compatible verifier app and runs cryptographic verification locally — no server round-trip needed. This works offline.
+        <div style="font-size:0.74rem;margin-top:0.5rem;color:var(--text-tertiary)">For verifier-initiated OID4VP flows, use the <strong>Respond to Verifier</strong> tab — that's where the verifier sends you a request URL and your wallet responds.</div>
       </div>
     </div>
 
     <div class="card" style="margin-bottom:1.25rem">
-      <h3 style="font-size:0.9rem;margin-bottom:1rem">Select Credential to Share</h3>
-      <div id="share-cred-list" style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:1rem">
+      <h3 style="font-size:0.9rem;margin-bottom:1rem">Select Credential</h3>
+      <div id="qr-cred-list" style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:1rem">
         {{range $creds}}
         {{$pd := .ParsedDocument}}
         {{$subj := credSubject $pd}}
         {{$typeName := credTypes $pd}}
-        <label style="display:flex;align-items:center;gap:1rem;padding:0.85rem;background:var(--bg-surface-alt);border-radius:var(--radius-md);cursor:pointer;border:2px solid transparent" onclick="selectShareCred(this)">
-          <input type="radio" name="share-cred" value="{{.ID}}" style="flex-shrink:0">
+        <label style="display:flex;align-items:center;gap:1rem;padding:0.85rem;background:var(--bg-surface-alt);border-radius:var(--radius-md);cursor:pointer;border:2px solid transparent" onclick="selectQRCred(this)">
+          <input type="radio" name="qr-cred" value="{{.ID}}" style="flex-shrink:0">
           <span style="font-size:1.2rem">&#128196;</span>
           <div style="flex:1">
             <div style="font-weight:500;font-size:0.85rem">{{$typeName}}</div>
-            <div style="font-size:0.72rem;color:var(--text-secondary)">{{.Format}} &middot; {{mapStr $subj "name"}}{{mapStr $subj "firstName"}}</div>
+            <div style="font-size:0.72rem;color:var(--text-secondary)">{{.Format}} &middot; {{mapStr $subj "name"}}{{mapStr $subj "firstName"}}{{mapStr $subj "fullName"}}</div>
           </div>
         </label>
         {{end}}
       </div>
       <div style="text-align:right">
-        <button class="btn btn-primary btn-sm" id="share-gen-btn" onclick="generateSharePresentation()">Generate direct-share link</button>
+        <button class="btn btn-primary btn-sm" id="qr-gen-btn" onclick="generateCredentialQR()">Show QR Code</button>
       </div>
     </div>
 
-    <!-- Share result (hidden until generated) -->
-    <div id="share-result" style="display:none">
-      <div class="card" style="border-left:3px solid var(--color-accent)">
-        <h3 style="font-size:0.9rem;margin-bottom:1rem">Direct-share link ready</h3>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem">
-          <div>
-            <label class="form-label">Direct verification link (platform-hosted)</label>
-            <code id="share-vp-url" style="font-size:0.68rem;display:block;background:var(--bg-surface-alt);padding:0.75rem;border-radius:var(--radius-md);word-break:break-all;max-height:100px;overflow-y:auto"></code>
-            <div style="margin-top:0.75rem;display:flex;gap:0.5rem">
-              <button class="btn btn-sm btn-primary" onclick="navigator.clipboard.writeText(document.getElementById('share-vp-url').textContent);showToast('Copied','Direct-share link copied')">Copy Link</button>
-            </div>
-            <p style="font-size:0.72rem;color:var(--text-tertiary);margin-top:0.5rem">
-              Send this link to a verifier. They open it in a browser, see the claim values, and click <em>Verify</em>. Link expires in 30 minutes. <strong>Not an OID4VP authorization request.</strong>
-            </p>
-          </div>
-          <div style="text-align:center">
-            <div id="share-qr" style="margin:0 auto"></div>
-            <p style="font-size:0.72rem;color:var(--text-tertiary);margin-top:0.5rem">QR encodes the same direct-share URL — a verifier opens it in a browser. Not for wallet apps.</p>
-          </div>
-        </div>
+    <!-- QR result (hidden until generated) -->
+    <div id="qr-result" style="display:none">
+      <div class="card" style="text-align:center;padding:2rem">
+        <div id="qr-display" style="display:inline-block;margin-bottom:1rem"></div>
+        <div id="qr-meta" style="font-size:0.78rem;color:var(--text-secondary)"></div>
+        <div id="qr-error" style="display:none;font-size:0.82rem;color:var(--error);margin-top:1rem"></div>
       </div>
     </div>
   </div>
@@ -150,7 +138,7 @@
           <span style="font-size:1.2rem">&#128196;</span>
           <div style="flex:1">
             <div style="font-weight:500;font-size:0.85rem">{{$typeName}}</div>
-            <div style="font-size:0.72rem;color:var(--text-secondary)">{{.Format}} &middot; {{mapStr $subj "name"}}{{mapStr $subj "firstName"}}</div>
+            <div style="font-size:0.72rem;color:var(--text-secondary)">{{.Format}} &middot; {{mapStr $subj "name"}}{{mapStr $subj "firstName"}}{{mapStr $subj "fullName"}}</div>
           </div>
         </label>
         {{end}}
@@ -209,35 +197,27 @@ function switchPresentMode(btn, mode) {
   btn.parentElement.querySelectorAll('.auth-tab').forEach(function(t) { t.classList.remove('active'); });
   btn.classList.add('active');
   document.getElementById('mode-respond').style.display = mode === 'respond' ? '' : 'none';
-  document.getElementById('mode-initiate').style.display = mode === 'initiate' ? '' : 'none';
+  document.getElementById('mode-qr').style.display = mode === 'qr' ? '' : 'none';
 }
 
-function selectShareCred(label) {
-  document.querySelectorAll('#share-cred-list label').forEach(function(l) { l.style.border = '2px solid transparent'; });
+function selectQRCred(label) {
+  document.querySelectorAll('#qr-cred-list label').forEach(function(l) { l.style.border = '2px solid transparent'; });
   label.style.border = '2px solid var(--color-accent)';
   label.querySelector('input').checked = true;
 }
 
-// generateSharePresentation stages the selected credential on the server
-// and shows the holder two delivery paths:
-//   1. Share URL — a short-lived /share/v/{id} link the verifier can open
-//      in a browser. They see the claims and click Verify.
-//   2. QR code — encodes the share URL (small, always fits). The older
-//      approach called wallet.PresentCredential which only works for
-//      credentials the wallet backend natively owns; our shared walletbag
-//      breaks that assumption. Using a server-hosted share works uniformly.
-function generateSharePresentation() {
-  var selected = document.querySelector('input[name="share-cred"]:checked');
+function generateCredentialQR() {
+  var selected = document.querySelector('input[name="qr-cred"]:checked');
   if (!selected) {
-    showToast('Required', 'Select a credential to share.');
+    showToast('Required', 'Select a credential first.');
     return;
   }
 
-  var btn = document.getElementById('share-gen-btn');
+  var btn = document.getElementById('qr-gen-btn');
   btn.disabled = true;
-  btn.textContent = 'Generating share link…';
+  btn.textContent = 'Generating QR...';
 
-  fetch('/api/share/proactive', {
+  fetch('/api/wallet/credential-qr', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({credentialId: selected.value})
@@ -245,38 +225,48 @@ function generateSharePresentation() {
   .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
   .then(function(res) {
     btn.disabled = false;
-    btn.textContent = 'Generate Shareable Link';
+    btn.textContent = 'Show QR Code';
     var d = res.data || {};
     if (!res.ok || d.error) {
-      if (d.redirect) {
-        showToast('Onboarding needed', d.error || 'Pick a wallet backend first.');
-        setTimeout(function() { window.location = d.redirect; }, 800);
-        return;
+      document.getElementById('qr-result').style.display = '';
+      document.getElementById('qr-display').innerHTML = '';
+      var errEl = document.getElementById('qr-error');
+      errEl.style.display = '';
+      errEl.textContent = d.error || 'Failed to generate QR';
+      document.getElementById('qr-meta').textContent = '';
+      return;
+    }
+
+    document.getElementById('qr-error').style.display = 'none';
+    document.getElementById('qr-result').style.display = '';
+
+    // Render the QR code from the PixelPass-encoded payload
+    var qrEl = document.getElementById('qr-display');
+    qrEl.innerHTML = '';
+    if (typeof qrcode !== 'undefined' && d.qrPayload) {
+      try {
+        var qr = qrcode(0, 'L');
+        qr.addData(d.qrPayload);
+        qr.make();
+        qrEl.innerHTML = qr.createSvgTag(4, 0);
+      } catch(e) {
+        qrEl.innerHTML = '<div style="color:var(--error);font-size:0.82rem">QR too large for client-side rendering (' + (d.encodedBytes || '?') + ' bytes). Try a smaller credential or use the PDF export.</div>';
       }
-      throw new Error(d.error || 'share failed');
+    } else if (d.qrPayload) {
+      qrEl.innerHTML = '<code style="font-size:0.6rem;word-break:break-all;display:block;max-height:200px;overflow:auto">' + d.qrPayload + '</code>';
     }
 
-    var shareUrl = d.shareUrl || '';
-    document.getElementById('share-vp-url').textContent = shareUrl;
-
-    if (typeof qrcode !== 'undefined' && shareUrl) {
-      var qrEl = document.getElementById('share-qr');
-      qrEl.innerHTML = '';
-      var qr = qrcode(0, 'L');
-      qr.addData(shareUrl);
-      qr.make();
-      qrEl.innerHTML = qr.createSvgTag(4, 0);
+    var meta = d.format + ' · ' + d.rawBytes + ' bytes raw → ' + (d.encodedBytes || '?') + ' bytes encoded';
+    if (!d.fitsInQR) {
+      meta += ' (too large for single QR — use PDF export for multi-page fallback)';
     }
+    document.getElementById('qr-meta').textContent = meta;
 
-    document.getElementById('share-result').style.display = '';
-    document.getElementById('share-result').scrollIntoView({behavior:'smooth', block:'nearest'});
-
-    var expiry = d.expiresIn ? (' Link expires in ' + Math.round(d.expiresIn / 60) + ' minutes.') : '';
-    showToast('Credential Shared', 'Send the link or QR to a verifier.' + expiry);
+    document.getElementById('qr-result').scrollIntoView({behavior:'smooth', block:'nearest'});
   })
   .catch(function(e) {
     btn.disabled = false;
-    btn.textContent = 'Generate Shareable Link';
+    btn.textContent = 'Show QR Code';
     showToast('Error', e.message);
   });
 }
@@ -352,9 +342,17 @@ function submitPresentation() {
     var card = document.getElementById('present-result-card');
 
     if (d.error) {
-      card.innerHTML = '<div style="font-size:2rem;margin-bottom:0.75rem;color:var(--error)">&#10007;</div>' +
+      var errorHtml = '<div style="font-size:2rem;margin-bottom:0.75rem;color:var(--error)">&#10007;</div>' +
         '<h3 style="font-size:0.95rem;margin-bottom:0.5rem;color:var(--error)">Presentation Failed</h3>' +
-        '<p style="font-size:0.82rem;color:var(--text-secondary)">' + d.error + '</p>';
+        '<p style="font-size:0.82rem;color:var(--text-secondary)">' + (d.explanation || d.error) + '</p>';
+      if (d.recovery && d.recovery.length) {
+        errorHtml += '<ul style="margin:0.75rem 0 0;padding-left:1.25rem;font-size:0.8rem;color:var(--text-secondary);text-align:left;display:inline-block">';
+        for (var i = 0; i < d.recovery.length; i++) {
+          errorHtml += '<li>' + d.recovery[i].label + '</li>';
+        }
+        errorHtml += '</ul>';
+      }
+      card.innerHTML = errorHtml;
       card.style.borderLeft = '3px solid var(--error)';
       showToast('Failed', d.error);
     } else {

@@ -100,9 +100,6 @@
       <div style="display:flex;gap:0.35rem;padding:0.6rem 1rem;border-top:1px solid var(--border)" onclick="event.stopPropagation()">
         <button class="btn btn-ghost btn-sm" style="font-size:0.72rem;flex:1" hx-get="/portal/holder/share" hx-target="#main-content" hx-push-url="true">Share</button>
         <button class="btn btn-ghost btn-sm" style="font-size:0.72rem;flex:1" hx-get="/portal/holder/export" hx-target="#main-content" hx-push-url="true">Export</button>
-        {{if eq $currentDPG "pdf"}}
-        <a class="btn btn-ghost btn-sm" style="font-size:0.72rem;flex:1" href="/api/wallet/pdf?id={{.ID}}" target="_blank" rel="noopener">Download PDF</a>
-        {{end}}
       </div>
     </div>
     {{end}}

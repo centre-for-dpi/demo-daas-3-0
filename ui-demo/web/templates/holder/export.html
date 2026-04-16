@@ -11,12 +11,12 @@
   <!-- Credential selector -->
   <div style="margin-bottom:1.25rem">
     <label class="form-label">Select Credential</label>
-    <select class="form-input" style="width:100%;max-width:400px">
+    <select class="form-input" id="export-cred-select" style="width:100%;max-width:400px">
       {{range $creds}}
       {{$pd := .ParsedDocument}}
       {{$typeName := credTypes $pd}}
       {{$subj := credSubject $pd}}
-      <option value="{{.ID}}">{{$typeName}} &mdash; {{mapStr $subj "university"}}{{mapStr $subj "institution"}}{{mapStr $subj "name"}}</option>
+      <option value="{{.ID}}">{{$typeName}} &mdash; {{mapStr $subj "name"}}{{mapStr $subj "fullName"}}{{mapStr $subj "firstName"}}</option>
       {{end}}
     </select>
   </div>
@@ -24,33 +24,37 @@
   <!-- Export format grid -->
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:1rem">
     <!-- Signed PDF -->
-    <div class="card" style="cursor:pointer;text-align:center;padding:1.5rem;transition:border 0.15s" onclick="showToast('Exported','Signed PDF with embedded QR code downloaded.')" onmouseover="this.style.borderColor='var(--color-accent)'" onmouseout="this.style.borderColor=''">
+    <div class="card" style="cursor:pointer;text-align:center;padding:1.5rem;transition:border 0.15s" onclick="exportCredential('pdf')" onmouseover="this.style.borderColor='var(--color-accent)'" onmouseout="this.style.borderColor=''">
       <div style="font-size:2rem;margin-bottom:0.5rem">&#128196;</div>
       <h4 style="font-size:0.9rem;margin-bottom:0.25rem">Signed PDF with QR</h4>
-      <div style="font-size:0.75rem;color:var(--text-secondary)">Human-readable document with embedded cryptographic QR for verification.</div>
+      <div style="font-size:0.75rem;color:var(--text-secondary)">Human-readable document with embedded PixelPass QR for offline verification.</div>
     </div>
 
-    <!-- JSON — real download for authenticated users -->
-    <div class="card" style="cursor:pointer;text-align:center;padding:1.5rem;transition:border 0.15s" onclick="window.location.href='/api/wallet/export'" onmouseover="this.style.borderColor='var(--color-accent)'" onmouseout="this.style.borderColor=''">
+    <!-- JSON — real download -->
+    <div class="card" style="cursor:pointer;text-align:center;padding:1.5rem;transition:border 0.15s" onclick="exportCredential('json')" onmouseover="this.style.borderColor='var(--color-accent)'" onmouseout="this.style.borderColor=''">
       <div style="font-size:2rem;margin-bottom:0.5rem">&#123;&#125;</div>
       <h4 style="font-size:0.9rem;margin-bottom:0.25rem">JSON (W3C-VCDM)</h4>
-      <div style="font-size:0.75rem;color:var(--text-secondary)">Machine-readable W3C Verifiable Credential Data Model 2.0 format.</div>
+      <div style="font-size:0.75rem;color:var(--text-secondary)">Machine-readable W3C Verifiable Credential Data Model format.</div>
     </div>
 
-    <!-- XML -->
-    <div class="card" style="cursor:pointer;text-align:center;padding:1.5rem;transition:border 0.15s" onclick="showToast('Exported','XML credential file downloaded.')" onmouseover="this.style.borderColor='var(--color-accent)'" onmouseout="this.style.borderColor=''">
-      <div style="font-size:2rem;margin-bottom:0.5rem">&lt;/&gt;</div>
-      <h4 style="font-size:0.9rem;margin-bottom:0.25rem">XML</h4>
-      <div style="font-size:0.75rem;color:var(--text-secondary)">Structured XML format for legacy system integration and archiving.</div>
-    </div>
-
-    <!-- QR Code SVG -->
-    <div class="card" style="cursor:pointer;text-align:center;padding:1.5rem;transition:border 0.15s" onclick="showToast('Exported','QR Code SVG file downloaded.')" onmouseover="this.style.borderColor='var(--color-accent)'" onmouseout="this.style.borderColor=''">
+    <!-- QR Code display -->
+    <div class="card" style="cursor:pointer;text-align:center;padding:1.5rem;transition:border 0.15s" onclick="exportCredential('qr')" onmouseover="this.style.borderColor='var(--color-accent)'" onmouseout="this.style.borderColor=''">
       <div style="font-size:2rem;margin-bottom:0.5rem">&#9641;</div>
-      <h4 style="font-size:0.9rem;margin-bottom:0.25rem">QR Code (SVG)</h4>
-      <div style="font-size:0.75rem;color:var(--text-secondary)">Scalable QR code containing the full signed credential payload.</div>
+      <h4 style="font-size:0.9rem;margin-bottom:0.25rem">QR Code</h4>
+      <div style="font-size:0.75rem;color:var(--text-secondary)">PixelPass-encoded QR containing the full signed credential. Scannable by Inji Verify.</div>
     </div>
   </div>
+
+  <!-- QR display area (hidden until QR export clicked) -->
+  <div id="export-qr-area" style="display:none;margin-top:1.25rem">
+    <div class="card" style="text-align:center;padding:2rem">
+      <div id="export-qr-display" style="display:inline-block;margin-bottom:1rem"></div>
+      <div id="export-qr-meta" style="font-size:0.78rem;color:var(--text-secondary)"></div>
+    </div>
+  </div>
+
+  <!-- Error area -->
+  <div id="export-error" style="display:none;margin-top:1rem;padding:0.75rem 1rem;background:var(--error-surface);color:var(--error);border-radius:var(--radius-md);font-size:0.82rem"></div>
 
   {{else if $isReal}}
   <!-- REAL USER BUT EMPTY — no credentials to export -->
@@ -63,7 +67,6 @@
 
   {{else}}
   <!-- DEMO — show mock data -->
-  <!-- Credential selector -->
   <div style="margin-bottom:1.25rem">
     <label class="form-label">Select Credential</label>
     <select class="form-input" style="width:100%;max-width:400px">
@@ -73,34 +76,21 @@
     </select>
   </div>
 
-  <!-- Export format grid -->
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:1rem">
-    <!-- Signed PDF -->
     <div class="card" style="cursor:pointer;text-align:center;padding:1.5rem;transition:border 0.15s" onclick="showToast('Exported','Signed PDF with embedded QR code downloaded.')" onmouseover="this.style.borderColor='var(--color-accent)'" onmouseout="this.style.borderColor=''">
       <div style="font-size:2rem;margin-bottom:0.5rem">&#128196;</div>
       <h4 style="font-size:0.9rem;margin-bottom:0.25rem">Signed PDF with QR</h4>
       <div style="font-size:0.75rem;color:var(--text-secondary)">Human-readable document with embedded cryptographic QR for verification.</div>
     </div>
-
-    <!-- JSON -->
-    <div class="card" style="cursor:pointer;text-align:center;padding:1.5rem;transition:border 0.15s" onclick="showToast('Exported','W3C-VCDM 2.0 JSON credential downloaded.')" onmouseover="this.style.borderColor='var(--color-accent)'" onmouseout="this.style.borderColor=''">
+    <div class="card" style="cursor:pointer;text-align:center;padding:1.5rem;transition:border 0.15s" onclick="showToast('Exported','W3C-VCDM JSON credential downloaded.')" onmouseover="this.style.borderColor='var(--color-accent)'" onmouseout="this.style.borderColor=''">
       <div style="font-size:2rem;margin-bottom:0.5rem">&#123;&#125;</div>
       <h4 style="font-size:0.9rem;margin-bottom:0.25rem">JSON (W3C-VCDM)</h4>
-      <div style="font-size:0.75rem;color:var(--text-secondary)">Machine-readable W3C Verifiable Credential Data Model 2.0 format.</div>
+      <div style="font-size:0.75rem;color:var(--text-secondary)">Machine-readable W3C Verifiable Credential Data Model format.</div>
     </div>
-
-    <!-- XML -->
-    <div class="card" style="cursor:pointer;text-align:center;padding:1.5rem;transition:border 0.15s" onclick="showToast('Exported','XML credential file downloaded.')" onmouseover="this.style.borderColor='var(--color-accent)'" onmouseout="this.style.borderColor=''">
-      <div style="font-size:2rem;margin-bottom:0.5rem">&lt;/&gt;</div>
-      <h4 style="font-size:0.9rem;margin-bottom:0.25rem">XML</h4>
-      <div style="font-size:0.75rem;color:var(--text-secondary)">Structured XML format for legacy system integration and archiving.</div>
-    </div>
-
-    <!-- QR Code SVG -->
     <div class="card" style="cursor:pointer;text-align:center;padding:1.5rem;transition:border 0.15s" onclick="showToast('Exported','QR Code SVG file downloaded.')" onmouseover="this.style.borderColor='var(--color-accent)'" onmouseout="this.style.borderColor=''">
       <div style="font-size:2rem;margin-bottom:0.5rem">&#9641;</div>
-      <h4 style="font-size:0.9rem;margin-bottom:0.25rem">QR Code (SVG)</h4>
-      <div style="font-size:0.75rem;color:var(--text-secondary)">Scalable QR code containing the full signed credential payload.</div>
+      <h4 style="font-size:0.9rem;margin-bottom:0.25rem">QR Code</h4>
+      <div style="font-size:0.75rem;color:var(--text-secondary)">PixelPass-encoded QR for offline verification.</div>
     </div>
   </div>
   {{end}}
@@ -109,4 +99,66 @@
     <button class="btn btn-ghost btn-sm" hx-get="/portal/holder/wallet" hx-target="#main-content" hx-push-url="true">&larr; Back to Wallet</button>
   </div>
 </div>
+
+<script>
+function exportCredential(format) {
+  var sel = document.getElementById('export-cred-select');
+  if (!sel) return;
+  var id = sel.value;
+  var errEl = document.getElementById('export-error');
+  errEl.style.display = 'none';
+  document.getElementById('export-qr-area').style.display = 'none';
+
+  if (format === 'json') {
+    // Direct download
+    window.location.href = '/api/wallet/export-credential?id=' + encodeURIComponent(id) + '&format=json';
+    showToast('Exported', 'JSON credential downloaded.');
+    return;
+  }
+
+  if (format === 'pdf') {
+    window.location.href = '/api/wallet/export-credential?id=' + encodeURIComponent(id) + '&format=pdf';
+    showToast('Exported', 'PDF with embedded QR downloaded.');
+    return;
+  }
+
+  if (format === 'qr') {
+    // Fetch the PixelPass payload and render inline
+    fetch('/api/wallet/credential-qr', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({credentialId: id})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.error && !d.qrPayload) {
+        errEl.textContent = d.error;
+        errEl.style.display = '';
+        return;
+      }
+      var qrEl = document.getElementById('export-qr-display');
+      qrEl.innerHTML = '';
+      if (typeof qrcode !== 'undefined' && d.qrPayload) {
+        try {
+          var qr = qrcode(0, 'L');
+          qr.addData(d.qrPayload);
+          qr.make();
+          qrEl.innerHTML = qr.createSvgTag(4, 0);
+        } catch(e) {
+          qrEl.innerHTML = '<div style="color:var(--error)">QR too large for client-side rendering (' + (d.encodedBytes || '?') + ' bytes).</div>';
+        }
+      }
+      var meta = d.format + ' · ' + d.rawBytes + ' bytes → ' + (d.encodedBytes || '?') + ' bytes encoded';
+      if (!d.fitsInQR) meta += ' (may be too large for reliable scanning)';
+      document.getElementById('export-qr-meta').textContent = meta;
+      document.getElementById('export-qr-area').style.display = '';
+    })
+    .catch(function(e) {
+      errEl.textContent = e.message;
+      errEl.style.display = '';
+    });
+    return;
+  }
+}
+</script>
 {{end}}

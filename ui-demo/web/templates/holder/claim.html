@@ -34,8 +34,6 @@
         <strong>Claiming into Walt.id Wallet.</strong> Persistent cloud wallet that accepts OID4VCI offers in <code>jwt_vc_json</code>, <code>vc+sd-jwt</code>, and <code>mso_mdoc</code> formats. Best for most standard credential offers. Credentials survive across sessions.
       {{else if eq $walletDpg "local"}}
         <strong>Claiming into the in-process Holder.</strong> A quick in-memory wallet that runs inside this server. Accepts any OID4VCI Pre-Authorized Code offer. <strong>Credentials are wiped on server restart</strong> — use this for testing, not production.
-      {{else if eq $walletDpg "pdf"}}
-        <strong>Claiming into the PDF Wallet.</strong> Runs the OID4VCI claim against the issuer, then generates a printable PDF with a self-contained PixelPass QR so any offline verifier can read and check the credential without contacting the issuer. <strong>Size-limited:</strong> credentials too big to fit in a single QR will fail here — try a different wallet if you hit that limit.
       {{else if eq $walletDpg "credebl"}}
         <strong>Claiming into the Credebl Wallet (beta).</strong> Sovrin / <code>did:indy</code> agent with AIP2 issue/present. Limited to AnonCreds / LDP credentials in the current beta — JWT-format offers won't work here.
       {{else if eq $walletDpg "inji_web"}}
@@ -138,7 +136,15 @@ function claimFromLink() {
           ' <a href="' + d.redirect + '" style="color:var(--accent);font-weight:600">Go to wallet onboarding →</a>';
         return;
       }
-      status.textContent = d.error;
+      var msg = d.explanation || d.error;
+      if (d.recovery && d.recovery.length) {
+        msg += '<ul style="margin:0.5rem 0 0;padding-left:1.25rem;list-style:disc">';
+        for (var i = 0; i < d.recovery.length; i++) {
+          msg += '<li>' + d.recovery[i].label + '</li>';
+        }
+        msg += '</ul>';
+      }
+      status.innerHTML = msg;
       return;
     }
     showToast('Credential Claimed', 'Redirecting to your wallet...');
