@@ -22,10 +22,13 @@
 package inji
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/rand"
+	"net/http"
 	"net/url"
 	"sort"
 	"strings"
@@ -350,12 +353,15 @@ func (s *issuerStore) RegisterCredentialType(ctx context.Context, typeName, disp
 // =============================================================================
 
 type verifierStore struct {
-	client transport.Client
+	client    transport.Client
+	verifyURL string
 }
 
 // NewVerifierStore creates a VerifierStore backed by Inji Verify.
-func NewVerifierStore(verifyClient transport.Client) store.VerifierStore {
-	return &verifierStore{client: verifyClient}
+// verifyBaseURL is the direct URL to Inji Verify (e.g. http://localhost:8082)
+// used for DirectVerify calls that need a specific Content-Type header.
+func NewVerifierStore(verifyClient transport.Client, verifyBaseURL string) store.VerifierStore {
+	return &verifierStore{client: verifyClient, verifyURL: verifyBaseURL}
 }
 
 func (s *verifierStore) Name() string { return "Inji Verify" }
@@ -397,16 +403,27 @@ func (s *verifierStore) GetSessionResult(ctx context.Context, state string) (*mo
 
 // DirectVerify sends a credential JWT/JSON directly to Inji Verify's vc-verification
 // endpoint and returns the parsed result.
+//
+// Critical: Inji Verify's LdpVerifier expects Content-Type: application/vc+ld+json
+// for LDP_VC credentials. The transport.Client sends text/plain for string bodies,
+// which causes Inji to misroute the request. We bypass the transport and make a
+// direct HTTP call with the correct Content-Type.
 func (s *verifierStore) DirectVerify(ctx context.Context, credential []byte, contentType string) (*model.VerifyResult, error) {
 	if contentType == "" {
 		contentType = "application/vc+ld+json"
 	}
-	// transport.Client doesn't let us pass content type per request easily;
-	// we pass the credential as a raw body and rely on the HTTPClient sniffing.
-	resp, code, err := s.client.Do(ctx, "POST", "/v1/verify/vc-verification", string(credential))
+	req, err := http.NewRequestWithContext(ctx, "POST", s.verifyURL+"/v1/verify/vc-verification", bytes.NewReader(credential))
 	if err != nil {
 		return nil, fmt.Errorf("inji verify: %w", err)
 	}
+	req.Header.Set("Content-Type", contentType)
+	httpResp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("inji verify: %w", err)
+	}
+	defer httpResp.Body.Close()
+	resp, _ := io.ReadAll(httpResp.Body)
+	code := httpResp.StatusCode
 	if code != 200 {
 		return nil, fmt.Errorf("inji verify (%d): %s", code, truncate(string(resp), 300))
 	}

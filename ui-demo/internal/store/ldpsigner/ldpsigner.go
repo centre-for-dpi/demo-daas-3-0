@@ -78,7 +78,14 @@ func (s *Signer) Sign(credentialType []string, credentialSubject map[string]any,
 
 	// Build the credential. VCDM 1.1 with Ed25519Signature2020 context.
 	now := time.Now().UTC().Format(time.RFC3339)
-	types := append([]any{"VerifiableCredential"}, toAnySlice(credentialType)...)
+	// Build type array: always start with VerifiableCredential, then add
+	// any caller-provided types that aren't already VerifiableCredential.
+	types := []any{"VerifiableCredential"}
+	for _, t := range credentialType {
+		if t != "VerifiableCredential" {
+			types = append(types, t)
+		}
+	}
 
 	// Ensure credentialSubject has an id.
 	if subjectDID != "" {
@@ -90,6 +97,13 @@ func (s *Signer) Sign(credentialType []string, credentialSubject map[string]any,
 	credential := map[string]any{
 		"@context": []any{
 			"https://www.w3.org/2018/credentials/v1",
+			// @vocab fallback: maps all custom claim fields (fullName, district,
+			// etc.) to schema.org IRIs during URDNA2015 canonicalization. Without
+			// this, different JSON-LD implementations (Go json-gold vs Java
+			// titanium-json-ld) handle undefined terms inconsistently, causing
+			// signature verification to fail across implementations (e.g., our
+			// Go-signed credentials fail Inji Verify's Java LdpVerifier).
+			map[string]any{"@vocab": "https://schema.org/"},
 			"https://w3id.org/security/suites/ed25519-2020/v1",
 		},
 		"id":                fmt.Sprintf("urn:uuid:%s", randomUUID()),
