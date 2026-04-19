@@ -20,15 +20,19 @@ Typical first run: `./deploy.sh up all && ./deploy.sh run all`.
 
 ## Scenarios
 
-| Scenario | DPG services                                                                  | IdPs              | Translator |
-|----------|-------------------------------------------------------------------------------|-------------------|------------|
-| `all`    | walt.id (issuer/wallet/verifier) + Inji Certify + Inji Certify Preauth + Inji Verify + Inji Web + Mimoto + eSignet + mock-identity + certify-nginx | Keycloak + WSO2IS | Yes        |
-| `waltid` | walt.id only                                                                  | Keycloak          | Yes        |
-| `inji`   | Inji Certify + Inji Verify + Inji Web + Mimoto + eSignet + mock-identity + certify-nginx | WSO2IS            | Yes        |
+| Scenario | DPG services                                                                  | IdPs (always both) | Translator |
+|----------|-------------------------------------------------------------------------------|--------------------|------------|
+| `all`    | walt.id (issuer/wallet/verifier) + Inji Certify + Inji Certify Preauth + Inji Verify + Inji Web + Mimoto + eSignet + mock-identity + certify-nginx | Keycloak + WSO2IS | Yes |
+| `waltid` | walt.id only                                                                  | Keycloak + WSO2IS  | Yes        |
+| `inji`   | Inji Certify + Inji Verify + Inji Web + Mimoto + eSignet + mock-identity + certify-nginx | Keycloak + WSO2IS  | Yes        |
 
 `backends.json` is rendered per scenario so the UI never offers a DPG
-whose backend isn't running. Auth providers are scoped the same way —
-`waltid` doesn't carry a WSO2IS stanza, `inji` doesn't carry Keycloak.
+whose backend isn't running. **Auth providers are not scoped**: every
+scenario brings up both Keycloak and WSO2 Identity Server, and the
+sign-in page always offers both. The scenario only decides which DPG
+cards the user can pick from after auth. The WSO2IS OIDC client is
+bootstrapped via `scripts/bootstrap-wso2is.sh` on every `deploy.sh up`,
+regardless of scenario.
 
 ## Compose override pipeline
 

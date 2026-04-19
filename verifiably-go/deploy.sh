@@ -93,6 +93,10 @@ compose() {
 
 scenario_services() {
   local scenario="$1"
+  # Both IdPs are included in every scenario so the auth page always offers
+  # BOTH Keycloak and WSO2IS regardless of which DPG stack the user is
+  # driving. The translator is always on for the same reason (i18n in the
+  # topbar).
   case "$scenario" in
     all)
       printf '%s\n' \
@@ -105,14 +109,14 @@ scenario_services() {
     waltid)
       printf '%s\n' \
         "${WALTID_SERVICES[@]}" \
-        "${IDP_KEYCLOAK[@]}" \
+        "${IDP_KEYCLOAK[@]}" "${IDP_WSO2IS[@]}" \
         "${TRANSLATOR_SERVICES[@]}"
       ;;
     inji)
       printf '%s\n' \
         "${INJI_CORE_SERVICES[@]}" \
         "${INJIWEB_SERVICES[@]}" \
-        "${IDP_WSO2IS[@]}" \
+        "${IDP_KEYCLOAK[@]}" "${IDP_WSO2IS[@]}" \
         "${TRANSLATOR_SERVICES[@]}"
       ;;
     *)
@@ -339,11 +343,13 @@ JSON
   green "wrote $out"
 }
 
-# auth_providers_for writes the scenario-specific auth-providers.json. Each
-# scenario pairs with a primary IdP; we include both Keycloak and WSO2IS
-# only in the `all` scenario, so the picker reflects what's actually up.
+# auth_providers_for writes the scenario-specific auth-providers.json.
+# Every scenario advertises BOTH Keycloak and WSO2IS — the auth page always
+# offers the user a choice of sign-in provider regardless of which DPG
+# stack is active. Scenario selection only gates the DPG services, not the
+# IdP options.
 auth_providers_for() {
-  local scenario="$1"
+  local scenario="$1"  # kept for signature compatibility; unused here
   local out="$SCRIPT_DIR/config/auth-providers.json"
   # clientId "vcplatform" matches the public client seeded by the shared
   # compose's keycloak-realm.json (realm: vcplatform, client: vcplatform,
@@ -363,12 +369,7 @@ auth_providers_for() {
     wso2_secret="${WSO2_CLIENT_SECRET:-}"
   fi
   local wso2is='{"id":"wso2is","type":"oidc","displayName":"WSO2 Identity Server","kind":"OIDC","issuerUrl":"https://localhost:9443/oauth2/token","clientId":"'"$wso2_id"'","clientSecret":"'"$wso2_secret"'","scopes":["openid","profile","email"],"insecureSkipVerify":true}'
-  local items=()
-  case "$scenario" in
-    all)    items=( "$keycloak" "$wso2is" );;
-    waltid) items=( "$keycloak" );;
-    inji)   items=( "$wso2is" );;
-  esac
+  local items=( "$keycloak" "$wso2is" )
   mkdir -p "$(dirname "$out")"
   {
     printf '['
@@ -415,14 +416,13 @@ cmd_up() {
   bold "▶ Waiting for services to be reachable"
   wait_for_services "$scenario"
 
-  # If WSO2IS is part of this scenario, register the OIDC client before the
-  # UI starts. Idempotent — a second run reuses the existing registration.
-  if [[ "$scenario" == "all" || "$scenario" == "inji" ]]; then
-    bold "▶ Bootstrapping WSO2IS OIDC client"
-    "$SCRIPT_DIR/scripts/bootstrap-wso2is.sh" || red "  WSO2IS bootstrap failed (proceeding — you can re-run it manually)"
-    # Re-generate auth-providers.json now that wso2is.env exists.
-    auth_providers_for "$scenario"
-  fi
+  # Every scenario runs both IdPs, so the WSO2IS client registration always
+  # needs to happen. Idempotent — a second run reuses the existing client.
+  bold "▶ Bootstrapping WSO2IS OIDC client"
+  "$SCRIPT_DIR/scripts/bootstrap-wso2is.sh" || red "  WSO2IS bootstrap failed (proceeding — you can re-run it manually)"
+  # Re-generate auth-providers.json now that wso2is.env exists, so the
+  # provider list picks up the fresh client_secret.
+  auth_providers_for "$scenario"
 
   # Seed the injiweb stack: register the wallet-demo-client keystore with
   # eSignet so private_key_jwt token exchange works, and stuff a test
@@ -555,12 +555,15 @@ cmd_run() {
 # is struggling; the app itself surfaces the failure on first use.
 wait_for_services() {
   local scenario="$1"
-  local -a ports=()
+  # Both IdPs (Keycloak 8180, WSO2IS 9443) + the translator (5000) are
+  # always in scope because every scenario includes them. DPG-specific
+  # ports gate on scenario.
+  local -a ports=( 8180 9443 5000 )
   case "$scenario" in
-    all|waltid)    ports+=( 7001 7002 7003 8180 5000 );;
+    all|waltid)    ports+=( 7001 7002 7003 );;
   esac
   case "$scenario" in
-    all|inji)      ports+=( 8082 8091 8094 9443 5000 );;
+    all|inji)      ports+=( 8082 8091 8094 );;
   esac
   # De-dup; bash-ish.
   local seen="" p

@@ -31,21 +31,23 @@ http://localhost:8080
 ### Scenarios
 
 `deploy.sh` supports three scenarios so you don't have to boot everything
-when you only care about one stack:
+when you only care about one stack. Every scenario includes **both**
+Keycloak and WSO2 Identity Server so the sign-in page always offers both
+OIDC providers; the scenario only gates which DPG backends come up.
 
-| Scenario     | What comes up                                                     |
-|--------------|--------------------------------------------------------------------|
-| `all`        | walt.id + Inji Certify + Inji Web + Inji Verify + Keycloak + WSO2IS + LibreTranslate |
-| `waltid`     | walt.id Community Stack + Keycloak + LibreTranslate                |
-| `inji`       | Inji Certify + Inji Web + Inji Verify + WSO2IS + LibreTranslate    |
+| Scenario     | DPG services                                   | IdPs (always both)  | Translator |
+|--------------|------------------------------------------------|---------------------|------------|
+| `all`        | walt.id + Inji Certify + Inji Web + Inji Verify| Keycloak + WSO2IS   | Yes        |
+| `waltid`     | walt.id Community Stack                        | Keycloak + WSO2IS   | Yes        |
+| `inji`       | Inji Certify + Inji Web + Inji Verify          | Keycloak + WSO2IS   | Yes        |
 
 Usage is the same pattern: `./deploy.sh <up|run|down|status|config> <scenario>`.
 
 ### Credentials for demo flows
 
-- **eSignet login** (any Inji Web flow): individual ID `8267411072`, PIN/OTP `111111`
-- **WSO2IS login**: bootstrap script seeds a client; any user you register
-- **Keycloak login**: any user in the `vcplatform` realm
+- **Keycloak login**: any user in the `vcplatform` realm (seeded by the shared compose's `keycloak-realm.json`)
+- **WSO2IS login**: any user you register in WSO2's console at `https://localhost:9443/console` (default admin `admin` / `admin`)
+- **eSignet login** (Inji Web holder flow only): individual ID `8267411072`, PIN/OTP `111111`
 
 ### Stopping
 
