@@ -13,7 +13,7 @@
 //	// Then register the adapter in config/backends.json under a type string
 //	// recognised by internal/adapters/factory.
 //
-// See INTEGRATION.md for endpoint-level mapping per configured DPG.
+// See docs/integration.md for endpoint-level mapping per configured DPG.
 package backend
 
 import (

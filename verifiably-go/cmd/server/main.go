@@ -5,7 +5,8 @@
 // Swap the backend by implementing the backend.Adapter interface and replacing
 // the `mock.NewAdapter()` call below with your own.
 //
-// See README.md for structure and INTEGRATION.md for endpoint-mapping details.
+// See README.md + docs/architecture.md for structure and docs/integration.md
+// for endpoint-mapping details.
 package main
 
 import (
