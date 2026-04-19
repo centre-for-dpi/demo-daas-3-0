@@ -61,6 +61,17 @@ services:
     volumes:
       - {{VERIFIABLY_GO_DIR}}/deploy/injiweb-overrides/mimoto-issuers-config.json:/home/mosip/mimoto-issuers-config.json:ro
 
+  # Inji Verify UI fetches /assets/config.json at startup for its per-credential
+  # render-order map (fields + order per VC type). The upstream v0.16.0 image
+  # ships without this file, so nginx 404s fall through to index.html (SPA
+  # default) — the UI then JSON.parses HTML, gets garbage, and crashes at
+  # render time with "Cannot read properties of undefined (reading 'map')"
+  # on a successful verification. Mount a minimal config that lists the
+  # Farmer credential fields so the result screen renders.
+  inji-verify-ui:
+    volumes:
+      - {{VERIFIABLY_GO_DIR}}/deploy/injiweb-overrides/inji-verify-config.json:/usr/share/nginx/html/assets/config.json:ro
+
   # certify-nginx ALSO serves a copy of the catalog under /config/server/
   # (used by plugin callbacks); keep that aligned with the UI copy so
   # downstream links don't drift. We also replace its nginx.conf so
