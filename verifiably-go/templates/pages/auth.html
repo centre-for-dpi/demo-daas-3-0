@@ -1,39 +1,30 @@
 {{define "content_auth"}}
 <section class="view active">
-  <div class="section-label"><span class="num">02</span><span class="caps">Authenticate</span></div>
-  <h1 class="page-title">Sign in to continue as<br><em>{{.Session.Role}}</em>.</h1>
-  <p class="subtitle">Authentication is stubbed in this prototype. In a real deployment, either of the providers below would redirect out, authenticate you, and return a session token that the backend attaches to every adapter call.</p>
+  <div class="section-label"><span class="num">02</span><span class="caps">{{t "Authenticate" $.Lang}}</span></div>
+  <h1 class="page-title">{{t "Sign in to continue as" $.Lang}}<br><em>{{.Session.Role}}</em>.</h1>
 
   <div class="auth-wrap">
     <div class="auth-card">
-      <div class="tab-row">
-        <button class="tab active" type="button">Sign in</button>
-        <button class="tab" type="button">Sign up</button>
-      </div>
-
-      <form method="post" action="/auth">
-        <div class="field">
-          <label>Email</label>
-          <input type="email" name="email" value="you@example.org" autocomplete="email">
-        </div>
-        <div class="field">
-          <label>Password</label>
-          <input type="password" name="password" value="••••••••" autocomplete="current-password">
-        </div>
-        <button class="btn" type="submit" style="width:100%">Continue →</button>
-      </form>
-
-      <div class="auth-provider">
-        <div class="caps" style="text-align:center;margin-bottom:0.75rem">Or use a provider</div>
+      {{with .Body}}
+      {{if .Providers}}
+        <p class="subtitle" style="margin-bottom:1.25rem">{{t "Pick an identity provider. The provider authenticates you and returns a session token the backend attaches to every adapter call." $.Lang}}</p>
         <div class="provider-row">
-          <button class="provider-btn" type="button" onclick="toast('Keycloak SSO would open here')">
-            Keycloak<br><span class="caps">OIDC</span>
+          {{range .Providers}}
+          <button class="provider-btn" type="button"
+                  hx-post="/auth/start" hx-vals='{"provider":"{{.ID}}"}'>
+            {{.Name}}<br><span class="caps">{{.Kind}}</span>
           </button>
-          <button class="provider-btn" type="button" onclick="toast('WSO2 SSO would open here')">
-            WSO2 IS<br><span class="caps">SAML / OIDC</span>
-          </button>
+          {{end}}
         </div>
-      </div>
+      {{else}}
+        <p class="subtitle" style="margin-bottom:1.25rem">
+          <strong>{{t "Demo mode:" $.Lang}}</strong> {{t "no identity providers are configured. Click below to continue." $.Lang}}
+        </p>
+        <form method="post" action="/auth">
+          <button class="btn" type="submit" style="width:100%">{{t "Continue without auth →" $.Lang}}</button>
+        </form>
+      {{end}}
+      {{end}}
     </div>
   </div>
 </section>

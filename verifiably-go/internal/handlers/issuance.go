@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/verifiably/verifiably-go/backend"
 	"github.com/verifiably/verifiably-go/vctypes"
@@ -55,9 +56,20 @@ type issueData struct {
 	Scale        string
 	Dest         string
 	IssuerDpg    string
-	SingleSource string // "manual" | "api" | "mosip" | "db" | "pdi"
+	Dpg          vctypes.DPG
+	SingleSource string // "manual" | "api" | "uin_lookup" | "csv_lookup" | "presentation"
 	FieldValues  map[string]string
 	Fields       []string
+	Sources      []sourceOption
+}
+
+// sourceOption is one chip on the issue form's "source" picker. Derived from
+// the DPG's declared Capabilities (Kind=="data") so the UI never hardcodes
+// vendor names.
+type sourceOption struct {
+	Key   string
+	Label string
+	Hint  string
 }
 
 // ShowIssue renders the issuance-form screen.
@@ -80,19 +92,41 @@ func (h *H) ShowIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	vals, _ := h.Adapter.PrefillSubjectFields(r.Context(), schema)
+	dpgs, _ := h.Adapter.ListIssuerDpgs(r.Context())
+	dpg := dpgs[sess.IssuerDpg]
 	data := issueData{
 		Schema:       schema,
 		Scale:        sess.Scale,
 		Dest:         sess.Dest,
 		IssuerDpg:    sess.IssuerDpg,
+		Dpg:          dpg,
 		SingleSource: "manual",
 		FieldValues:  vals,
 		Fields:       schemaFieldsOfH(schema),
+		Sources:      sourcesFromCapabilities(dpg),
 	}
 	h.render(w, r, "issuer_issue", h.pageData(sess, data))
 }
 
-// SubmitIssue performs the issuance and returns a result fragment.
+// sourcesFromCapabilities turns DPG.Capabilities (kind "data") into chip
+// options, always prepending "Manual entry".
+func sourcesFromCapabilities(dpg vctypes.DPG) []sourceOption {
+	out := []sourceOption{
+		{Key: "manual", Label: "Enter manually", Hint: "Type the subject fields directly into the form."},
+	}
+	for _, c := range dpg.Capabilities {
+		if c.Kind != "data" {
+			continue
+		}
+		out = append(out, sourceOption{Key: c.Key, Label: c.Title, Hint: c.Body})
+	}
+	return out
+}
+
+// SubmitIssue performs the issuance and returns a result fragment. Rejects
+// empty submissions: at least every required field in the schema must be
+// filled. Falling through without this check used to produce an offer with
+// no claims, which looked exactly like demo data and hid the real issuance.
 func (h *H) SubmitIssue(w http.ResponseWriter, r *http.Request) {
 	sess := h.Sessions.MustGet(w, r)
 	_ = r.ParseForm()
@@ -107,8 +141,20 @@ func (h *H) SubmitIssue(w http.ResponseWriter, r *http.Request) {
 	// Gather subject data from form (falls back to prefill)
 	subject := map[string]string{}
 	for _, f := range schemaFieldsOfH(schema) {
-		v := r.FormValue("field_" + f)
+		v := strings.TrimSpace(r.FormValue("field_" + f))
 		subject[f] = v
+	}
+	// Validate: every Required field must be non-empty. Non-required fields
+	// may be left blank.
+	var missing []string
+	for _, spec := range schema.FieldsSpec {
+		if spec.Required && subject[spec.Name] == "" {
+			missing = append(missing, spec.Name)
+		}
+	}
+	if len(missing) > 0 {
+		h.errorToast(w, r, "Fill in required fields: "+strings.Join(missing, ", "))
+		return
 	}
 	req := backend.IssueRequest{IssuerDpg: sess.IssuerDpg, Schema: schema, SubjectData: subject}
 
@@ -118,7 +164,7 @@ func (h *H) SubmitIssue(w http.ResponseWriter, r *http.Request) {
 			h.errorToast(w, r, err.Error())
 			return
 		}
-		h.renderFragment(w, "fragment_issue_wallet_result", res)
+		h.renderFragment(w, r, "fragment_issue_wallet_result", res)
 		return
 	}
 	// PDF
@@ -127,7 +173,7 @@ func (h *H) SubmitIssue(w http.ResponseWriter, r *http.Request) {
 		h.errorToast(w, r, err.Error())
 		return
 	}
-	h.renderFragment(w, "fragment_issue_pdf_result", map[string]any{
+	h.renderFragment(w, r, "fragment_issue_pdf_result", map[string]any{
 		"Schema":    schema,
 		"PDFResult": res,
 		"Fields":    schemaFieldsOfH(schema),
@@ -150,19 +196,30 @@ func (h *H) SetSingleSource(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	vals, _ := h.Adapter.PrefillSubjectFields(r.Context(), schema)
+	dpgs, _ := h.Adapter.ListIssuerDpgs(r.Context())
+	dpg := dpgs[sess.IssuerDpg]
 	data := issueData{
 		Schema:       schema,
 		IssuerDpg:    sess.IssuerDpg,
+		Dpg:          dpg,
 		SingleSource: source,
 		FieldValues:  vals,
 		Fields:       schemaFieldsOfH(schema),
+		Sources:      sourcesFromCapabilities(dpg),
 	}
-	h.renderFragment(w, "fragment_issue_single_form", data)
+	h.renderFragment(w, r, "fragment_issue_single_form", data)
 }
 
-// SimulateCSV renders the bulk-CSV preview.
+// SimulateCSV parses an uploaded CSV, calls IssueBulk per row, and renders
+// the preview fragment with real per-row outcomes. The function name stays
+// SimulateCSV for route stability; the "simulate" nature is gone — this is
+// a live bulk-issue path.
 func (h *H) SimulateCSV(w http.ResponseWriter, r *http.Request) {
 	sess := h.Sessions.MustGet(w, r)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		h.errorToast(w, r, "Upload a CSV first")
+		return
+	}
 	schemas, _ := h.Adapter.ListAllSchemas(r.Context())
 	var schema vctypes.Schema
 	for _, s := range schemas {
@@ -171,18 +228,37 @@ func (h *H) SimulateCSV(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	res, _ := h.Adapter.IssueBulk(r.Context(), backend.IssueBulkRequest{
-		IssuerDpg: sess.IssuerDpg, Schema: schema, RowCount: 247,
+	file, _, err := r.FormFile("csv_file")
+	if err != nil {
+		h.errorToast(w, r, "Upload a CSV file")
+		return
+	}
+	defer file.Close()
+	rows, header, parseErr := parseCSVRows(file)
+	if parseErr != nil {
+		h.errorToast(w, r, "Parse CSV: "+parseErr.Error())
+		return
+	}
+	res, err := h.Adapter.IssueBulk(r.Context(), backend.IssueBulkRequest{
+		IssuerDpg: sess.IssuerDpg,
+		Schema:    schema,
+		Rows:      rows,
+		RowCount:  len(rows),
 	})
+	if err != nil {
+		h.errorToast(w, r, err.Error())
+		return
+	}
 	vals, _ := h.Adapter.PrefillSubjectFields(r.Context(), schema)
-	h.renderFragment(w, "fragment_issue_csv_preview", map[string]any{
-		"Schema":    schema,
-		"Fields":    schemaFieldsOfH(schema),
-		"Values":    vals,
-		"Total":     247,
-		"Accepted":  res.Accepted,
-		"Rejected":  res.Rejected,
-		"Errors":    res.Errors,
+	h.renderFragment(w, r, "fragment_issue_csv_preview", map[string]any{
+		"Schema":   schema,
+		"Fields":   schemaFieldsOfH(schema),
+		"Values":   vals,
+		"Header":   header,
+		"Total":    len(rows),
+		"Accepted": res.Accepted,
+		"Rejected": res.Rejected,
+		"Errors":   res.Errors,
 	})
 }
 
@@ -205,7 +281,7 @@ func (h *H) PreviewPDF(w http.ResponseWriter, r *http.Request) {
 		h.errorToast(w, r, err.Error())
 		return
 	}
-	h.renderFragment(w, "fragment_pdf_preview_modal", map[string]any{
+	h.renderFragment(w, r, "fragment_pdf_preview_modal", map[string]any{
 		"Schema":    schema,
 		"Fields":    schemaFieldsOfH(schema),
 		"PDFResult": res,

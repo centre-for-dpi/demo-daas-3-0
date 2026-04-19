@@ -19,8 +19,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/verifiably/verifiably-go/internal/adapters/factory"
+	"github.com/verifiably/verifiably-go/internal/adapters/registry"
 	"github.com/verifiably/verifiably-go/internal/handlers"
-	"github.com/verifiably/verifiably-go/internal/mock"
+	"github.com/verifiably/verifiably-go/vctypes"
 )
 
 func main() {
@@ -36,15 +38,20 @@ func main() {
 	}
 
 	// --- The adapter swap seam ---
-	// Replace this line with your own backend.Adapter implementation to go live:
-	//     adapter := myadapter.New(apiURL, token)
-	adapter := mock.NewAdapter()
+	// Set VERIFIABLY_ADAPTER=registry to use live DPG backends declared in
+	// config/backends.json; default "mock" keeps the in-memory demo adapter.
+	adapter := selectAdapter()
 
+	authReg := buildAuthRegistry()
+	wireAuthHelpers()
+	translator := buildTranslator()
 	h := &handlers.H{
-		Adapter:   adapter,
-		Sessions:  handlers.NewStore(),
-		Templates: tmpl,
-		Debug:     debug,
+		Adapter:    adapter,
+		Sessions:   handlers.NewStore(),
+		Templates:  tmpl,
+		AuthReg:    authReg,
+		Translator: translator,
+		Debug:      debug,
 	}
 
 	mux := http.NewServeMux()
@@ -53,11 +60,29 @@ func main() {
 	staticFS := http.FileServer(http.Dir("static"))
 	mux.Handle("/static/", http.StripPrefix("/static/", staticFS))
 
+	// Offer-hosting route for adapters that stage credential_offer JSON
+	// locally. Dispatches on /offers/{slug}/{id}; adapters store offers and
+	// serve them by id through factory.OffersHandler.
+	if reg, ok := adapter.(*registry.Registry); ok {
+		mux.Handle("/offers/", factory.OffersHandler(reg))
+	}
+
 	// Landing + auth
 	mux.HandleFunc("GET /{$}", h.Landing)
 	mux.HandleFunc("POST /role", h.PickRole)
 	mux.HandleFunc("GET /auth", h.Auth)
 	mux.HandleFunc("POST /auth", h.CompleteAuth)
+	mux.HandleFunc("POST /auth/start", h.StartAuth)
+	mux.HandleFunc("GET /auth/callback", h.AuthCallback)
+	mux.HandleFunc("GET /lang", h.SetLang)
+	mux.HandleFunc("POST /lang", h.SetLang)
+	mux.HandleFunc("GET /qr", h.QRImage)
+
+	// Inji Web integration: certify-nginx routes POST /v1/certify/issuance/credential
+	// back to us at host.docker.internal:8080/inji-proxy/issuance/credential. We
+	// forward straight to inji-certify:8090, patching the request body for wallets
+	// that omit credential_definition.@context.
+	mux.HandleFunc("POST /inji-proxy/issuance/credential", h.InjiProxyCredential)
 
 	// Issuer
 	mux.HandleFunc("GET /issuer/dpg", h.ShowIssuerDpgs)
@@ -93,7 +118,7 @@ func main() {
 	mux.HandleFunc("POST /holder/wallet/accept", h.AcceptCred)
 	mux.HandleFunc("POST /holder/wallet/reject", h.RejectCred)
 	mux.HandleFunc("GET /holder/present", h.ShowPresent)
-	mux.HandleFunc("POST /holder/present/simulate", h.SimulatePresent)
+	mux.HandleFunc("POST /holder/present/submit", h.SubmitPresent)
 
 	// Verifier
 	mux.HandleFunc("GET /verifier/dpg", h.ShowVerifierDpgs)
@@ -159,6 +184,27 @@ func funcMap() template.FuncMap {
 		// dict builds a map[string]any from alternating key/value args so templates
 		// can pass multiple named params into sub-templates.
 		// Usage: {{template "partial" (dict "K1" v1 "K2" v2)}}
+		// t is the translation helper bound at parse time. Takes (text, lang)
+		// — the current lang is passed in via `$.Lang` in templates.
+		// handlers.TranslateFunc looks up the request-scoped translator +
+		// context via package state set in handlers.(*H).render before
+		// template execution.
+		"t": handlers.TranslateFunc,
+
+		// hasCapability returns true if the given DPG declares a capability
+		// with the given Kind+Key. Templates use it to hide flow-specific UI
+		// surfaces when the backing DPG doesn't support them, e.g. hiding the
+		// "paste credential" card on a verifier that has no direct-verify
+		// endpoint.
+		"hasCapability": func(dpg vctypes.DPG, kind, key string) bool {
+			for _, c := range dpg.Capabilities {
+				if c.Kind == kind && c.Key == key {
+					return true
+				}
+			}
+			return false
+		},
+
 		"dict": func(pairs ...any) (map[string]any, error) {
 			if len(pairs)%2 != 0 {
 				return nil, fmt.Errorf("dict requires even number of args, got %d", len(pairs))

@@ -95,7 +95,7 @@ func (h *H) SchemaSearch(w http.ResponseWriter, r *http.Request) {
 	sess := h.Sessions.MustGet(w, r)
 	sess.SchemaQuery = r.URL.Query().Get("q")
 	data := h.schemaBrowserData(w, r, sess)
-	h.renderFragment(w, "fragment_schema_list", data)
+	h.renderFragment(w, r, "fragment_schema_list", data)
 }
 
 // SetSchemaFilter updates the active chip filter.
@@ -111,7 +111,7 @@ func (h *H) SetSchemaFilter(w http.ResponseWriter, r *http.Request) {
 	sess.SchemaFilter = f
 	data := h.schemaBrowserData(w, r, sess)
 	// Re-render the whole browser body so chip active state + list stay in sync
-	h.renderFragment(w, "fragment_schema_browser_body", data)
+	h.renderFragment(w, r, "fragment_schema_browser_body", data)
 }
 
 // ToggleSchemaExpand toggles a schema card's expanded state and re-renders the list.
@@ -124,7 +124,7 @@ func (h *H) ToggleSchemaExpand(w http.ResponseWriter, r *http.Request) {
 		sess.ExpandedSchemaID = id
 	}
 	data := h.schemaBrowserData(w, r, sess)
-	h.renderFragment(w, "fragment_schema_list", data)
+	h.renderFragment(w, r, "fragment_schema_list", data)
 }
 
 // SelectSchema marks a schema as chosen for the downstream issuance flow.
@@ -136,7 +136,7 @@ func (h *H) SelectSchema(w http.ResponseWriter, r *http.Request) {
 	sess.SchemaID = id
 	data := h.schemaBrowserData(w, r, sess)
 	w.Header().Set("HX-Trigger", `{"toast":"Schema selected — click Continue"}`)
-	h.renderFragments(w, data, "fragment_schema_browser_body", "fragment_schema_continue_oob")
+	h.renderFragments(w, r, data, "fragment_schema_browser_body", "fragment_schema_continue_oob")
 }
 
 // ShowSchemaBuilder renders the schema-builder page.
@@ -174,7 +174,7 @@ func (h *H) SchemaPreview(w http.ResponseWriter, r *http.Request) {
 	}
 	data := extractBuilderData(r)
 	data.PreviewJSON = buildJSONSchema(currentBuilderSchema(sess, data))
-	h.renderFragment(w, "fragment_schema_preview", data)
+	h.renderFragment(w, r, "fragment_schema_preview", data)
 }
 
 // AddSchemaField adds a blank field row and re-renders.
@@ -184,7 +184,7 @@ func (h *H) AddSchemaField(w http.ResponseWriter, r *http.Request) {
 	data := extractBuilderData(r)
 	data.Fields = append(data.Fields, vctypes.FieldSpec{Datatype: "string"})
 	data.PreviewJSON = buildJSONSchema(currentBuilderSchema(sess, data))
-	h.renderFragment(w, "fragment_schema_builder_form", data)
+	h.renderFragment(w, r, "fragment_schema_builder_form", data)
 }
 
 // RemoveSchemaField removes a field row by index.
@@ -197,7 +197,7 @@ func (h *H) RemoveSchemaField(w http.ResponseWriter, r *http.Request) {
 		data.Fields = append(data.Fields[:idx], data.Fields[idx+1:]...)
 	}
 	data.PreviewJSON = buildJSONSchema(currentBuilderSchema(sess, data))
-	h.renderFragment(w, "fragment_schema_builder_form", data)
+	h.renderFragment(w, r, "fragment_schema_builder_form", data)
 }
 
 // SaveSchema persists a custom schema and returns to the browser.
@@ -240,7 +240,7 @@ func (h *H) DeleteSchema(w http.ResponseWriter, r *http.Request) {
 		sess.ExpandedSchemaID = ""
 	}
 	data := h.schemaBrowserData(w, r, sess)
-	h.renderFragments(w, data, "fragment_schema_browser_body", "fragment_schema_continue_oob")
+	h.renderFragments(w, r, data, "fragment_schema_browser_body", "fragment_schema_continue_oob")
 }
 
 func extractBuilderData(r *http.Request) builderData {

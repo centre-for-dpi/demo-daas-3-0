@@ -23,6 +23,14 @@
   <a href="/" class="nav-brand" hx-boost="true" hx-target="#main" hx-swap="innerHTML show:window:top">Verifiably<span>.</span></a>
   <div class="nav-right">
     <div class="nav-crumb mono">{{.Crumb}}</div>
+    <form method="post" action="/lang" id="lang-form" style="display:inline-flex;align-items:center;gap:0.35rem">
+      <select name="lang" onchange="this.form.submit()" aria-label="Language"
+              style="background:var(--bg);border:1px solid var(--line);color:var(--ink);font-size:0.78rem;padding:0.25rem 0.4rem;border-radius:2px">
+        <option value="en" {{if eq .Lang "en"}}selected{{end}}>EN</option>
+        <option value="fr" {{if eq .Lang "fr"}}selected{{end}}>FR</option>
+        <option value="es" {{if eq .Lang "es"}}selected{{end}}>ES</option>
+      </select>
+    </form>
     <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
         <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
@@ -35,10 +43,6 @@
   {{render .ContentTemplate .}}
 </main>
 
-<footer class="foot">
-  <p>Verifiably — prototype interface. Backend-agnostic over <span class="mono">walt.id Community Stack v0.18.2</span>, <span class="mono">Inji Certify v0.14.0</span>, <span class="mono">Inji Web Wallet v0.16.0</span>, <span class="mono">Inji Verify v0.16.0</span>.</p>
-  <p style="margin-top:0.75rem;font-size:0.75rem;color:var(--ink-mute)">All data is mock. Set <span class="mono">VERIFIABLY_DEBUG_MOCK_MARKERS=1</span> to see mock-data pills.</p>
-</footer>
 
 <div class="toast" id="toast"></div>
 
@@ -46,5 +50,7 @@
 <div id="modal-root"></div>
 
 <script src="/static/js/app.js"></script>
+<script src="/static/js/jsqr.min.js" defer></script>
+<script src="/static/js/scanner.js" defer></script>
 </body>
 </html>{{end}}

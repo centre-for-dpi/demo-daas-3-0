@@ -56,6 +56,21 @@ type Session struct {
 	CurrentOID4VPState     string
 	CurrentOID4VPTemplate  string
 
+	// LastWalletError is the most recent error from a wallet action
+	// (paste, scan, accept). Rendered as an inline banner on the wallet
+	// page so the user sees what failed instead of a silent toast.
+	LastWalletError string
+
+	// Auth: OIDC round-trip state + tokens stored after callback.
+	PendingProvider string
+	PendingState    string
+	PendingPKCE     string
+	AuthProvider    string // id of the provider that completed auth
+	AccessToken     string
+	RefreshToken    string
+	IDToken         string
+	UserEmail       string
+
 	// Misc
 	NextExampleIdx int
 }

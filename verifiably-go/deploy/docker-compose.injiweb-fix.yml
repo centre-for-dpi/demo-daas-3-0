@@ -1,0 +1,69 @@
+# Compose override layered on top of the shared ui-demo/docker/stack file.
+# Patches the three injiweb services that otherwise crash-loop:
+#
+#   injiweb-mimoto        — upstream mimoto-bootstrap.properties sets
+#                           spring.cloud.config.uri=http://inji-web:3004/,
+#                           which serves a React SPA, not a config server.
+#                           Spring fetches the config doc, gets HTML, fails
+#                           to parse, and exits 1 before Logback boots.
+#                           Override bind-mounts a patched bootstrap that
+#                           disables Spring Cloud Config; Mimoto then reads
+#                           its local mimoto-default.properties and starts
+#                           in ~11 seconds.
+#
+#   injiweb-esignet       — entrypoint unzips a baked-in client.zip into
+#                           ./client/ and renames to ./hsm-client/. On every
+#                           restart the previous run's ./client/ and
+#                           ./hsm-client/ directories persist in the
+#                           container's writable layer, so the mv fails
+#                           under `set -e`. Fix: delete+recreate the
+#                           container (deploy.sh does this) so the writable
+#                           layer starts empty.
+#
+#   injiweb-mock-identity — same filesystem-state problem as esignet.
+#
+# No code changes upstream required; everything here is an additive overlay.
+
+name: waltid
+
+services:
+  injiweb-mimoto:
+    # JVM heap cap. The host regularly runs the full compose stack +
+    # verifiably-go + several other Java services; without a cap Mimoto's
+    # JVM tries to allocate 25 % of host RAM and gets OOM-killed before
+    # logback starts — which looks identical to the original
+    # spring.cloud.config bug (silent exit right after cert import).
+    environment:
+      JAVA_TOOL_OPTIONS: "-Xmx512m -Xms128m"
+    volumes:
+      # {{VERIFIABLY_GO_DIR}} is substituted by deploy.sh's compose() helper
+      # with the absolute path of this repo's root. Relative paths in an
+      # override file get resolved against the PRIMARY compose's directory,
+      # not the override's, so we have to bake in an absolute path here.
+      - {{VERIFIABLY_GO_DIR}}/deploy/injiweb-overrides/mimoto-bootstrap.properties:/home/mosip/mimoto-bootstrap.properties:ro
+
+  # The Inji Web UI loads its issuer catalog from
+  # /home/mosip/mimoto-issuers-config.json (served by nginx at
+  # /mimoto-issuers-config.json). Upstream's copy has a wellknown_endpoint
+  # that points at http://certify-nginx/.well-known/... — a 404 path — so
+  # Mimoto gets no credential types back and the UI shows "No credentials
+  # found". Our patched catalog fixes the URL and trims MockMdl (which
+  # Inji Certify v0.14.0 only issues as mock).
+  #
+  # IMPORTANT: verifiably-go must link to http://${PUBLIC_HOST}:3004 (set to
+  # 172.24.0.1 by the shared stack .env), NOT http://localhost:3004. The SPA's
+  # env.config.js hard-codes MIMOTO_URL=http://${PUBLIC_HOST}:3004/v1/mimoto,
+  # so if the browser loads the SPA on a different origin (e.g. localhost)
+  # every /v1/mimoto XHR is cross-origin and the browser blocks the response —
+  # UI falls back to "No Credentials found" even when Mimoto is healthy.
+  # backends.json's UIURL is pinned to 172.24.0.1:3004 for this reason.
+  injiweb-ui:
+    volumes:
+      - {{VERIFIABLY_GO_DIR}}/deploy/injiweb-overrides/mimoto-issuers-config.json:/home/mosip/mimoto-issuers-config.json:ro
+
+  # certify-nginx ALSO serves a copy of the catalog under /config/server/
+  # (used by plugin callbacks); keep that aligned with the UI copy so
+  # downstream links don't drift.
+  certify-nginx:
+    volumes:
+      - {{VERIFIABLY_GO_DIR}}/deploy/injiweb-overrides/mimoto-issuers-config.json:/config/server/mimoto-issuers-config.json:ro

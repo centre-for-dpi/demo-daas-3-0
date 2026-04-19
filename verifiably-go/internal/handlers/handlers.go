@@ -1,20 +1,33 @@
 package handlers
 
 import (
+	"bytes"
+	"context"
 	"html/template"
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/verifiably/verifiably-go/backend"
+	"github.com/verifiably/verifiably-go/internal/auth"
+	"github.com/verifiably/verifiably-go/vctypes"
 )
+
+// Translator is the shim the handlers use to translate UI strings. Injected by
+// main so the handlers package doesn't depend on internal/adapters/*.
+type Translator interface {
+	Translate(ctx context.Context, text, target string) string
+}
 
 // H is the handler struct; holds deps injected from main.
 type H struct {
-	Adapter   backend.Adapter
-	Sessions  *Store
-	Templates *template.Template
-	Debug     bool // DEBUG_SHOW_MOCK_MARKERS equivalent
+	Adapter    backend.Adapter
+	Sessions   *Store
+	Templates  *template.Template
+	AuthReg    *auth.Registry
+	Translator Translator
+	Debug      bool // DEBUG_SHOW_MOCK_MARKERS equivalent
 }
 
 // isHTMX returns true if the request came from HTMX.
@@ -25,6 +38,12 @@ func isHTMX(r *http.Request) bool {
 // render executes a template. For full page loads it wraps content_<page>
 // inside the "layout" template. For HTMX boost targets it renders just the
 // content block so it can replace the <main> element directly.
+//
+// When Lang != "en", the rendered HTML is walked and every user-visible text
+// node + translatable attribute (title/placeholder/alt/aria-label) is
+// translated. This is a safety net: explicit {{t "..."}} wrappers in the
+// templates still win via the cache, and text nodes that were missed by the
+// template author still get translated at render time.
 func (h *H) render(w http.ResponseWriter, r *http.Request, page string, data PageData) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	data.ContentTemplate = "content_" + page
@@ -34,39 +53,127 @@ func (h *H) render(w http.ResponseWriter, r *http.Request, page string, data Pag
 	if data.Crumb == "" {
 		data.Crumb = crumbFor(page)
 	}
+	if data.Lang == "" {
+		data.Lang = h.langFor(r)
+	}
+	// Translator is looked up via package-level var because html/template's
+	// funcs are bound at parse time; the t() helper takes (text, lang) and
+	// does the lookup itself.
+	installTranslatorForRequest(r.Context(), h.Translator)
 
 	name := "layout"
 	if isHTMX(r) && r.Header.Get("HX-Target") == "main" {
-		// Full-page boost into <main>: render content block only
 		name = data.ContentTemplate
 	}
 
-	if err := h.Templates.ExecuteTemplate(w, name, data); err != nil {
+	if data.Lang == "" || data.Lang == "en" || h.Translator == nil {
+		if err := h.Templates.ExecuteTemplate(w, name, data); err != nil {
+			log.Printf("template error (page=%s, name=%s): %v", page, name, err)
+			http.Error(w, "internal server error", 500)
+		}
+		return
+	}
+	// Non-English: capture, walk, translate, then write.
+	var buf bytes.Buffer
+	if err := h.Templates.ExecuteTemplate(&buf, name, data); err != nil {
 		log.Printf("template error (page=%s, name=%s): %v", page, name, err)
 		http.Error(w, "internal server error", 500)
+		return
 	}
+	translated := translateHTML(r.Context(), buf.Bytes(), data.Lang, h.Translator)
+	_, _ = w.Write(translated)
 }
 
+// installTranslatorForRequest stores the per-request context + translator so
+// the package-level `t` helper can use them. Safe for the single-request
+// shape of our handlers (each render installs its own pair before executing).
+// For concurrent handler executions we lock so the assignment is atomic; the
+// duration between install and execute is a few microseconds so contention is
+// essentially nil.
+func installTranslatorForRequest(ctx context.Context, tr Translator) {
+	translatorMu.Lock()
+	activeTranslator = tr
+	activeContext = ctx
+	translatorMu.Unlock()
+}
+
+var (
+	translatorMu     sync.Mutex
+	activeTranslator Translator
+	activeContext    context.Context
+)
+
+// TranslateFunc is the stable parse-time template helper. Exposed via
+// main.go's funcMap; looks up translator + context from package state.
+func TranslateFunc(text, lang string) string {
+	translatorMu.Lock()
+	tr, ctx := activeTranslator, activeContext
+	translatorMu.Unlock()
+	if tr == nil || lang == "" || lang == "en" {
+		return text
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return tr.Translate(ctx, text, lang)
+}
+
+// The `t` and `lang` template funcs are bound at parse time — html/template
+// ignores Funcs() called after Parse, so the clone-per-request pattern is
+// broken for these. Instead we use a shared Translator and key each call on
+// the lang passed in as a template argument: `{{t "Hello" $.Lang}}`.
+//
+// No per-request Clone is needed.
+
 // renderFragment renders a named sub-template directly (for HTMX partial swaps).
-func (h *H) renderFragment(w http.ResponseWriter, name string, data any) {
+// Applies the same post-render translation pass as render() when a non-English
+// language is active, keyed off the verifiably_lang cookie on the request.
+func (h *H) renderFragment(w http.ResponseWriter, r *http.Request, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := h.Templates.ExecuteTemplate(w, name, data); err != nil {
+	lang := h.langFor(r)
+	if lang == "" || lang == "en" || h.Translator == nil {
+		if err := h.Templates.ExecuteTemplate(w, name, data); err != nil {
+			log.Printf("fragment error (%s): %v", name, err)
+			http.Error(w, "internal server error", 500)
+		}
+		return
+	}
+	installTranslatorForRequest(r.Context(), h.Translator)
+	var buf bytes.Buffer
+	if err := h.Templates.ExecuteTemplate(&buf, name, data); err != nil {
 		log.Printf("fragment error (%s): %v", name, err)
 		http.Error(w, "internal server error", 500)
+		return
 	}
+	_, _ = w.Write(translateHTML(r.Context(), buf.Bytes(), lang, h.Translator))
 }
 
 // renderFragments renders multiple named sub-templates to the response in order.
 // Use when a handler needs to return a primary fragment + one or more hx-swap-oob
 // fragments concatenated together.
-func (h *H) renderFragments(w http.ResponseWriter, data any, names ...string) {
+func (h *H) renderFragments(w http.ResponseWriter, r *http.Request, data any, names ...string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	lang := h.langFor(r)
+	translating := lang != "" && lang != "en" && h.Translator != nil
+	if translating {
+		installTranslatorForRequest(r.Context(), h.Translator)
+	}
 	for _, name := range names {
-		if err := h.Templates.ExecuteTemplate(w, name, data); err != nil {
+		if !translating {
+			if err := h.Templates.ExecuteTemplate(w, name, data); err != nil {
+				log.Printf("fragment error (%s): %v", name, err)
+				http.Error(w, "internal server error", 500)
+				return
+			}
+			continue
+		}
+		var buf bytes.Buffer
+		if err := h.Templates.ExecuteTemplate(&buf, name, data); err != nil {
 			log.Printf("fragment error (%s): %v", name, err)
 			http.Error(w, "internal server error", 500)
 			return
 		}
+		_, _ = w.Write(translateHTML(r.Context(), buf.Bytes(), lang, h.Translator))
 	}
 }
 
@@ -79,6 +186,38 @@ type PageData struct {
 	Session         *Session
 	Body            any // page-specific sub-data
 	FlashToast      string // one-shot toast message via HX-Trigger header alternative
+	Lang            string // current UI language code from the verifiably_lang cookie
+}
+
+// langFromRequest returns the current UI language code (default "en") from
+// the verifiably_lang cookie.
+func langFromRequest(r *http.Request) string {
+	if c, err := r.Cookie("verifiably_lang"); err == nil {
+		return c.Value
+	}
+	return "en"
+}
+
+// SetLang is GET/POST /lang — switches the user's UI language.
+func (h *H) SetLang(w http.ResponseWriter, r *http.Request) {
+	code := r.FormValue("lang")
+	if code == "" {
+		code = r.URL.Query().Get("lang")
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     "verifiably_lang",
+		Value:    code,
+		Path:     "/",
+		HttpOnly: false,
+		MaxAge:   365 * 24 * 3600,
+	})
+	// Redirect back to the referrer or the landing page so the new language
+	// takes effect on an immediate re-render.
+	ref := r.Referer()
+	if ref == "" {
+		ref = "/"
+	}
+	h.redirect(w, r, ref)
 }
 
 func (h *H) pageData(sess *Session, body any) PageData {
@@ -87,6 +226,12 @@ func (h *H) pageData(sess *Session, body any) PageData {
 		Session: sess,
 		Body:    body,
 	}
+}
+
+// langFor returns the current lang code from the request and stores it on the
+// session so handlers can feed it into Translator.Translate when needed.
+func (h *H) langFor(r *http.Request) string {
+	return langFromRequest(r)
 }
 
 func titleFor(page string) string {
@@ -133,7 +278,43 @@ func (h *H) Landing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sess := h.Sessions.MustGet(w, r)
-	h.render(w, r, "landing", h.pageData(sess, nil))
+	// Union of all configured DPGs across issuer/holder/verifier — powers the
+	// landing page's version disclosure without naming any specific vendor.
+	dpgs := h.allDPGs(r)
+	h.render(w, r, "landing", h.pageData(sess, map[string]any{
+		"DPGs": dpgs,
+	}))
+}
+
+// allDPGs returns the deduped set of DPG entries across every role, used on
+// vendor-agnostic pages like the landing disclosure.
+func (h *H) allDPGs(r *http.Request) []vendorDesc {
+	ctx := r.Context()
+	seen := map[string]struct{}{}
+	var out []vendorDesc
+	add := func(m map[string]vctypes.DPG) {
+		for _, d := range m {
+			if _, dup := seen[d.Vendor+d.Version]; dup {
+				continue
+			}
+			seen[d.Vendor+d.Version] = struct{}{}
+			out = append(out, vendorDesc{Vendor: d.Vendor, Version: d.Version})
+		}
+	}
+	if i, err := h.Adapter.ListIssuerDpgs(ctx); err == nil {
+		add(i)
+	}
+	if hh, err := h.Adapter.ListHolderDpgs(ctx); err == nil {
+		add(hh)
+	}
+	if v, err := h.Adapter.ListVerifierDpgs(ctx); err == nil {
+		add(v)
+	}
+	return out
+}
+
+type vendorDesc struct {
+	Vendor, Version string
 }
 
 // PickRole is POST /role — sets role and redirects to /auth.
@@ -148,31 +329,147 @@ func (h *H) PickRole(w http.ResponseWriter, r *http.Request) {
 	h.redirect(w, r, "/auth")
 }
 
-// Auth renders the auth page.
+// Auth renders the auth page. The provider list is whatever the auth registry
+// holds — handlers never name providers directly.
 func (h *H) Auth(w http.ResponseWriter, r *http.Request) {
 	sess := h.Sessions.MustGet(w, r)
 	if sess.Role == "" {
 		h.redirect(w, r, "/")
 		return
 	}
-	h.render(w, r, "auth", h.pageData(sess, nil))
+	var providers []auth.Descriptor
+	if h.AuthReg != nil {
+		providers = h.AuthReg.Descriptors()
+	}
+	h.render(w, r, "auth", h.pageData(sess, map[string]any{
+		"Providers": providers,
+	}))
 }
 
-// CompleteAuth is POST /auth — stubs auth, routes to role-specific next page.
+// CompleteAuth is POST /auth — only reachable when NO OIDC providers are
+// configured (the template hides the form otherwise). Once providers are
+// configured, /auth/start + the provider callback is the only authentication
+// path; this endpoint rejects any attempt to bypass it.
 func (h *H) CompleteAuth(w http.ResponseWriter, r *http.Request) {
 	sess := h.Sessions.MustGet(w, r)
 	if sess.Role == "" {
 		h.redirect(w, r, "/")
 		return
 	}
+	if h.AuthReg != nil && len(h.AuthReg.All()) > 0 {
+		h.errorToast(w, r, "Pick an identity provider to sign in")
+		return
+	}
 	sess.AuthOK = true
+	next := authNextFor(sess.Role)
+	h.redirect(w, r, next)
+}
 
-	next := map[string]string{
+func authNextFor(role string) string {
+	return map[string]string{
 		"issuer":   "/issuer/dpg",
 		"holder":   "/holder/dpg",
 		"verifier": "/verifier/dpg",
-	}[sess.Role]
-	h.redirect(w, r, next)
+	}[role]
+}
+
+// StartAuth kicks off an OIDC Authorization Code + PKCE handshake. Called by
+// the provider buttons on /auth: HTMX POST with provider=<id>. The handler
+// stores state + PKCE verifier on the session and returns HX-Redirect to the
+// provider's authorize URL.
+func (h *H) StartAuth(w http.ResponseWriter, r *http.Request) {
+	sess := h.Sessions.MustGet(w, r)
+	if sess.Role == "" {
+		h.redirect(w, r, "/")
+		return
+	}
+	if h.AuthReg == nil {
+		h.errorToast(w, r, "No identity providers configured")
+		return
+	}
+	id := r.FormValue("provider")
+	p := h.AuthReg.Lookup(id)
+	if p == nil {
+		h.errorToast(w, r, "Unknown provider")
+		return
+	}
+	state := oidcNewState()
+	verifier := oidcNewPKCEVerifier()
+	sess.PendingProvider = p.ID()
+	sess.PendingState = state
+	sess.PendingPKCE = verifier
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	redirect := scheme + "://" + r.Host + "/auth/callback"
+	url, err := p.AuthorizeURL(r.Context(), state, verifier, redirect)
+	if err != nil {
+		h.errorToast(w, r, err.Error())
+		return
+	}
+	h.redirect(w, r, url)
+}
+
+// AuthCallback receives the code from the provider after login. Exchanges it
+// for tokens, stores them on the session, and routes to the role-specific
+// next page.
+func (h *H) AuthCallback(w http.ResponseWriter, r *http.Request) {
+	sess := h.Sessions.MustGet(w, r)
+	q := r.URL.Query()
+	if errMsg := q.Get("error"); errMsg != "" {
+		h.errorToast(w, r, "Auth error: "+errMsg)
+		return
+	}
+	if q.Get("state") != sess.PendingState {
+		h.errorToast(w, r, "Auth state mismatch (CSRF?)")
+		return
+	}
+	p := h.AuthReg.Lookup(sess.PendingProvider)
+	if p == nil {
+		h.errorToast(w, r, "Auth provider no longer configured")
+		return
+	}
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	redirect := scheme + "://" + r.Host + "/auth/callback"
+	tok, err := p.Exchange(r.Context(), q.Get("code"), sess.PendingPKCE, redirect)
+	if err != nil {
+		h.errorToast(w, r, "Token exchange: "+err.Error())
+		return
+	}
+	sess.AccessToken = tok.AccessToken
+	sess.RefreshToken = tok.RefreshToken
+	sess.IDToken = tok.IDToken
+	sess.AuthProvider = p.ID()
+	sess.AuthOK = true
+	sess.PendingState = ""
+	sess.PendingPKCE = ""
+	sess.PendingProvider = ""
+	if ui, err := p.UserInfo(r.Context(), tok.AccessToken); err == nil {
+		sess.UserEmail = ui.Email
+	}
+	h.redirect(w, r, authNextFor(sess.Role))
+}
+
+// The following are thin indirections through the oidc subpackage so this
+// file doesn't need to import it directly. Wired by main via SetOIDCHelpers.
+var (
+	oidcNewState        = func() string { return "" }
+	oidcNewPKCEVerifier = func() string { return "" }
+)
+
+// SetOIDCHelpers installs the state + PKCE verifier generators. Must be
+// called before StartAuth handles any request.
+func SetOIDCHelpers(state, pkce func() string) {
+	if state != nil {
+		oidcNewState = state
+	}
+	if pkce != nil {
+		oidcNewPKCEVerifier = pkce
+	}
 }
 
 // redirect issues a response appropriate to HTMX vs. plain browser.
@@ -227,13 +524,16 @@ func (h *H) ToggleIssuerDpg(w http.ResponseWriter, r *http.Request) {
 		h.errorToast(w, r, err.Error())
 		return
 	}
-	h.renderFragments(w, map[string]any{
+	h.renderFragments(w, r, map[string]any{
 		"Dpgs":     dpgs,
 		"Expanded": sess.ExpandedIssuerDpg,
 	}, "fragment_issuer_dpg_grid", "fragment_issuer_dpg_continue_oob")
 }
 
 // PickIssuerDpg commits the currently-expanded DPG and moves forward.
+// DPGs that declare Redirect=true hand the operator off to their own UI
+// instead of the inline schema picker — same pattern used by holder and
+// verifier pickers.
 func (h *H) PickIssuerDpg(w http.ResponseWriter, r *http.Request) {
 	sess := h.Sessions.MustGet(w, r)
 	if sess.ExpandedIssuerDpg == "" {
@@ -245,11 +545,16 @@ func (h *H) PickIssuerDpg(w http.ResponseWriter, r *http.Request) {
 		h.errorToast(w, r, err.Error())
 		return
 	}
-	if _, ok := dpgs[sess.ExpandedIssuerDpg]; !ok {
+	dpg, ok := dpgs[sess.ExpandedIssuerDpg]
+	if !ok {
 		http.Error(w, "unknown vendor", 400)
 		return
 	}
 	sess.IssuerDpg = sess.ExpandedIssuerDpg
+	if dpg.Redirect {
+		h.render(w, r, "redirect_notice", h.pageData(sess, dpg))
+		return
+	}
 	h.redirect(w, r, "/issuer/schema")
 }
 
@@ -287,7 +592,7 @@ func (h *H) ToggleHolderDpg(w http.ResponseWriter, r *http.Request) {
 		h.errorToast(w, r, err.Error())
 		return
 	}
-	h.renderFragments(w, map[string]any{
+	h.renderFragments(w, r, map[string]any{
 		"Dpgs":     dpgs,
 		"Expanded": sess.ExpandedHolderDpg,
 	}, "fragment_holder_dpg_grid", "fragment_holder_dpg_continue_oob")
@@ -351,7 +656,7 @@ func (h *H) ToggleVerifierDpg(w http.ResponseWriter, r *http.Request) {
 		h.errorToast(w, r, err.Error())
 		return
 	}
-	h.renderFragments(w, map[string]any{
+	h.renderFragments(w, r, map[string]any{
 		"Dpgs":     dpgs,
 		"Expanded": sess.ExpandedVerifierDpg,
 	}, "fragment_verifier_dpg_grid", "fragment_verifier_dpg_continue_oob")

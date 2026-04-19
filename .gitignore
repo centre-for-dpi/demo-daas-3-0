@@ -17,3 +17,21 @@ ui-demo/server
 # E2E test dependencies
 ui-demo/node_modules/
 ui-demo/package-lock.json
+
+# verifiably-go runtime state
+# - config/*.json is rendered from deploy.sh stanzas on every `deploy.sh run`
+# - *.docker.json / *.rendered.yml are ephemeral docker-internal overrides
+# - wso2is.env is written by scripts/bootstrap-wso2is.sh
+# - locales/*.json is the LibreTranslate disk cache
+# - walletbag.json persists the demo wallet credentials between runs
+# - cookies.txt is a curl/test artifact
+verifiably-go/config/backends.json
+verifiably-go/config/backends.docker.json
+verifiably-go/config/auth-providers.json
+verifiably-go/config/auth-providers.docker.json
+verifiably-go/config/docker-compose.injiweb-fix.rendered.yml
+verifiably-go/config/wso2is.env
+verifiably-go/locales/
+verifiably-go/walletbag.json
+verifiably-go/cookies.txt
+verifiably-go/node_modules/

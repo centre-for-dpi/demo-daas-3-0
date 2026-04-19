@@ -150,17 +150,22 @@ func (a *MockAdapter) IssueAsPDF(_ context.Context, req backend.IssueRequest) (b
 }
 
 func (a *MockAdapter) IssueBulk(_ context.Context, req backend.IssueBulkRequest) (backend.IssueBulkResult, error) {
-	if req.RowCount < 2 {
-		req.RowCount = 247
+	// Mock reports per-row outcomes deterministically: rows with an empty or
+	// missing "holder" field are rejected, everything else accepted.
+	var (
+		accepted int
+		rejected int
+		errs     []backend.BulkError
+	)
+	for i, row := range req.Rows {
+		if row["holder"] == "" {
+			rejected++
+			errs = append(errs, backend.BulkError{Row: i + 1, Reason: "missing holder"})
+			continue
+		}
+		accepted++
 	}
-	return backend.IssueBulkResult{
-		Accepted: req.RowCount - 2,
-		Rejected: 2,
-		Errors: []backend.BulkError{
-			{Row: 17, Reason: "missing holder"},
-			{Row: 83, Reason: "missing holder"},
-		},
-	}, nil
+	return backend.IssueBulkResult{Accepted: accepted, Rejected: rejected, Errors: errs}, nil
 }
 
 func (a *MockAdapter) ListWalletCredentials(_ context.Context) ([]vctypes.Credential, error) {
@@ -201,6 +206,23 @@ func (a *MockAdapter) ParseOffer(_ context.Context, offerURI string) (vctypes.Cr
 func (a *MockAdapter) ClaimCredential(_ context.Context, cred vctypes.Credential) (vctypes.Credential, error) {
 	cred.Status = "accepted"
 	return cred, nil
+}
+
+func (a *MockAdapter) PresentCredential(_ context.Context, req backend.PresentCredentialRequest) (backend.PresentCredentialResult, error) {
+	return backend.PresentCredentialResult{
+		Success:       true,
+		Method:        "OID4VP · mock",
+		SharedClaims:  req.DisclosedClaim,
+		VerifierState: "mock-state-" + randomHex(4),
+	}, nil
+}
+
+func (a *MockAdapter) BootstrapOffers(_ context.Context) ([]string, error) {
+	uris := make([]string, 0, len(a.exampleOffers))
+	for _, ex := range a.exampleOffers {
+		uris = append(uris, ex.URI)
+	}
+	return uris, nil
 }
 
 func (a *MockAdapter) RequestPresentation(_ context.Context, req backend.PresentationRequest) (backend.PresentationRequestResult, error) {

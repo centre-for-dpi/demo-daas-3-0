@@ -63,6 +63,24 @@
     toast('Network error — check your connection');
   });
 
+  // ---- Multipart upload helper (verifier QR image upload) ----
+  // HTMX 2.x multipart submission is finicky on <form>-level hx-post; we drive
+  // the POST directly and swap the result into #verify-result ourselves.
+  window.uploadQR = function (evt) {
+    evt.preventDefault();
+    const form = evt.target;
+    const action = form.getAttribute('hx-post') || '/verifier/verify/direct';
+    const data = new FormData(form);
+    fetch(action, { method: 'POST', body: data, headers: { 'HX-Request': 'true' } })
+      .then((r) => r.text())
+      .then((html) => {
+        const tgt = document.getElementById('verify-result');
+        if (tgt) tgt.innerHTML = html;
+      })
+      .catch((err) => toast('Upload failed: ' + err.message));
+    return false;
+  };
+
   // ---- Clipboard helper (exposed for onclick attributes) ----
   window.copyText = function (text) {
     if (navigator.clipboard && navigator.clipboard.writeText) {

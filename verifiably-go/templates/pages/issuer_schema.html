@@ -1,6 +1,6 @@
 {{define "content_issuer_schema"}}
 <section class="view active">
-  <div class="section-label"><span class="num">04</span><span class="caps">Issuer · Schema</span></div>
+  <div class="section-label"><span class="num">04</span><span class="caps">{{t "Issuer · Schema" $.Lang}}</span></div>
   <h1 class="page-title">Pick a schema, or<br><em>build one</em>.</h1>
   <p class="subtitle">These are the credential types available from <span class="mono">{{.Session.IssuerDpg}}</span>. Click a card to preview its JSON Schema. Click <em>Use this schema</em> to select it for issuance.</p>
 
@@ -72,7 +72,10 @@
   {{range .Schemas}}
     <div class="schema-card
                 {{if eq .ID $.SelectedID}}selected{{end}}
-                {{if eq .ID $.ExpandedID}}expanded{{end}}">
+                {{if eq .ID $.ExpandedID}}expanded{{end}}"
+         data-id="{{.ID}}"
+         data-name="{{.Name}}"
+         data-std="{{.Std}}">
 
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem">
         <h4 style="flex:1">{{.Name}}</h4>

@@ -1,0 +1,52 @@
+{
+  "_comment": [
+    "Patched Inji Web issuer catalog. Two upstream defaults were breaking the",
+    "auth-code flow end-to-end:",
+    "",
+    "  1. wellknown_endpoint pointed at http://certify-nginx/.well-known/...",
+    "     — that path 404s because certify-nginx only proxies /v1/certify/*.",
+    "     The correct URL is /v1/certify/.well-known/openid-credential-issuer.",
+    "",
+    "  2. Mimoto's IssuerConfigUtil.getIssuerWellknown() IGNORES the",
+    "     wellknown_endpoint field and instead builds a URL by taking",
+    "     credential_issuer_host and appending '.well-known/openid-credential-issuer'.",
+    "     So credential_issuer_host must include '/v1/certify' for the",
+    "     appended path to land on the real endpoint. That's the change on",
+    "     both credential_issuer_host AND wellknown_endpoint below — they're",
+    "     kept in sync so both code paths (direct Mimoto fetch + UI render)",
+    "     resolve correctly.",
+    "",
+    "MockMdl (Transport Department) is stripped because Inji Certify v0.14.0",
+    "ships mDoc as mock-only — the UI would show a credential type that can't",
+    "actually be issued. Farmer is the only real issuance path here."
+  ],
+  "issuers": [
+    {
+      "credential_issuer": "Farmer",
+      "issuer_id": "Farmer",
+      "protocol": "OpenId4VCI",
+      "display": [
+        {
+          "name": "Agriculture Department",
+          "logo": {
+            "url": "https://mosip.github.io/inji-config/logos/agro-vertias-logo.png",
+            "alt_text": "agri-logo"
+          },
+          "title": "Agriculture Department",
+          "description": "Download Farmer Credentials",
+          "language": "en"
+        }
+      ],
+      "client_id": "wallet-demo-client",
+      "redirect_uri": "http://172.24.0.1:3004/redirect",
+      "token_endpoint": "http://localhost:8099/v1/mimoto/get-token/Farmer",
+      "authorization_audience": "http://172.24.0.1:3005/v1/esignet/oauth/v2/token",
+      "proxy_token_endpoint": "http://172.24.0.1:3005/v1/esignet/oauth/v2/token",
+      "client_alias": "wallet-demo-client",
+      "qr_code_type": "EmbeddedVC",
+      "credential_issuer_host": "http://certify-nginx/v1/certify",
+      "enabled": "true",
+      "wellknown_endpoint": "http://certify-nginx/v1/certify/.well-known/openid-credential-issuer?client=mimoto"
+    }
+  ]
+}

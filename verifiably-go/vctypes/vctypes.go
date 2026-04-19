@@ -17,6 +17,10 @@ type DPG struct {
 	Formats  []string
 	Caveats  string // plain-language warning text shown in the UI
 	Redirect bool   // holder/verifier only — if true, selecting this DPG hands off to its own UI
+	// UIURL is the public URL of the vendor's own UI, used as the target
+	// address the redirect-notice page links to. Populated by the registry
+	// from backends.json; empty for non-redirect DPGs.
+	UIURL string
 
 	// Issuer-specific capability flags
 	FlowPreAuth                 bool
@@ -26,6 +30,23 @@ type DPG struct {
 	FormatsPlain                string // plain-language explanation of formats
 	DirectPDF                   bool
 	DirectPDFPlain              string
+
+	// Structured capability list. Renders on the DPG picker card and drives
+	// downstream screen branching via Kind/Key pairs (no string matches on
+	// vendor names in handlers). Empty for legacy/mock DPGs; registry-backed
+	// DPGs populate this from backends.json.
+	Capabilities []Capability
+}
+
+// Capability is one structured "what you'll actually experience" item on a DPG
+// card. Handlers may look up capabilities by Kind to decide whether to enable a
+// downstream option (e.g. Kind="mode" Key="pdf" to enable the PDF destination).
+// Title/Body render to the user; Kind/Key drive logic.
+type Capability struct {
+	Title string // short headline, e.g. "User logs in at the identity provider"
+	Body  string // one-sentence plain-language description
+	Kind  string // "flow" | "data" | "wallet" | "token" | "mode" | "limitation"
+	Key   string // machine key: e.g. "auth_code", "pre_auth", "pdf", "identity_lookup"
 }
 
 // Schema is a credential schema available to an issuer.

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/verifiably/verifiably-go/backend"
 	"github.com/verifiably/verifiably-go/vctypes"
 )
 
@@ -50,30 +51,37 @@ func (h *H) ScanOffer(w http.ResponseWriter, r *http.Request) {
 	cred.Source = "scan"
 	cred.ID = "pending-" + time.Now().Format("150405.000000")
 	sess.WalletPending = append([]vctypes.Credential{cred}, sess.WalletPending...)
-	h.renderFragment(w, "fragment_wallet_body", sess)
+	h.renderFragment(w, r, "fragment_wallet_body", sess)
 }
 
-// PasteOffer processes a pasted offer URI.
+// PasteOffer processes a pasted offer URI. Renders the wallet body on both
+// success and failure so the user gets a visible result either way — toasts
+// can be missed (browser focus, quick fade) but an inline error banner
+// stays until the next action.
 func (h *H) PasteOffer(w http.ResponseWriter, r *http.Request) {
 	sess := h.Sessions.MustGet(w, r)
 	raw := strings.TrimSpace(r.FormValue("offer_uri"))
 	if raw == "" {
-		h.errorToast(w, r, "Paste an openid-credential-offer:// URI first")
+		sess.LastWalletError = "Paste an openid-credential-offer:// URI first"
+		h.renderFragment(w, r, "fragment_wallet_body", sess)
 		return
 	}
 	if !strings.HasPrefix(raw, "openid-credential-offer://") && !strings.HasPrefix(raw, "https://") {
-		h.errorToast(w, r, "That doesn't look like a credential offer URI")
+		sess.LastWalletError = "That doesn't look like a credential offer URI — it should start with openid-credential-offer:// or https://"
+		h.renderFragment(w, r, "fragment_wallet_body", sess)
 		return
 	}
 	cred, err := h.Adapter.ParseOffer(r.Context(), raw)
 	if err != nil {
-		h.errorToast(w, r, err.Error())
+		sess.LastWalletError = err.Error()
+		h.renderFragment(w, r, "fragment_wallet_body", sess)
 		return
 	}
+	sess.LastWalletError = ""
 	cred.Source = "paste"
 	cred.ID = "pending-" + time.Now().Format("150405.000000")
 	sess.WalletPending = append([]vctypes.Credential{cred}, sess.WalletPending...)
-	h.renderFragment(w, "fragment_wallet_body", sess)
+	h.renderFragment(w, r, "fragment_wallet_body", sess)
 }
 
 // PrefillExample returns a textarea pre-populated with an example offer URI.
@@ -119,7 +127,7 @@ func (h *H) AcceptCred(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sess.WalletCreds = append([]vctypes.Credential{claimed}, sess.WalletCreds...)
-	h.renderFragment(w, "fragment_wallet_body", sess)
+	h.renderFragment(w, r, "fragment_wallet_body", sess)
 }
 
 // RejectCred discards a pending offer.
@@ -140,7 +148,7 @@ func (h *H) RejectCred(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sess.WalletPending = kept
-	h.renderFragment(w, "fragment_wallet_body", sess)
+	h.renderFragment(w, r, "fragment_wallet_body", sess)
 }
 
 // ShowPresent renders the OID4VP presentation entry screen for the holder.
@@ -150,10 +158,45 @@ func (h *H) ShowPresent(w http.ResponseWriter, r *http.Request) {
 		h.redirect(w, r, "/holder/dpg")
 		return
 	}
-	h.render(w, r, "holder_present", h.pageData(sess, nil))
+	dpgs, _ := h.Adapter.ListHolderDpgs(r.Context())
+	// Pull the holder's accepted credentials so the UI can render a picker.
+	// Use the session's cached list if present; otherwise do a fresh adapter
+	// call. Non-linked DPGs surface as an empty list (the template renders
+	// an "accept an offer first" hint in that case).
+	creds := sess.WalletCreds
+	if len(creds) == 0 {
+		if c, err := h.Adapter.ListWalletCredentials(r.Context()); err == nil {
+			creds = c
+		}
+	}
+	h.render(w, r, "holder_present", h.pageData(sess, map[string]any{
+		"HolderDpgObj": dpgs[sess.HolderDpg],
+		"Credentials":  creds,
+	}))
 }
 
-// SimulatePresent triggers the "verifier requested X" modal.
-func (h *H) SimulatePresent(w http.ResponseWriter, r *http.Request) {
-	h.renderFragment(w, "fragment_present_modal", nil)
+// SubmitPresent drives PresentCredential on the adapter for the chosen
+// credential + the verifier's request URI. Renders a result fragment.
+func (h *H) SubmitPresent(w http.ResponseWriter, r *http.Request) {
+	sess := h.Sessions.MustGet(w, r)
+	if sess.HolderDpg == "" {
+		h.redirect(w, r, "/holder/dpg")
+		return
+	}
+	credID := r.FormValue("credential_id")
+	reqURI := r.FormValue("request_uri")
+	if credID == "" || reqURI == "" {
+		h.errorToast(w, r, "Pick a credential and paste the verifier's request URI")
+		return
+	}
+	res, err := h.Adapter.PresentCredential(r.Context(), backend.PresentCredentialRequest{
+		HolderDpg:    sess.HolderDpg,
+		CredentialID: credID,
+		RequestURI:   reqURI,
+	})
+	if err != nil {
+		h.errorToast(w, r, err.Error())
+		return
+	}
+	h.renderFragment(w, r, "fragment_present_result", res)
 }

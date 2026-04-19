@@ -366,8 +366,20 @@ async function run() {
     );
     await expect(bannerValidOrInvalid, 'banner shows valid or invalid state');
 
-    // Direct verify — scan
-    await click(page, 'button[hx-post="/verifier/verify/direct"][hx-vals*="scan"]');
+    // Direct verify — scan (M6+: camera-driven; can't run getUserMedia in
+    // headless without a fake stream, so we exercise the handler directly
+    // with a synthetic credential_data that matches what jsQR would produce).
+    await page.evaluate(async () => {
+      const form = new FormData();
+      form.append('method', 'scan');
+      form.append('credential_data', 'synthetic-scan-payload');
+      const resp = await fetch('/verifier/verify/direct', {
+        method: 'POST', body: form,
+        headers: { 'HX-Request': 'true' },
+      });
+      const html = await resp.text();
+      document.getElementById('verify-result').innerHTML = html;
+    });
     await settle(page, 400);
     const scanBanner = await page.$('#verify-result .verify-banner');
     await expect(!!scanBanner, 'scan direct-verify renders banner');

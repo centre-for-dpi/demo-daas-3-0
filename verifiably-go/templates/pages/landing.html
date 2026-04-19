@@ -1,36 +1,40 @@
 {{define "content_landing"}}
 <section class="view active">
-  <div class="section-label"><span class="num">01</span><span class="caps">Begin</span></div>
-  <h1 class="page-title">Issue, hold, and verify<br><em>credentials</em> without lock-in.</h1>
-  <p class="subtitle">A thin, backend-agnostic interface for verifiable credentialing. Choose your role to continue — the flows below adapt to whichever DPG you select in the next step.</p>
+  <div class="section-label"><span class="num">01</span><span class="caps">{{t "Begin" $.Lang}}</span></div>
+  <h1 class="page-title">{{t "Issue, hold, and verify" $.Lang}}<br><em>{{t "credentials" $.Lang}}</em> {{t "without lock-in." $.Lang}}</h1>
+  <p class="subtitle">{{t "A thin, backend-agnostic interface for verifiable credentialing. Choose your role to continue — the flows below adapt to whichever DPG you select in the next step." $.Lang}}</p>
 
+  {{with .Body.DPGs}}
   <div class="version-disclosure">
-    <span class="caps">Version disclosure</span>
-    Capability claims throughout this UI reflect specific documented releases: <span class="mono">walt.id Community Stack v0.18.2</span>, <span class="mono">Inji Certify v0.14.0</span>, <span class="mono">Inji Web Wallet v0.16.0</span>, <span class="mono">Inji Verify v0.16.0</span>. These four are not a tested-compatible matrix — Inji Web Wallet v0.16.0 declares compatibility with Certify v0.13.1 and Verify v0.17.0; Inji Verify v0.16.0 declares compatibility with Inji Web v0.14.0. Real deployments should align on a single tested combination.
+    <span class="caps">{{t "Version disclosure" $.Lang}}</span>
+    {{t "Capability claims throughout this UI reflect specific documented releases:" $.Lang}}
+    {{range $i, $d := .}}{{if $i}}, {{end}}<span class="mono">{{$d.Vendor}} {{$d.Version}}</span>{{end}}.
+    {{t "These releases were chosen for their publicly-documented APIs; DPG vendors publish their own cross-compatibility matrices — align on a single tested combination for real deployments." $.Lang}}
   </div>
+  {{end}}
 
   <div class="role-grid">
     <form method="post" action="/role">
       <button type="submit" name="role" value="issuer" class="role-card">
         <span class="num">01</span>
-        <h3>Issuer</h3>
-        <p>Issue credentials to wallets via OID4VCI, or (DPG permitting) export as PDFs with embedded QR codes.</p>
+        <h3>{{t "Issuer" $.Lang}}</h3>
+        <p>{{t "Issue credentials to wallets via OID4VCI, or (DPG permitting) export as PDFs with embedded QR codes." $.Lang}}</p>
         <span class="arrow">↗</span>
       </button>
     </form>
     <form method="post" action="/role">
       <button type="submit" name="role" value="holder" class="role-card">
         <span class="num">02</span>
-        <h3>Holder</h3>
-        <p>Receive credentials into a wallet, review them, and present them for verification.</p>
+        <h3>{{t "Holder" $.Lang}}</h3>
+        <p>{{t "Receive credentials into a wallet, review them, and present them for verification." $.Lang}}</p>
         <span class="arrow">↗</span>
       </button>
     </form>
     <form method="post" action="/role">
       <button type="submit" name="role" value="verifier" class="role-card">
         <span class="num">03</span>
-        <h3>Verifier</h3>
-        <p>Request and verify presentations via OID4VP, or scan credential QR codes directly.</p>
+        <h3>{{t "Verifier" $.Lang}}</h3>
+        <p>{{t "Request and verify presentations via OID4VP, or scan credential QR codes directly." $.Lang}}</p>
         <span class="arrow">↗</span>
       </button>
     </form>

@@ -262,17 +262,28 @@ h1.page-title em { font-style: italic; color: var(--accent); font-weight: 300; }
 .chip:hover { border-color: var(--ink); color: var(--ink); }
 .chip.active { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 
-.schema-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; margin-top: 1rem; }
+/* Grid rows auto-size independently, and `grid-auto-rows: min-content` keeps
+   unexpanded cards at their natural height so an expanded card only stretches
+   its OWN row, not every card in the same row. `align-items: start` stops a
+   tall card from dragging its row-mates along. */
+.schema-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-auto-rows: min-content;
+  align-items: start;
+  gap: 1rem;
+  margin-top: 1rem;
+}
 .schema-card {
   background: var(--bg-elev); border: 1px solid var(--line); border-radius: 2px;
-  padding: 1.25rem; transition: all 0.2s ease;
+  padding: 1.25rem; transition: border-color 0.18s ease, box-shadow 0.18s ease;
   font-family: inherit; text-align: left; color: inherit;
   display: flex; flex-direction: column; gap: 0.5rem;
+  /* Expand vertically in place; grid-auto-rows keeps siblings fixed. */
 }
-.schema-card:hover { border-color: var(--ink-soft); transform: translateY(-1px); }
+.schema-card:hover { border-color: var(--ink-soft); }
 .schema-card.selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent-soft) 40%, var(--bg-elev)); }
 .schema-card.expanded { border-color: var(--ink-soft); box-shadow: var(--shadow); }
-.schema-card.expanded:hover { transform: none; }
 .schema-card.selected.expanded { border-color: var(--accent); }
 .schema-card h4 { font-family: 'Josefin Sans', sans-serif; font-weight: 500; font-size: 1.15rem; letter-spacing: 0.01em; }
 .schema-card .std { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--ink-mute); }

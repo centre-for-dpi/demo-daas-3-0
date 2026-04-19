@@ -1,6 +1,6 @@
 {{define "content_verifier_verify"}}
 <section class="view active">
-  <div class="section-label"><span class="num">04</span><span class="caps">Verifier · Verify</span></div>
+  <div class="section-label"><span class="num">04</span><span class="caps">{{t "Verifier · Verify" $.Lang}}</span></div>
   <h1 class="page-title">Check a<br><em>credential</em>.</h1>
   <p class="subtitle">Using <span class="mono">{{.Session.VerifierDpg}}</span>. Request a presentation via OID4VP, or verify a credential the holder hands over directly.</p>
 
@@ -34,39 +34,53 @@
   </div>
 
   {{/* ============================================================
-       DIRECT VERIFY — scan / upload / paste
+       DIRECT VERIFY — scan / upload / paste.
+       Each card is gated on the verifier DPG declaring a matching
+       capability:
+         Kind=flow Key=direct_scan   → scan card
+         Kind=flow Key=direct_upload → upload card
+         Kind=flow Key=direct_paste  → paste card
+       Verifiers that don't support direct verification declare none of
+       these and the whole section hides.
        ============================================================ */}}
+  {{$dpg := .Body.VerifierDpgObj}}
+  {{$canScan   := hasCapability $dpg "flow" "direct_scan"}}
+  {{$canUpload := hasCapability $dpg "flow" "direct_upload"}}
+  {{$canPaste  := hasCapability $dpg "flow" "direct_paste"}}
+  {{if or $canScan $canUpload $canPaste}}
   <div style="margin-top:3rem">
     <div class="caps" style="margin-bottom:0.5rem">Verify a credential directly</div>
     <p style="font-size:0.85rem;color:var(--ink-soft);margin-bottom:1rem">
-      For PDFs with embedded QR codes, or credentials shared as raw JWTs / SD-JWTs. Works offline — validates the issuer signature without a round-trip.
+      For credentials handed over in person — a QR on paper, an image, or a raw JWT. Uses this verifier's direct-verification endpoint.
     </p>
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem">
 
-      {{/* Scan */}}
+      {{if $canScan}}
       <div style="background:var(--bg-elev);border:1px solid var(--line);padding:1.5rem;border-radius:2px">
         <h4 style="font-family:'Josefin Sans',sans-serif;font-weight:500;font-size:1.1rem;margin-bottom:0.25rem">Scan QR</h4>
-        <p style="font-size:0.82rem;color:var(--ink-soft);margin-bottom:1rem">From a printed PDF, a phone screen, or in person.</p>
-        <button class="btn small"
-                hx-post="/verifier/verify/direct"
-                hx-vals='{"method": "scan"}'
-                hx-target="#verify-result"
-                hx-swap="innerHTML">Simulate scan</button>
+        <p style="font-size:0.82rem;color:var(--ink-soft);margin-bottom:1rem">Uses your device camera to read the QR code live.</p>
+        <button class="btn small" id="scan-btn" type="button" onclick="startScan()">Start camera →</button>
+        <video id="scan-video" playsinline muted style="display:none;width:100%;max-width:280px;margin-top:0.75rem;border:1px solid var(--line);border-radius:2px"></video>
+        <div id="scan-status" style="font-size:0.78rem;color:var(--ink-mute);margin-top:0.5rem"></div>
       </div>
+      {{end}}
 
-      {{/* Upload */}}
+      {{if $canUpload}}
       <div style="background:var(--bg-elev);border:1px solid var(--line);padding:1.5rem;border-radius:2px">
-        <h4 style="font-family:'Josefin Sans',sans-serif;font-weight:500;font-size:1.1rem;margin-bottom:0.25rem">Upload PDF</h4>
-        <p style="font-size:0.82rem;color:var(--ink-soft);margin-bottom:1rem">Drop a credential PDF — we'll extract and verify the embedded QR.</p>
-        <button class="btn small"
-                hx-post="/verifier/verify/direct"
-                hx-vals='{"method": "upload"}'
-                hx-target="#verify-result"
-                hx-swap="innerHTML">Simulate upload</button>
+        <h4 style="font-family:'Josefin Sans',sans-serif;font-weight:500;font-size:1.1rem;margin-bottom:0.25rem">Upload QR image</h4>
+        <p style="font-size:0.82rem;color:var(--ink-soft);margin-bottom:1rem">PNG or JPEG. Server extracts and verifies the embedded QR.</p>
+        <form id="upload-qr-form" enctype="multipart/form-data"
+              style="display:flex;flex-direction:column;gap:0.5rem"
+              onsubmit="uploadQR(event)">
+          <input type="hidden" name="method" value="upload">
+          <input type="file" name="credential_image" accept="image/png,image/jpeg,image/webp" required>
+          <button class="btn small" type="submit">Verify upload →</button>
+        </form>
       </div>
+      {{end}}
 
-      {{/* Paste */}}
+      {{if $canPaste}}
       <div style="background:var(--bg-elev);border:1px solid var(--line);padding:1.5rem;border-radius:2px">
         <h4 style="font-family:'Josefin Sans',sans-serif;font-weight:500;font-size:1.1rem;margin-bottom:0.25rem">Paste credential</h4>
         <p style="font-size:0.82rem;color:var(--ink-soft);margin-bottom:0.75rem">Raw JWT, SD-JWT, or JSON-LD VC.</p>
@@ -81,24 +95,30 @@
           <button class="btn small" type="submit">Verify →</button>
         </form>
       </div>
+      {{end}}
 
     </div>
 
     <div id="verify-result"></div>
   </div>
+  {{end}}
 
   <div class="btn-row" style="margin-top:2.5rem">
     <a href="/" class="btn ghost">← Home</a>
   </div>
 
-  {{/* DPG-specific warning */}}
-  {{if eq .Session.VerifierDpg "Inji Verify"}}
+  {{/* Limitation warnings come from the DPG's declared Capabilities — the
+       verifier handler passes the DPG into the template so the UI doesn't
+       hardcode vendor-specific strings. */}}
+  {{with .Body.VerifierDpgObj}}
+    {{range .Capabilities}}
+      {{if eq .Kind "limitation"}}
     <div style="background:var(--bg-elev);border:1px solid var(--line);border-left:3px solid var(--warn);padding:1.25rem;margin-top:2rem;border-radius:2px">
-      <div class="caps" style="font-size:0.65rem;color:var(--warn);margin-bottom:0.25rem">Known issue · INJIVER-1131 (Inji Verify v0.16.0)</div>
-      <p style="font-size:0.82rem;color:var(--ink-soft);margin:0">
-        Cross-device OID4VP validates presentations as successful even when a wrong VC is submitted. Relying parties must implement credential-type validation server-side until this is fixed upstream.
-      </p>
+      <div class="caps" style="font-size:0.65rem;color:var(--warn);margin-bottom:0.25rem">Known limitation · {{.Title}}</div>
+      <p style="font-size:0.82rem;color:var(--ink-soft);margin:0">{{.Body}}</p>
     </div>
+      {{end}}
+    {{end}}
   {{end}}
 </section>
 {{end}}
@@ -112,11 +132,13 @@
   </div>
 
   <div class="split">
-    {{/* Cross-device: QR */}}
+    {{/* Cross-device: QR (real, served from /qr) */}}
     <div>
       <div class="caps" style="font-size:0.65rem;margin-bottom:0.5rem">Cross-device — scan with wallet</div>
       <div class="qr-wrap" style="padding:1rem">
-        <div class="qr-box"></div>
+        <img src="/qr?text={{.RequestURI | urlquery}}&size=260"
+             alt="OID4VP request QR"
+             style="display:block;width:260px;height:260px;background:#fff;padding:0.5rem;border:1px solid var(--line);border-radius:2px">
       </div>
     </div>
     {{/* Same-device: link */}}
@@ -133,9 +155,12 @@
     <button class="btn"
             hx-post="/verifier/verify/response"
             hx-target="#verify-result"
-            hx-swap="innerHTML">Simulate holder response →</button>
+            hx-swap="innerHTML">Check for holder response →</button>
     <span style="font-size:0.78rem;color:var(--ink-mute);align-self:center">state: <span class="mono">{{.State}}</span></span>
   </div>
+  <p style="font-size:0.78rem;color:var(--ink-mute);margin-top:0.75rem">
+    The verifier polls its own session endpoint. Click the button once the holder has responded on their wallet.
+  </p>
 </div>
 {{end}}
 

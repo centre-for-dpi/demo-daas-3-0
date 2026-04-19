@@ -1,6 +1,6 @@
 {{define "content_holder_wallet"}}
 <section class="view active">
-  <div class="section-label"><span class="num">04</span><span class="caps">Holder · Wallet</span></div>
+  <div class="section-label"><span class="num">04</span><span class="caps">{{t "Holder · Wallet" $.Lang}}</span></div>
   <h1 class="page-title">Your<br><em>wallet</em>.</h1>
   <p class="subtitle">
     Using <span class="mono">{{.Session.HolderDpg}}</span>. Receive a credential offer (scan a QR, paste a link, or tap an example), review it, and accept it into your wallet.
@@ -15,6 +15,13 @@
 {{define "fragment_wallet_body"}}
 {{/* Takes a *Session as dot */}}
 
+{{if .LastWalletError}}
+<div style="margin-top:1.5rem;padding:1rem 1.25rem;background:var(--bg-elev);border:1px solid var(--err);border-left:3px solid var(--err);border-radius:2px">
+  <div class="caps" style="color:var(--err);font-size:0.65rem;margin-bottom:0.25rem">Last attempt failed</div>
+  <p class="mono" style="font-size:0.78rem;margin:0;white-space:pre-wrap;word-break:break-word">{{.LastWalletError}}</p>
+</div>
+{{end}}
+
 <div class="split" style="align-items:flex-start;margin-top:2rem">
   {{/* ---------- LEFT: Receive ---------- */}}
   <div>
@@ -22,18 +29,17 @@
 
     <div style="display:flex;flex-direction:column;gap:1rem">
 
-      {{/* Scan */}}
+      {{/* Scan — uses getUserMedia + jsQR. Same scanner.js the verifier uses.
+            On successful decode, the payload is posted to /holder/wallet/paste
+            so the server treats it as if it had been pasted. */}}
       <div style="background:var(--bg-elev);border:1px solid var(--line);padding:1.25rem;border-radius:2px">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem">
-          <div>
-            <h4 style="font-family:'Josefin Sans',sans-serif;font-weight:500;font-size:1.1rem;margin-bottom:0.25rem">Scan issuer QR</h4>
-            <p style="font-size:0.82rem;color:var(--ink-soft);margin:0">Cross-device flow — opens camera in a real wallet.</p>
-          </div>
-          <button class="btn small"
-                  hx-post="/holder/wallet/scan"
-                  hx-target="#wallet-body"
-                  hx-swap="innerHTML">Simulate scan</button>
-        </div>
+        <h4 style="font-family:'Josefin Sans',sans-serif;font-weight:500;font-size:1.1rem;margin-bottom:0.25rem">Scan issuer QR</h4>
+        <p style="font-size:0.82rem;color:var(--ink-soft);margin-bottom:0.75rem">Uses your device camera to read the offer QR live.</p>
+        <button class="btn small" type="button"
+                id="wallet-scan-btn"
+                onclick="startWalletScan()">Start camera →</button>
+        <video id="wallet-scan-video" playsinline muted style="display:none;width:100%;max-width:280px;margin-top:0.75rem;border:1px solid var(--line);border-radius:2px"></video>
+        <div id="wallet-scan-status" style="font-size:0.78rem;color:var(--ink-mute);margin-top:0.5rem"></div>
       </div>
 
       {{/* Paste */}}
@@ -47,15 +53,15 @@
           <textarea id="offer-paste" name="offer_uri" rows="3" class="mono"
                     placeholder="openid-credential-offer://?credential_offer_uri=https://…"
                     style="font-size:0.78rem;background:var(--bg);border:1px solid var(--line);padding:0.6rem;color:var(--ink);font-family:'JetBrains Mono',monospace;border-radius:2px;resize:vertical"></textarea>
-          <div class="btn-row" style="margin:0">
-            <button class="btn small" type="submit">Process offer →</button>
-            <button class="btn ghost small"
-                    type="button"
-                    hx-post="/holder/wallet/example"
-                    hx-target="#offer-paste"
-                    hx-swap="outerHTML">Paste example</button>
-          </div>
+          <button class="btn small" type="submit">Process offer →</button>
         </form>
+      </div>
+
+      {{/* Respond to verifier request — entry point for OID4VP presentation */}}
+      <div style="background:var(--bg-elev);border:1px solid var(--line);padding:1.25rem;border-radius:2px">
+        <h4 style="font-family:'Josefin Sans',sans-serif;font-weight:500;font-size:1.1rem;margin-bottom:0.25rem">Respond to a verifier</h4>
+        <p style="font-size:0.82rem;color:var(--ink-soft);margin-bottom:0.75rem">Got an <span class="mono">openid4vp://</span> link or QR from a verifier? Pick a held credential and submit the presentation.</p>
+        <a href="/holder/present" class="btn small ghost">Open presentation form →</a>
       </div>
 
       {{/* Inbox note */}}

@@ -1,20 +1,19 @@
 // Package backend defines the Adapter interface that the handlers depend on.
-// Implement this interface to connect a real backend (walt.id, Inji Certify,
-// Inji Verify, or your own).
+// Implement this interface to connect a real backend.
 //
 // Every request and response type is in this package. Domain types (DPG,
 // Schema, Credential, ...) live in vctypes.
 //
-// To plug in your backend:
+// To plug in a backend:
 //
 //	type MyAdapter struct { apiURL string; token string }
 //	func (a *MyAdapter) ListIssuerDpgs(ctx context.Context) (map[string]vctypes.DPG, error) { ... }
 //	// ... implement every method ...
 //
-//	// Then in cmd/server/main.go:
-//	h := &handlers.H{ Adapter: myadapter.New(url, token), ... }
+//	// Then register the adapter in config/backends.json under a type string
+//	// recognised by internal/adapters/factory.
 //
-// See INTEGRATION.md for endpoint-level mapping per DPG vendor.
+// See INTEGRATION.md for endpoint-level mapping per configured DPG.
 package backend
 
 import (
@@ -105,6 +104,19 @@ type Adapter interface {
 	// Return the claimed credential with Status="accepted".
 	ClaimCredential(ctx context.Context, cred vctypes.Credential) (vctypes.Credential, error)
 
+	// PresentCredential drives the holder side of OID4VP: the holder picks a
+	// held credential (credID) and hands it to the verifier named in the
+	// request URI. Return a PresentCredentialResult the UI can surface back to
+	// the operator. Adapters for verifier-only or issuer-only DPGs return
+	// ErrNotApplicable.
+	PresentCredential(ctx context.Context, req PresentCredentialRequest) (PresentCredentialResult, error)
+
+	// BootstrapOffers returns offer URIs generated from live backends. Called
+	// once at startup (per issuer DPG) to replace hardcoded fixtures. Adapters
+	// that can't or shouldn't issue speculative demo credentials return an
+	// empty slice + nil error.
+	BootstrapOffers(ctx context.Context) ([]string, error)
+
 	// --- Verifier ---
 
 	// ListOID4VPTemplates returns preset presentation requests the verifier can issue.
@@ -159,7 +171,12 @@ type IssueAsPDFResult struct {
 type IssueBulkRequest struct {
 	IssuerDpg string
 	Schema    vctypes.Schema
-	RowCount  int // number of rows in the input CSV (stand-in for actual row data in this prototype)
+	// Rows holds the parsed CSV body — one map of field-name→value per row.
+	// Adapters iterate Rows, call the underlying issuer per row, and return an
+	// aggregated IssueBulkResult. RowCount mirrors len(Rows) and stays present
+	// for backward compatibility with templates that just want a total.
+	Rows     []map[string]string
+	RowCount int
 }
 
 // IssueBulkResult summarizes a bulk-issue operation.
@@ -192,7 +209,23 @@ type PresentationRequestResult struct {
 type DirectVerifyRequest struct {
 	VerifierDpg    string
 	Method         string // "scan" | "upload" | "paste"
-	CredentialData string // raw credential for paste; empty for scan/upload in this prototype
+	CredentialData string // raw credential string — decoded QR payload for scan, extracted QR for upload, raw JWT/VC for paste
+}
+
+// PresentCredentialRequest is the input to PresentCredential.
+type PresentCredentialRequest struct {
+	HolderDpg      string
+	CredentialID   string // id of a credential already in the holder's wallet
+	RequestURI     string // the openid4vp:// URI the holder received
+	DisclosedClaim []string // optional: subset of claims to disclose for SD-JWT VC
+}
+
+// PresentCredentialResult describes the outcome of a holder-side presentation.
+type PresentCredentialResult struct {
+	Success       bool
+	Method        string // human-readable summary, e.g. "OID4VP · selective over SD-JWT VC"
+	SharedClaims  []string
+	VerifierState string // echo of the verifier's state/correlation token, if any
 }
 
 // VerificationResult is the output of both FetchPresentationResult and VerifyDirect.

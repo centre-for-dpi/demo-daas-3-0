@@ -1,6 +1,6 @@
 {{define "content_redirect_notice"}}
 <section class="view active">
-  <div class="section-label"><span class="num">↗</span><span class="caps">External redirect</span></div>
+  <div class="section-label"><span class="num">↗</span><span class="caps">{{t "External redirect" $.Lang}}</span></div>
   <h1 class="page-title">Opening<br><em>{{.Body.Vendor}}</em>.</h1>
 
   <div class="redirect-card">
@@ -10,10 +10,26 @@
     <p style="font-size:0.85rem;color:var(--ink-mute);margin-bottom:1.25rem;border-left:2px solid var(--line);padding-left:0.75rem"><strong>Caveats:</strong> {{.Body.Caveats}}</p>
     <div class="btn-row">
       <a href="/" class="btn ghost">← Back</a>
-      <button class="btn" onclick="toast('In a real deployment this opens {{.Body.Vendor}} in a new tab')">Open {{.Body.Vendor}} →</button>
+      {{if .Body.UIURL}}
+        <a class="btn" href="{{.Body.UIURL}}" target="_blank" rel="noopener">Open {{.Body.Vendor}} ↗</a>
+      {{else}}
+        <button class="btn" onclick="toast('No external UI URL configured for {{.Body.Vendor}}')">Open {{.Body.Vendor}} →</button>
+      {{end}}
     </div>
   </div>
 
-  <p style="margin-top:2rem;font-size:0.82rem;color:var(--ink-mute);max-width:64ch">In a real deployment, this is where your app hands off to the vendor's own UI (via an OAuth-style redirect or a deep-link). The session state you built up in Verifiably persists; when the user returns, they're back in the flow where they left off.</p>
+  {{if .Body.Capabilities}}
+  <div class="redirect-card" style="margin-top:1.5rem">
+    <div class="caps">What happens in the external UI</div>
+    {{range .Body.Capabilities}}
+      <div style="margin-bottom:0.75rem">
+        <strong>{{.Title}}</strong>
+        <p style="font-size:0.85rem;color:var(--ink-soft);margin:0.25rem 0 0">{{.Body}}</p>
+      </div>
+    {{end}}
+  </div>
+  {{end}}
+
+  <p style="margin-top:2rem;font-size:0.82rem;color:var(--ink-mute);max-width:64ch">The holder's credentials live inside the external wallet. Verifiably-go can start or continue a flow (OID4VCI offer or OID4VP presentation request) and reference it here; the actual acceptance/presentation happens in the other tab.</p>
 </section>
 {{end}}

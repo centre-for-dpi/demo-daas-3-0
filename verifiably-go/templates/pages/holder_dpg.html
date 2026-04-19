@@ -1,6 +1,6 @@
 {{define "content_holder_dpg"}}
 <section class="view active">
-  <div class="section-label"><span class="num">03</span><span class="caps">Holder · Pick a wallet</span></div>
+  <div class="section-label"><span class="num">03</span><span class="caps">{{t "Holder · Pick a wallet" $.Lang}}</span></div>
   <h1 class="page-title">Choose a<br><em>wallet</em>.</h1>
   <p class="subtitle">The <span class="mono">API-based</span> wallet runs inline in this UI. The <span class="mono">Redirected</span> wallet opens in its own app — you'll be handed off after selection.</p>
 
@@ -42,12 +42,13 @@
 {{/* Shared card partial for holder + verifier DPG pickers. Takes {Vendor, DPG, Expanded, Role} */}}
 <button type="button"
         class="dpg-card {{if eq .Vendor .Expanded}}expanded{{end}}"
+        data-vendor="{{.Vendor}}"
         hx-post="/{{.Role}}/dpg/toggle"
         hx-vals='{"vendor": "{{.Vendor}}"}'
         hx-target="#{{.Role}}-dpg-grid"
         hx-swap="innerHTML"
         aria-expanded="{{if eq .Vendor .Expanded}}true{{else}}false{{end}}">
-  <div class="dpg-head">
+  <div class="dpg-card-head dpg-head">
     <div>
       <h3>{{.DPG.Vendor}}</h3>
       <span class="dpg-tag">{{.DPG.Tag}}</span>
@@ -77,6 +78,19 @@
       <div class="cap-label">Caveats</div>
       <div class="cap-value"><span class="plain" style="color:var(--warn);font-style:normal">⚠ {{.DPG.Caveats}}</span></div>
     </div>
+    {{if .DPG.Capabilities}}
+    <div class="capability">
+      <div class="cap-label">What you'll experience</div>
+      <div class="cap-value capability-list">
+        {{range .DPG.Capabilities}}
+          <div class="capability-item" data-kind="{{.Kind}}" data-key="{{.Key}}">
+            <strong>{{.Title}}</strong>
+            <span class="plain">{{.Body}}</span>
+          </div>
+        {{end}}
+      </div>
+    </div>
+    {{end}}
   </div>
 </button>
 {{end}}

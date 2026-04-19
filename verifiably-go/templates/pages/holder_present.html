@@ -1,84 +1,74 @@
 {{define "content_holder_present"}}
 <section class="view active">
-  <div class="section-label"><span class="num">05</span><span class="caps">Holder · Present</span></div>
+  <div class="section-label"><span class="num">05</span><span class="caps">{{t "Holder · Present" $.Lang}}</span></div>
   <h1 class="page-title">Present a<br><em>credential</em>.</h1>
-  <p class="subtitle">A verifier has asked for a credential. Show them one from your wallet by scanning their QR or pasting an <span class="mono">openid4vp://</span> request link.</p>
+  <p class="subtitle">Paste the verifier's <span class="mono">openid4vp://</span> request (or any OID4VP link), pick a credential from your wallet, and submit the presentation.</p>
 
-  <div class="split" style="align-items:flex-start;margin-top:2rem">
-
-    {{/* Scan verifier QR */}}
-    <div style="background:var(--bg-elev);border:1px solid var(--line);padding:1.75rem;border-radius:2px">
-      <h4 style="font-family:'Josefin Sans',sans-serif;font-weight:500;font-size:1.2rem;margin-bottom:0.5rem">Scan verifier QR</h4>
-      <p style="font-size:0.85rem;color:var(--ink-soft);margin-bottom:1rem">Cross-device — opens camera in a real wallet.</p>
-      <button class="btn"
-              hx-post="/holder/present/simulate"
-              hx-target="#modal-root"
-              hx-swap="innerHTML">Simulate scan →</button>
-    </div>
-
-    {{/* Paste OID4VP */}}
-    <div style="background:var(--bg-elev);border:1px solid var(--line);padding:1.75rem;border-radius:2px">
-      <h4 style="font-family:'Josefin Sans',sans-serif;font-weight:500;font-size:1.2rem;margin-bottom:0.5rem">Paste OID4VP link</h4>
-      <p style="font-size:0.85rem;color:var(--ink-soft);margin-bottom:1rem">Same-device — for <span class="mono">openid4vp://</span> URIs.</p>
-      <textarea rows="3" class="mono"
+  <form hx-post="/holder/present/submit"
+        hx-target="#present-result"
+        hx-swap="innerHTML"
+        style="margin-top:2rem;display:flex;flex-direction:column;gap:1rem">
+    <div>
+      <label class="caps" style="display:block;margin-bottom:0.5rem">1. Verifier's request URI</label>
+      <textarea name="request_uri" rows="3" class="mono" required
                 placeholder="openid4vp://?client_id=…&request_uri=…"
-                style="width:100%;font-size:0.78rem;background:var(--bg);border:1px solid var(--line);padding:0.6rem;color:var(--ink);font-family:'JetBrains Mono',monospace;border-radius:2px;resize:vertical;margin-bottom:0.75rem"></textarea>
-      <button class="btn"
-              hx-post="/holder/present/simulate"
-              hx-target="#modal-root"
-              hx-swap="innerHTML">Review request →</button>
+                style="width:100%;font-size:0.78rem;background:var(--bg);border:1px solid var(--line);padding:0.6rem;color:var(--ink);font-family:'JetBrains Mono',monospace;border-radius:2px;resize:vertical"></textarea>
     </div>
 
-  </div>
-
-  <div style="background:var(--bg-elev);border:1px solid var(--line);border-left:3px solid var(--warn);padding:1.25rem;margin-top:2rem;border-radius:2px">
-    <div class="caps" style="font-size:0.65rem;color:var(--warn);margin-bottom:0.25rem">OID4VP v1.0 support at this DPG version</div>
-    <p style="font-size:0.85rem;color:var(--ink-soft);margin:0">
-      {{if eq .Session.HolderDpg "walt.id Web Wallet"}}
-        OID4VP v1.0 wallet support is still in progress at Community Stack v0.18.2. Older OID4VP (Presentation Exchange-based) works today.
+    <div>
+      <label class="caps" style="display:block;margin-bottom:0.5rem">2. Credential from your wallet</label>
+      {{if .Body.Credentials}}
+        <select name="credential_id" required style="width:100%;padding:0.6rem;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:2px">
+          {{range .Body.Credentials}}
+            <option value="{{.ID}}">{{.Title}} — {{.Issuer}}</option>
+          {{end}}
+        </select>
       {{else}}
-        Inji Web Wallet v0.16.0 handles OID4VP via the Inji app itself — this page is a reference entry point; real flows happen inside the app.
+        <div style="padding:0.75rem;background:var(--bg-elev);border:1px dashed var(--line);border-radius:2px;font-size:0.85rem;color:var(--ink-mute)">
+          No credentials in your wallet yet. <a href="/holder/wallet" style="color:var(--accent)">Accept an offer first →</a>
+        </div>
       {{end}}
-    </p>
-  </div>
+    </div>
 
-  <div class="btn-row" style="margin-top:2rem">
-    <a href="/holder/wallet" class="btn ghost">← Back to wallet</a>
+    <div class="btn-row" style="margin:0">
+      <a href="/holder/wallet" class="btn ghost">← Back to wallet</a>
+      <button class="btn" type="submit" {{if not .Body.Credentials}}disabled{{end}}>Send presentation →</button>
+    </div>
+  </form>
+
+  <div id="present-result" style="margin-top:1.5rem"></div>
+
+  {{with .Body.HolderDpgObj}}
+    {{range .Capabilities}}
+      {{if eq .Kind "limitation"}}
+  <div style="background:var(--bg-elev);border:1px solid var(--line);border-left:3px solid var(--warn);padding:1.25rem;margin-top:2rem;border-radius:2px">
+    <div class="caps" style="font-size:0.65rem;color:var(--warn);margin-bottom:0.25rem">{{.Title}}</div>
+    <p style="font-size:0.85rem;color:var(--ink-soft);margin:0">{{.Body}}</p>
   </div>
+      {{end}}
+    {{end}}
+  {{end}}
 </section>
 {{end}}
 
-{{define "fragment_present_modal"}}
-<div class="modal-mask" onclick="if(event.target===this) this.remove()">
-  <div class="modal">
-    <button class="close" onclick="this.closest('.modal-mask').remove()">×</button>
-    <h2>Verifier request</h2>
-
-    <div class="caps">Nursing Council of Kenya</div>
-    <p style="font-size:0.92rem;color:var(--ink-soft);margin:0.5rem 0 1.5rem">
-      Is asking you to prove <strong>over 18</strong>.
-      <br>Disclosure: <span class="mono">selective — only age_over_18 is shared</span>.
-    </p>
-
-    <div style="background:var(--bg-sunk);border:1px dashed var(--line);padding:1rem;border-radius:2px;margin-bottom:1.5rem">
-      <div class="caps" style="font-size:0.65rem;margin-bottom:0.5rem">Matching credential in your wallet</div>
-      <div style="font-family:'Josefin Sans',sans-serif;font-weight:500;font-size:1.05rem">Digital ID Card</div>
-      <div style="font-size:0.78rem;color:var(--ink-mute)">only the <span class="mono">age_over_18</span> claim will be sent</div>
+{{define "fragment_present_result"}}
+<div class="verify-result {{if .Success}}valid{{else}}invalid{{end}}">
+  <div class="verify-banner {{if .Success}}valid{{else}}invalid{{end}}">
+    <span class="icon">{{if .Success}}✓{{else}}✕{{end}}</span>
+    <div>
+      <h3>{{if .Success}}Presentation sent{{else}}Presentation failed{{end}}</h3>
+      <p>{{.Method}}</p>
     </div>
-
-    <div class="btn-row">
-      <button class="btn"
-              onclick="toast('Presentation sent (simulated)');this.closest('.modal-mask').remove()">
-        Share this claim
-      </button>
-      <button class="btn ghost" onclick="toast('Request declined');this.closest('.modal-mask').remove()">
-        Decline
-      </button>
-    </div>
-
-    <p style="font-size:0.75rem;color:var(--ink-mute);margin-top:1rem">
-      In a real wallet, this dialog is produced by the wallet app after parsing the OID4VP request (<span class="mono">request_uri</span> dereferenced, DCQL evaluated against held credentials, matching credential selected).
-    </p>
   </div>
+  {{if .SharedClaims}}
+    <div style="margin-top:0.75rem;font-size:0.85rem;color:var(--ink-soft)">
+      Shared claims: {{range $i, $c := .SharedClaims}}{{if $i}}, {{end}}<span class="mono">{{$c}}</span>{{end}}
+    </div>
+  {{end}}
+  {{if .VerifierState}}
+    <div style="margin-top:0.5rem;font-size:0.78rem;color:var(--ink-mute)">
+      Verifier correlation token: <span class="mono">{{.VerifierState}}</span>
+    </div>
+  {{end}}
 </div>
 {{end}}

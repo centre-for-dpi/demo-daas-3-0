@@ -1,6 +1,6 @@
 {{define "content_issuer_issue"}}
 <section class="view active">
-  <div class="section-label"><span class="num">06</span><span class="caps">Issuer · Issue</span></div>
+  <div class="section-label"><span class="num">06</span><span class="caps">{{t "Issuer · Issue" $.Lang}}</span></div>
   <h1 class="page-title">Issue a<br><em>{{.Body.Schema.Name}}</em>.</h1>
   <p class="subtitle">
     <span class="mono">{{.Body.IssuerDpg}}</span> ·
@@ -21,34 +21,16 @@
                 hx-target="#single-form-wrap"
                 hx-swap="outerHTML">Enter manually</button>
 
-        {{if eq .Body.IssuerDpg "walt.id"}}
-          <button type="button"
-                  class="chip {{if eq .Body.SingleSource "api"}}active{{end}}"
-                  hx-post="/issuer/issue/source"
-                  hx-vals='{"source": "api"}'
-                  hx-target="#single-form-wrap"
-                  hx-swap="outerHTML">Fetch from external API</button>
-        {{end}}
-
-        {{if eq .Body.IssuerDpg "Inji Certify"}}
-          <button type="button"
-                  class="chip {{if eq .Body.SingleSource "mosip"}}active{{end}}"
-                  hx-post="/issuer/issue/source"
-                  hx-vals='{"source": "mosip"}'
-                  hx-target="#single-form-wrap"
-                  hx-swap="outerHTML">MOSIP Identity Plugin</button>
-          <button type="button"
-                  class="chip {{if eq .Body.SingleSource "db"}}active{{end}}"
-                  hx-post="/issuer/issue/source"
-                  hx-vals='{"source": "db"}'
-                  hx-target="#single-form-wrap"
-                  hx-swap="outerHTML">Custom data provider plugin</button>
-          <button type="button"
-                  class="chip {{if eq .Body.SingleSource "pdi"}}active{{end}}"
-                  hx-post="/issuer/issue/source"
-                  hx-vals='{"source": "pdi"}'
-                  hx-target="#single-form-wrap"
-                  hx-swap="outerHTML">Presentation-during-issuance</button>
+        {{range .Body.Sources}}
+          {{if ne .Key "manual"}}
+            <button type="button"
+                    class="chip {{if eq $.Body.SingleSource .Key}}active{{end}}"
+                    hx-post="/issuer/issue/source"
+                    hx-vals='{"source": "{{.Key}}"}'
+                    hx-target="#single-form-wrap"
+                    hx-swap="outerHTML"
+                    title="{{.Hint}}">{{.Label}}</button>
+          {{end}}
         {{end}}
       </div>
     </div>
@@ -67,19 +49,25 @@
     <div id="issue-result"></div>
 
   {{else}}
-    {{/* ----- BULK CSV ----- */}}
-    <div style="margin-top:2rem">
+    {{/* ----- BULK CSV — real upload, parsed per row, issued per row ----- */}}
+    <form id="bulk-form"
+          hx-post="/issuer/issue/csv"
+          hx-target="#csv-preview"
+          hx-swap="innerHTML"
+          hx-encoding="multipart/form-data"
+          style="margin-top:2rem">
       <div class="caps" style="margin-bottom:0.75rem">CSV upload</div>
-      <div style="background:var(--bg-elev);border:2px dashed var(--line);padding:2.5rem 2rem;border-radius:2px;text-align:center">
-        <div class="display" style="font-size:1.1rem;color:var(--ink-soft);margin-bottom:0.5rem">Drop a CSV here</div>
-        <div style="font-size:0.82rem;color:var(--ink-mute);margin-bottom:1rem">or</div>
-        <button class="btn ghost"
-                hx-post="/issuer/issue/csv"
-                hx-target="#csv-preview"
-                hx-swap="innerHTML">Use example CSV (247 rows)</button>
-        <div style="font-size:0.75rem;color:var(--ink-mute);margin-top:1rem">Expected columns: <span class="mono">{{range .Body.Fields}}{{.}}, {{end}}</span></div>
+      <div style="background:var(--bg-elev);border:2px dashed var(--line);padding:2.5rem 2rem;border-radius:2px">
+        <input type="file" name="csv_file" accept=".csv,text/csv" required
+               style="display:block;margin:0 auto 1rem;max-width:320px">
+        <div style="text-align:center;margin-bottom:1rem">
+          <button class="btn" type="submit">Upload & issue →</button>
+        </div>
+        <div style="font-size:0.75rem;color:var(--ink-mute);text-align:center">
+          Header row required. Expected columns: <span class="mono">{{range $i, $f := .Body.Fields}}{{if $i}}, {{end}}{{$f}}{{end}}</span>
+        </div>
       </div>
-    </div>
+    </form>
 
     <div id="csv-preview"></div>
 
@@ -95,10 +83,23 @@
   <form id="single-form-el" style="margin-top:1.5rem">
     {{if eq .SingleSource "manual"}}
       <div class="form-grid">
-        {{range .Fields}}
+        {{/* Iterate FieldSpecs so the input type reflects the declared
+             datatype/format. We do NOT set the HTML required attr here:
+             hx-post goes through form.requestSubmit() which triggers the
+             browser's validity report, which blocks the submit with no
+             visible feedback. Server-side validation in SubmitIssue posts
+             a toast listing missing required fields — which is what we
+             want the user to see. */}}
+        {{range .Schema.FieldsSpec}}
           <div class="field">
-            <label>{{replaceUnderscore .}}</label>
-            <input type="text" name="field_{{.}}" value="{{index $.FieldValues .}}">
+            <label>{{replaceUnderscore .Name}}{{if .Required}} *{{end}}</label>
+            <input
+              type="{{if eq .Format "date"}}date{{else if eq .Format "uri"}}url{{else if eq .Datatype "number"}}number{{else if eq .Datatype "integer"}}number{{else if eq .Datatype "boolean"}}checkbox{{else}}text{{end}}"
+              {{if eq .Datatype "integer"}}step="1"{{end}}
+              name="field_{{.Name}}"
+              value="{{index $.FieldValues .Name}}"
+              data-required="{{if .Required}}true{{else}}false{{end}}"
+              placeholder="{{if eq .Format "date"}}YYYY-MM-DD{{else if eq .Format "uri"}}https://…{{end}}">
           </div>
         {{end}}
       </div>
@@ -118,38 +119,23 @@
       </div>
       <p style="font-size:0.82rem;color:var(--ink-mute)">The issuer will GET <span class="mono">{api_url}</span> (substituting <span class="mono">{id}</span>) and map the response into the credential fields.</p>
 
-    {{else if eq .SingleSource "mosip"}}
-      <div class="field">
-        <label>MOSIP environment</label>
-        <input type="text" name="mosip_env" value="https://api.collab.mosip.net">
-      </div>
-      <div class="field">
-        <label>UIN / VID</label>
-        <input type="text" name="uin" value="3547-0013-9920">
-      </div>
-      <p style="font-size:0.82rem;color:var(--ink-mute)">Inji Certify's MOSIP Identity Plugin (new in v0.14.0) resolves the UIN against the MOSIP IDA service and pulls attested identity attributes.</p>
-
-    {{else if eq .SingleSource "db"}}
-      <div class="field">
-        <label>Data provider plugin</label>
-        <select name="plugin">
-          <option>Sunbird RC — Registry &amp; Credentialing</option>
-          <option>Custom REST plugin</option>
-          <option>Custom JDBC plugin</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>Subject lookup key</label>
-        <input type="text" name="lookup_key" value="student_id=2024-4821">
-      </div>
-      <p style="font-size:0.82rem;color:var(--ink-mute)">Inji Certify supports pluggable data providers. Configure one at the Certify deployment, and Certify will use it to resolve subject data at issuance time.</p>
-
-    {{else if eq .SingleSource "pdi"}}
-      <div class="field">
-        <label>Required input credential type</label>
-        <input type="text" name="input_type" value="GovernmentID">
-      </div>
-      <p style="font-size:0.82rem;color:var(--ink-mute)">Presentation-during-issuance (new in Certify v0.14.0) asks the holder to present an existing VC before issuing this new one. Their wallet will prompt them for a matching credential as part of the offer flow.</p>
+    {{else}}
+      {{/* Non-manual source: look up the chip's capability by key and show
+           its human-readable hint. The adapter's PrefillSubjectFields call
+           populates the subject values backing the form. */}}
+      {{$src := .SingleSource}}
+      {{range .Sources}}
+        {{if eq .Key $src}}
+          <div class="field">
+            <label>{{.Label}}</label>
+            <p style="font-size:0.82rem;color:var(--ink-mute);margin:0.25rem 0">{{.Hint}}</p>
+          </div>
+          <div class="field">
+            <label>Subject lookup key</label>
+            <input type="text" name="lookup_key" placeholder="key for this source">
+          </div>
+        {{end}}
+      {{end}}
     {{end}}
   </form>
 </div>
@@ -160,7 +146,9 @@
   <div class="caps">OID4VCI offer ready</div>
   <h3 style="margin:0.5rem 0; font-family:'Josefin Sans',sans-serif; font-weight:500; font-size:1.3rem">Credential offer generated</h3>
   <div class="qr-wrap">
-    <div class="qr-box"></div>
+    <img class="qr-img" src="/qr?text={{.OfferURI | urlquery}}&size=280"
+         alt="OID4VCI offer QR code"
+         style="display:block;width:280px;height:280px;background:#fff;padding:0.5rem;border:1px solid var(--line);border-radius:2px">
     <div style="margin-top:1rem; font-size:0.85rem; color:var(--ink-soft)">Have the holder scan with their wallet, or send them the link:</div>
     <div class="link-display">{{.OfferURI}}</div>
   </div>

@@ -1,21 +1,21 @@
 {{define "content_issuer_dpg"}}
 <section class="view active">
-  <div class="section-label"><span class="num">03</span><span class="caps">Issuer · Pick a DPG</span></div>
-  <h1 class="page-title">Choose your <em>issuing</em><br>backend.</h1>
-  <p class="subtitle">Each DPG below is an open-source issuer stack. Capability claims reflect the specific versions noted on each card. Click a card to see flows, supported formats, and known caveats.</p>
+  <div class="section-label"><span class="num">03</span><span class="caps">{{t "Issuer · Pick a DPG" $.Lang}}</span></div>
+  <h1 class="page-title">{{t "Choose your" $.Lang}} <em>{{t "issuing" $.Lang}}</em><br>{{t "backend." $.Lang}}</h1>
+  <p class="subtitle">{{t "Each DPG below is an open-source issuer stack. Capability claims reflect the specific versions noted on each card. Click a card to see flows, supported formats, and known caveats." $.Lang}}</p>
 
   <div id="issuer-dpg-grid" class="dpg-grid">
     {{template "fragment_issuer_dpg_grid" .Body}}
   </div>
 
   <div class="btn-row" style="margin-top:2rem">
-    <a href="/auth" class="btn ghost">← Back</a>
+    <a href="/auth" class="btn ghost">{{t "← Back" $.Lang}}</a>
     <button type="button"
             id="issuer-dpg-continue"
             class="btn {{if not .Body.Expanded}}btn-disabled{{end}}"
             hx-post="/issuer/dpg"
             hx-target="body">
-      Continue →
+      {{t "Continue →" $.Lang}}
     </button>
   </div>
 </section>
@@ -26,12 +26,13 @@
 {{range $vendor, $dpg := .Dpgs}}
   <button type="button"
           class="dpg-card {{if eq $vendor $.Expanded}}expanded{{end}}"
+          data-vendor="{{$vendor}}"
           hx-post="/issuer/dpg/toggle"
           hx-vals='{"vendor": "{{$vendor}}"}'
           hx-target="#issuer-dpg-grid"
           hx-swap="innerHTML"
           aria-expanded="{{if eq $vendor $.Expanded}}true{{else}}false{{end}}">
-    <div class="dpg-head">
+    <div class="dpg-card-head dpg-head">
       <div>
         <h3>{{$dpg.Vendor}}</h3>
         <span class="dpg-tag">{{$dpg.Tag}}</span>
@@ -68,6 +69,19 @@
         <div class="cap-label">Caveats</div>
         <div class="cap-value"><span class="plain" style="color:var(--warn);font-style:normal">⚠ {{$dpg.Caveats}}</span></div>
       </div>
+      {{if $dpg.Capabilities}}
+      <div class="capability">
+        <div class="cap-label">What you'll experience</div>
+        <div class="cap-value capability-list">
+          {{range $dpg.Capabilities}}
+            <div class="capability-item" data-kind="{{.Kind}}" data-key="{{.Key}}">
+              <strong>{{.Title}}</strong>
+              <span class="plain">{{.Body}}</span>
+            </div>
+          {{end}}
+        </div>
+      </div>
+      {{end}}
     </div>
   </button>
 {{end}}
