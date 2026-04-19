@@ -1,52 +1,55 @@
 {
-  "farmerCredentialRenderOrder": [
-    "fullName",
-    "farmerID",
-    "dateOfBirth",
-    "gender",
-    "mobileNumber",
-    "state",
-    "district",
-    "villageOrTown",
-    "postalCode",
-    "landArea",
-    "landOwnershipType",
-    "primaryCropType",
-    "secondaryCropType"
-  ],
-  "farmerLandCredentialRenderOrder": [
-    "fullName",
-    "farmerID",
-    "landArea",
-    "landOwnershipType"
-  ],
-  "MosipVerifiableCredentialRenderOrder": [
-    "fullName",
-    "gender",
-    "dateOfBirth",
-    "phone",
-    "email",
-    "addressLine1",
-    "city",
-    "province",
-    "postalCode"
-  ],
-  "InsuranceCredentialRenderOrder": [
-    "fullName",
-    "policyNumber",
-    "validFrom",
-    "validUntil"
-  ],
-  "IncomeTaxAccountCredentialRenderOrder": [
-    "fullName",
-    "panNumber"
-  ],
-  "VCRenderOrder": [
-    "fullName",
-    "name",
-    "email",
-    "phone",
-    "dateOfBirth",
-    "gender"
-  ]
+  "VCRenderOrders": {
+    "farmerCredentialRenderOrder": [
+      "fullName",
+      "farmerID",
+      "dateOfBirth",
+      "gender",
+      "mobileNumber",
+      "state",
+      "district",
+      "villageOrTown",
+      "postalCode",
+      "landArea",
+      "landOwnershipType",
+      "primaryCropType",
+      "secondaryCropType"
+    ],
+    "farmerLandCredentialRenderOrder": [
+      "fullName",
+      "farmerID",
+      "landArea",
+      "landOwnershipType"
+    ],
+    "MosipVerifiableCredentialRenderOrder": [
+      "fullName",
+      "gender",
+      "dateOfBirth",
+      "phone",
+      "email",
+      "addressLine1",
+      "city",
+      "province",
+      "postalCode"
+    ],
+    "InsuranceCredentialRenderOrder": [
+      "fullName",
+      "policyNumber",
+      "validFrom",
+      "validUntil"
+    ],
+    "IncomeTaxAccountCredentialRenderOrder": [
+      "fullName",
+      "panNumber"
+    ],
+    "VCRenderOrder": [
+      "fullName",
+      "name",
+      "email",
+      "phone",
+      "dateOfBirth",
+      "gender"
+    ]
+  },
+  "verifiableClaims": []
 }
