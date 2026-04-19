@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"html/template"
 	"net/http"
 	"strings"
@@ -9,6 +10,14 @@ import (
 	"github.com/verifiably/verifiably-go/backend"
 	"github.com/verifiably/verifiably-go/vctypes"
 )
+
+// holderCtx wraps r.Context() with the selected holder DPG so the Registry
+// can route holder-scoped adapter calls when multiple holders are registered.
+// Used by every wallet.go handler that touches the Adapter; safe to call even
+// when sess.HolderDpg is "" (WithHolderDpg is a no-op).
+func holderCtx(r *http.Request, sess *Session) context.Context {
+	return backend.WithHolderDpg(r.Context(), sess.HolderDpg)
+}
 
 // ShowWallet renders the wallet home (receive + inbox + held credentials).
 // First visit lazy-loads held credentials from the adapter.
@@ -19,7 +28,7 @@ func (h *H) ShowWallet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if sess.WalletCreds == nil {
-		creds, err := h.Adapter.ListWalletCredentials(r.Context())
+		creds, err := h.Adapter.ListWalletCredentials(holderCtx(r, sess))
 		if err != nil {
 			h.errorToast(w, r, err.Error())
 			return
@@ -43,7 +52,7 @@ func (h *H) ScanOffer(w http.ResponseWriter, r *http.Request) {
 	}
 	uri := examples[sess.NextExampleIdx%len(examples)]
 	sess.NextExampleIdx++
-	cred, err := h.Adapter.ParseOffer(r.Context(), uri)
+	cred, err := h.Adapter.ParseOffer(holderCtx(r, sess), uri)
 	if err != nil {
 		h.errorToast(w, r, err.Error())
 		return
@@ -71,7 +80,7 @@ func (h *H) PasteOffer(w http.ResponseWriter, r *http.Request) {
 		h.renderFragment(w, r, "fragment_wallet_body", sess)
 		return
 	}
-	cred, err := h.Adapter.ParseOffer(r.Context(), raw)
+	cred, err := h.Adapter.ParseOffer(holderCtx(r, sess), raw)
 	if err != nil {
 		sess.LastWalletError = err.Error()
 		h.renderFragment(w, r, "fragment_wallet_body", sess)
@@ -121,7 +130,7 @@ func (h *H) AcceptCred(w http.ResponseWriter, r *http.Request) {
 	}
 	pending := sess.WalletPending[idx]
 	sess.WalletPending = append(sess.WalletPending[:idx], sess.WalletPending[idx+1:]...)
-	claimed, err := h.Adapter.ClaimCredential(r.Context(), pending)
+	claimed, err := h.Adapter.ClaimCredential(holderCtx(r, sess), pending)
 	if err != nil {
 		h.errorToast(w, r, err.Error())
 		return
@@ -165,7 +174,7 @@ func (h *H) ShowPresent(w http.ResponseWriter, r *http.Request) {
 	// an "accept an offer first" hint in that case).
 	creds := sess.WalletCreds
 	if len(creds) == 0 {
-		if c, err := h.Adapter.ListWalletCredentials(r.Context()); err == nil {
+		if c, err := h.Adapter.ListWalletCredentials(holderCtx(r, sess)); err == nil {
 			creds = c
 		}
 	}

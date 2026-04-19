@@ -259,14 +259,21 @@ func (r *Registry) IssueBulk(ctx context.Context, req backend.IssueBulkRequest) 
 	return ad.IssueBulk(ctx, req)
 }
 
-// currentHolder is the active holder DPG; the registry tracks one-per-process
-// for now because handlers don't thread it through wallet calls. M2 may switch
-// to a context-value approach if multiple wallets per session become a thing.
-func (r *Registry) currentHolder() (backend.Adapter, error) {
+// currentHolder returns the adapter for the holder DPG attached to ctx via
+// WithHolderDpg. If ctx has no holder and exactly one holder is registered,
+// that holder is the default (so a single-DPG deploy doesn't need handlers
+// to wrap every call). If ctx has no holder and multiple are registered,
+// the call is ambiguous and we error — handlers MUST wrap when running in
+// scenario=all.
+func (r *Registry) currentHolder(ctx context.Context) (backend.Adapter, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	// Prefer a single configured holder; if multiple, caller must set via
-	// ListWalletCredentialsForHolder (added when we wire the UI through).
+	if vendor := backend.HolderDpgFromContext(ctx); vendor != "" {
+		if ad, ok := r.holders[vendor]; ok {
+			return ad, nil
+		}
+		return nil, fmt.Errorf("%w: holder %q not registered", backend.ErrUnknownDPG, vendor)
+	}
 	if len(r.holders) == 1 {
 		for _, ad := range r.holders {
 			return ad, nil
@@ -276,7 +283,7 @@ func (r *Registry) currentHolder() (backend.Adapter, error) {
 }
 
 func (r *Registry) ListWalletCredentials(ctx context.Context) ([]vctypes.Credential, error) {
-	ad, err := r.currentHolder()
+	ad, err := r.currentHolder(ctx)
 	if err != nil {
 		// No holders configured yet — empty list beats a crash.
 		return []vctypes.Credential{}, nil
@@ -305,7 +312,7 @@ func (r *Registry) ListExampleOffers(ctx context.Context) ([]string, error) {
 }
 
 func (r *Registry) ParseOffer(ctx context.Context, offerURI string) (vctypes.Credential, error) {
-	ad, err := r.currentHolder()
+	ad, err := r.currentHolder(ctx)
 	if err != nil {
 		return vctypes.Credential{}, err
 	}
@@ -313,7 +320,7 @@ func (r *Registry) ParseOffer(ctx context.Context, offerURI string) (vctypes.Cre
 }
 
 func (r *Registry) ClaimCredential(ctx context.Context, cred vctypes.Credential) (vctypes.Credential, error) {
-	ad, err := r.currentHolder()
+	ad, err := r.currentHolder(ctx)
 	if err != nil {
 		return vctypes.Credential{}, err
 	}
