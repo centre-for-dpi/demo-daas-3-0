@@ -1,0 +1,159 @@
+{{define "content_holder_wallet"}}
+<section class="view active">
+  <div class="section-label"><span class="num">04</span><span class="caps">Holder · Wallet</span></div>
+  <h1 class="page-title">Your<br><em>wallet</em>.</h1>
+  <p class="subtitle">
+    Using <span class="mono">{{.Session.HolderDpg}}</span>. Receive a credential offer (scan a QR, paste a link, or tap an example), review it, and accept it into your wallet.
+  </p>
+
+  <div id="wallet-body">
+    {{template "fragment_wallet_body" .Session}}
+  </div>
+</section>
+{{end}}
+
+{{define "fragment_wallet_body"}}
+{{/* Takes a *Session as dot */}}
+
+<div class="split" style="align-items:flex-start;margin-top:2rem">
+  {{/* ---------- LEFT: Receive ---------- */}}
+  <div>
+    <div class="caps" style="margin-bottom:0.75rem">Receive a credential</div>
+
+    <div style="display:flex;flex-direction:column;gap:1rem">
+
+      {{/* Scan */}}
+      <div style="background:var(--bg-elev);border:1px solid var(--line);padding:1.25rem;border-radius:2px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem">
+          <div>
+            <h4 style="font-family:'Josefin Sans',sans-serif;font-weight:500;font-size:1.1rem;margin-bottom:0.25rem">Scan issuer QR</h4>
+            <p style="font-size:0.82rem;color:var(--ink-soft);margin:0">Cross-device flow — opens camera in a real wallet.</p>
+          </div>
+          <button class="btn small"
+                  hx-post="/holder/wallet/scan"
+                  hx-target="#wallet-body"
+                  hx-swap="innerHTML">Simulate scan</button>
+        </div>
+      </div>
+
+      {{/* Paste */}}
+      <div style="background:var(--bg-elev);border:1px solid var(--line);padding:1.25rem;border-radius:2px">
+        <h4 style="font-family:'Josefin Sans',sans-serif;font-weight:500;font-size:1.1rem;margin-bottom:0.25rem">Paste offer link</h4>
+        <p style="font-size:0.82rem;color:var(--ink-soft);margin-bottom:0.75rem">Same-device — for <span class="mono">openid-credential-offer://</span> URIs.</p>
+        <form hx-post="/holder/wallet/paste"
+              hx-target="#wallet-body"
+              hx-swap="innerHTML"
+              style="display:flex;flex-direction:column;gap:0.5rem">
+          <textarea id="offer-paste" name="offer_uri" rows="3" class="mono"
+                    placeholder="openid-credential-offer://?credential_offer_uri=https://…"
+                    style="font-size:0.78rem;background:var(--bg);border:1px solid var(--line);padding:0.6rem;color:var(--ink);font-family:'JetBrains Mono',monospace;border-radius:2px;resize:vertical"></textarea>
+          <div class="btn-row" style="margin:0">
+            <button class="btn small" type="submit">Process offer →</button>
+            <button class="btn ghost small"
+                    type="button"
+                    hx-post="/holder/wallet/example"
+                    hx-target="#offer-paste"
+                    hx-swap="outerHTML">Paste example</button>
+          </div>
+        </form>
+      </div>
+
+      {{/* Inbox note */}}
+      <div style="background:var(--bg-elev);border:1px solid var(--line);border-left:3px solid var(--warn);padding:1.25rem;border-radius:2px">
+        <h4 style="font-family:'Josefin Sans',sans-serif;font-weight:500;font-size:1.1rem;margin-bottom:0.25rem">Offers received</h4>
+        <p style="font-size:0.82rem;color:var(--ink-mute);margin:0;font-style:italic">
+          OID4VCI itself has no issuer→wallet push channel. Wallets that "notify" do so via their own operator backend (a walled inbox tied to the wallet account), not via the OID4VCI spec.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  {{/* ---------- RIGHT: Pending + held ---------- */}}
+  <div>
+    {{/* Pending */}}
+    {{if .WalletPending}}
+      <div class="caps" style="margin-bottom:0.75rem">
+        Pending review
+        <span class="pill warn" style="margin-left:0.5rem">{{len .WalletPending}}</span>
+      </div>
+      <div class="wallet-stack" style="margin-top:0">
+        {{range .WalletPending}}
+          {{template "_wallet_pending_card" .}}
+        {{end}}
+      </div>
+    {{end}}
+
+    {{/* Held */}}
+    <div class="caps" style="margin:{{if .WalletPending}}2rem{{else}}0{{end}} 0 0.75rem">
+      In your wallet
+      <span class="pill neutral" style="margin-left:0.5rem">{{len .WalletCreds}}</span>
+    </div>
+
+    {{if not .WalletCreds}}
+      <div class="empty" style="padding:2rem 1.5rem">
+        <div class="display">Nothing held yet.</div>
+        Receive a credential from the left to see it here.
+      </div>
+    {{else}}
+      <div class="wallet-stack" style="margin-top:0">
+        {{range .WalletCreds}}
+          {{template "_wallet_held_card" .}}
+        {{end}}
+      </div>
+      <div class="btn-row" style="margin-top:1.25rem">
+        <a href="/holder/present" class="btn ghost">Present to a verifier →</a>
+      </div>
+    {{end}}
+  </div>
+</div>
+{{end}}
+
+{{define "_wallet_pending_card"}}
+<div class="wallet-cred pending">
+  <div class="cred-meta">
+    <div>
+      <span class="caps" style="font-size:0.62rem">via {{.Source}}</span>
+      <h4>{{.Title}}</h4>
+      <div style="font-size:0.82rem;color:var(--ink-mute)">from {{.Issuer}} · <span class="mono">{{.Type}}</span></div>
+    </div>
+    <div class="btn-row" style="margin:0">
+      <button class="btn small"
+              hx-post="/holder/wallet/accept"
+              hx-vals='{"id": "{{.ID}}"}'
+              hx-target="#wallet-body"
+              hx-swap="innerHTML">Accept</button>
+      <button class="btn ghost small"
+              hx-post="/holder/wallet/reject"
+              hx-vals='{"id": "{{.ID}}"}'
+              hx-target="#wallet-body"
+              hx-swap="innerHTML">Reject</button>
+    </div>
+  </div>
+
+  <dl class="cred-rows" style="margin-top:1rem">
+    {{range $k, $v := .Fields}}
+      <dt>{{replaceUnderscore $k}}</dt>
+      <dd>{{$v}}</dd>
+    {{end}}
+  </dl>
+</div>
+{{end}}
+
+{{define "_wallet_held_card"}}
+<div class="wallet-cred accepted">
+  <div class="cred-meta">
+    <div>
+      <h4>{{.Title}}</h4>
+      <div style="font-size:0.82rem;color:var(--ink-mute)">from {{.Issuer}} · <span class="mono">{{.Type}}</span></div>
+    </div>
+    <span class="pill ok">held</span>
+  </div>
+
+  <dl class="cred-rows" style="margin-top:1rem">
+    {{range $k, $v := .Fields}}
+      <dt>{{replaceUnderscore $k}}</dt>
+      <dd>{{$v}}</dd>
+    {{end}}
+  </dl>
+</div>
+{{end}}

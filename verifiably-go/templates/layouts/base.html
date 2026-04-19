@@ -1,0 +1,50 @@
+{{define "layout"}}<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{if .Title}}{{.Title}} — {{end}}Verifiably</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@300;400;500;600;700&family=Geist:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css">
+  <script src="https://unpkg.com/htmx.org@2.0.4" defer></script>
+</head>
+<body>
+
+{{if .Debug}}
+<div class="debug-banner">
+  <span class="caps">DEBUG · mock data</span>
+  Every value on this page is hardcoded in <span class="mono">internal/mock/data.go</span>. Adapter swap seam: <span class="mono">internal/backend/adapter.go</span>. Unset <span class="mono">VERIFIABLY_DEBUG_MOCK_MARKERS</span> to hide this banner.
+</div>
+{{end}}
+
+<nav class="nav">
+  <a href="/" class="nav-brand" hx-boost="true" hx-target="#main" hx-swap="innerHTML show:window:top">Verifiably<span>.</span></a>
+  <div class="nav-right">
+    <div class="nav-crumb mono">{{.Crumb}}</div>
+    <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+      </svg>
+    </button>
+  </div>
+</nav>
+
+<main class="main" id="main">
+  {{render .ContentTemplate .}}
+</main>
+
+<footer class="foot">
+  <p>Verifiably — prototype interface. Backend-agnostic over <span class="mono">walt.id Community Stack v0.18.2</span>, <span class="mono">Inji Certify v0.14.0</span>, <span class="mono">Inji Web Wallet v0.16.0</span>, <span class="mono">Inji Verify v0.16.0</span>.</p>
+  <p style="margin-top:0.75rem;font-size:0.75rem;color:var(--ink-mute)">All data is mock. Set <span class="mono">VERIFIABLY_DEBUG_MOCK_MARKERS=1</span> to see mock-data pills.</p>
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<!-- Modal mount point for dialogs (schema JSON, PDF preview, presentation request, etc.) -->
+<div id="modal-root"></div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>{{end}}

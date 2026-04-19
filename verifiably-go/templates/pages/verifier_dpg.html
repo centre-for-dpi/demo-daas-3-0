@@ -1,0 +1,39 @@
+{{define "content_verifier_dpg"}}
+<section class="view active">
+  <div class="section-label"><span class="num">03</span><span class="caps">Verifier · Pick an engine</span></div>
+  <h1 class="page-title">Choose a<br><em>verifier</em>.</h1>
+  <p class="subtitle">The <span class="mono">API-based</span> verifier runs inline here with OID4VP v1.0 and direct verification. The <span class="mono">Redirected</span> verifier is MOSIP's hosted portal.</p>
+
+  <div id="verifier-dpg-grid" class="dpg-grid">
+    {{template "fragment_verifier_dpg_grid" .Body}}
+  </div>
+
+  <div class="btn-row" style="margin-top:2rem">
+    <a href="/auth" class="btn ghost">← Back</a>
+    <button type="button"
+            id="verifier-dpg-continue"
+            class="btn {{if not .Body.Expanded}}btn-disabled{{end}}"
+            hx-post="/verifier/dpg"
+            hx-target="body">
+      Continue →
+    </button>
+  </div>
+</section>
+{{end}}
+
+{{define "fragment_verifier_dpg_grid"}}
+{{range $vendor, $dpg := .Dpgs}}
+  {{template "_hv_dpg_card" (dict "Vendor" $vendor "DPG" $dpg "Expanded" $.Expanded "Role" "verifier")}}
+{{end}}
+{{end}}
+
+{{define "fragment_verifier_dpg_continue_oob"}}
+<button hx-swap-oob="outerHTML:#verifier-dpg-continue"
+        type="button"
+        id="verifier-dpg-continue"
+        class="btn {{if not .Expanded}}btn-disabled{{end}}"
+        hx-post="/verifier/dpg"
+        hx-target="body">
+  Continue →
+</button>
+{{end}}

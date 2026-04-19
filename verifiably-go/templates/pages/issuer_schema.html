@@ -1,0 +1,116 @@
+{{define "content_issuer_schema"}}
+<section class="view active">
+  <div class="section-label"><span class="num">04</span><span class="caps">Issuer · Schema</span></div>
+  <h1 class="page-title">Pick a schema, or<br><em>build one</em>.</h1>
+  <p class="subtitle">These are the credential types available from <span class="mono">{{.Session.IssuerDpg}}</span>. Click a card to preview its JSON Schema. Click <em>Use this schema</em> to select it for issuance.</p>
+
+  <div id="schema-browser">
+    {{template "fragment_schema_browser_body" .Body}}
+  </div>
+
+  <div class="btn-row" style="margin-top:2rem">
+    <a href="/issuer/schema/build" class="btn ghost">Build custom schema →</a>
+    <a href="/issuer/mode"
+       class="btn"
+       id="continue-btn"
+       style="{{if not .Body.SelectedID}}opacity:0.4;pointer-events:none{{end}}">
+       Continue →
+    </a>
+  </div>
+</section>
+{{end}}
+
+{{define "fragment_schema_browser_body"}}
+<div class="filter-bar">
+  <input
+    type="search"
+    name="q"
+    placeholder="Search schemas…"
+    value="{{.Query}}"
+    hx-get="/issuer/schema/search"
+    hx-trigger="input changed delay:250ms, search"
+    hx-target="#schema-list"
+    hx-swap="outerHTML">
+
+  <div class="chip-row">
+    {{range .Stds}}
+      <button type="button"
+              class="chip {{if eq . $.Filter}}active{{end}}"
+              hx-post="/issuer/schema/filter"
+              hx-vals='{"filter": "{{.}}"}'
+              hx-target="#schema-browser"
+              hx-swap="innerHTML">{{.}}</button>
+    {{end}}
+  </div>
+</div>
+
+{{template "fragment_schema_list" .}}
+{{end}}
+
+{{/* fragment_schema_continue_oob updates the page-level Continue button
+     out-of-band. Rendered ONLY by handlers that change the selection —
+     never inlined in fragment_schema_browser_body to avoid duplicate ids. */}}
+{{define "fragment_schema_continue_oob"}}
+<a href="/issuer/mode"
+   class="btn"
+   id="continue-btn"
+   hx-swap-oob="true"
+   style="{{if not .SelectedID}}opacity:0.4;pointer-events:none{{end}}">
+   Continue →
+</a>
+{{end}}
+
+{{define "fragment_schema_list"}}
+<div class="schema-list" id="schema-list">
+  {{if not .Schemas}}
+    <div class="empty" style="grid-column: 1 / -1">
+      <div class="display">No matches.</div>
+      Try clearing the filter or building a custom schema.
+    </div>
+  {{end}}
+
+  {{range .Schemas}}
+    <div class="schema-card
+                {{if eq .ID $.SelectedID}}selected{{end}}
+                {{if eq .ID $.ExpandedID}}expanded{{end}}">
+
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem">
+        <h4 style="flex:1">{{.Name}}</h4>
+        {{if .Custom}}<span class="pill ok" style="font-size:0.65rem">custom</span>{{end}}
+      </div>
+      <div class="std">{{.Std}}</div>
+      <div class="desc">{{.Desc}}</div>
+
+      <div class="btn-row" style="margin-top:0.75rem">
+        <button class="btn small ghost"
+                hx-post="/issuer/schema/expand"
+                hx-vals='{"id": "{{.ID}}"}'
+                hx-target="#schema-list"
+                hx-swap="outerHTML">
+          {{if eq .ID $.ExpandedID}}Hide JSON{{else}}Show JSON{{end}}
+        </button>
+        <button class="btn small {{if eq .ID $.SelectedID}}ghost{{end}}"
+                hx-post="/issuer/schema/select"
+                hx-vals='{"id": "{{.ID}}"}'
+                hx-target="#schema-browser"
+                hx-swap="innerHTML">
+          {{if eq .ID $.SelectedID}}✓ Selected{{else}}Use this schema →{{end}}
+        </button>
+        {{if .Custom}}
+          <button class="btn small ghost"
+                  style="margin-left:auto;color:var(--err);border-color:var(--err)"
+                  hx-post="/issuer/schema/delete"
+                  hx-vals='{"id": "{{.ID}}"}'
+                  hx-target="#schema-browser"
+                  hx-swap="innerHTML"
+                  hx-confirm="Delete custom schema {{.Name}}?">Delete</button>
+        {{end}}
+      </div>
+
+      {{if eq .ID $.ExpandedID}}
+        <pre class="json-preview" style="margin-top:0.75rem">{{$.ExpandedJSON}}</pre>
+      {{end}}
+    </div>
+  {{end}}
+</div>
+{{end}}

@@ -1,0 +1,84 @@
+{{define "content_holder_present"}}
+<section class="view active">
+  <div class="section-label"><span class="num">05</span><span class="caps">Holder · Present</span></div>
+  <h1 class="page-title">Present a<br><em>credential</em>.</h1>
+  <p class="subtitle">A verifier has asked for a credential. Show them one from your wallet by scanning their QR or pasting an <span class="mono">openid4vp://</span> request link.</p>
+
+  <div class="split" style="align-items:flex-start;margin-top:2rem">
+
+    {{/* Scan verifier QR */}}
+    <div style="background:var(--bg-elev);border:1px solid var(--line);padding:1.75rem;border-radius:2px">
+      <h4 style="font-family:'Josefin Sans',sans-serif;font-weight:500;font-size:1.2rem;margin-bottom:0.5rem">Scan verifier QR</h4>
+      <p style="font-size:0.85rem;color:var(--ink-soft);margin-bottom:1rem">Cross-device — opens camera in a real wallet.</p>
+      <button class="btn"
+              hx-post="/holder/present/simulate"
+              hx-target="#modal-root"
+              hx-swap="innerHTML">Simulate scan →</button>
+    </div>
+
+    {{/* Paste OID4VP */}}
+    <div style="background:var(--bg-elev);border:1px solid var(--line);padding:1.75rem;border-radius:2px">
+      <h4 style="font-family:'Josefin Sans',sans-serif;font-weight:500;font-size:1.2rem;margin-bottom:0.5rem">Paste OID4VP link</h4>
+      <p style="font-size:0.85rem;color:var(--ink-soft);margin-bottom:1rem">Same-device — for <span class="mono">openid4vp://</span> URIs.</p>
+      <textarea rows="3" class="mono"
+                placeholder="openid4vp://?client_id=…&request_uri=…"
+                style="width:100%;font-size:0.78rem;background:var(--bg);border:1px solid var(--line);padding:0.6rem;color:var(--ink);font-family:'JetBrains Mono',monospace;border-radius:2px;resize:vertical;margin-bottom:0.75rem"></textarea>
+      <button class="btn"
+              hx-post="/holder/present/simulate"
+              hx-target="#modal-root"
+              hx-swap="innerHTML">Review request →</button>
+    </div>
+
+  </div>
+
+  <div style="background:var(--bg-elev);border:1px solid var(--line);border-left:3px solid var(--warn);padding:1.25rem;margin-top:2rem;border-radius:2px">
+    <div class="caps" style="font-size:0.65rem;color:var(--warn);margin-bottom:0.25rem">OID4VP v1.0 support at this DPG version</div>
+    <p style="font-size:0.85rem;color:var(--ink-soft);margin:0">
+      {{if eq .Session.HolderDpg "walt.id Web Wallet"}}
+        OID4VP v1.0 wallet support is still in progress at Community Stack v0.18.2. Older OID4VP (Presentation Exchange-based) works today.
+      {{else}}
+        Inji Web Wallet v0.16.0 handles OID4VP via the Inji app itself — this page is a reference entry point; real flows happen inside the app.
+      {{end}}
+    </p>
+  </div>
+
+  <div class="btn-row" style="margin-top:2rem">
+    <a href="/holder/wallet" class="btn ghost">← Back to wallet</a>
+  </div>
+</section>
+{{end}}
+
+{{define "fragment_present_modal"}}
+<div class="modal-mask" onclick="if(event.target===this) this.remove()">
+  <div class="modal">
+    <button class="close" onclick="this.closest('.modal-mask').remove()">×</button>
+    <h2>Verifier request</h2>
+
+    <div class="caps">Nursing Council of Kenya</div>
+    <p style="font-size:0.92rem;color:var(--ink-soft);margin:0.5rem 0 1.5rem">
+      Is asking you to prove <strong>over 18</strong>.
+      <br>Disclosure: <span class="mono">selective — only age_over_18 is shared</span>.
+    </p>
+
+    <div style="background:var(--bg-sunk);border:1px dashed var(--line);padding:1rem;border-radius:2px;margin-bottom:1.5rem">
+      <div class="caps" style="font-size:0.65rem;margin-bottom:0.5rem">Matching credential in your wallet</div>
+      <div style="font-family:'Josefin Sans',sans-serif;font-weight:500;font-size:1.05rem">Digital ID Card</div>
+      <div style="font-size:0.78rem;color:var(--ink-mute)">only the <span class="mono">age_over_18</span> claim will be sent</div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn"
+              onclick="toast('Presentation sent (simulated)');this.closest('.modal-mask').remove()">
+        Share this claim
+      </button>
+      <button class="btn ghost" onclick="toast('Request declined');this.closest('.modal-mask').remove()">
+        Decline
+      </button>
+    </div>
+
+    <p style="font-size:0.75rem;color:var(--ink-mute);margin-top:1rem">
+      In a real wallet, this dialog is produced by the wallet app after parsing the OID4VP request (<span class="mono">request_uri</span> dereferenced, DCQL evaluated against held credentials, matching credential selected).
+    </p>
+  </div>
+</div>
+{{end}}

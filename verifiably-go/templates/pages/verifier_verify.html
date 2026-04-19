@@ -1,0 +1,172 @@
+{{define "content_verifier_verify"}}
+<section class="view active">
+  <div class="section-label"><span class="num">04</span><span class="caps">Verifier · Verify</span></div>
+  <h1 class="page-title">Check a<br><em>credential</em>.</h1>
+  <p class="subtitle">Using <span class="mono">{{.Session.VerifierDpg}}</span>. Request a presentation via OID4VP, or verify a credential the holder hands over directly.</p>
+
+  {{/* ============================================================
+       OID4VP — request a presentation
+       ============================================================ */}}
+  <div style="margin-top:2.5rem">
+    <div class="caps" style="margin-bottom:0.5rem">Request a presentation · OID4VP</div>
+    <p style="font-size:0.85rem;color:var(--ink-soft);margin-bottom:1rem">
+      Generate an <span class="mono">openid4vp://</span> request. The holder scans or opens the link in their wallet; their wallet collects matching claims and returns them here.
+    </p>
+
+    <div style="background:var(--bg-elev);border:1px solid var(--line);padding:1.5rem;border-radius:2px">
+      <div class="field">
+        <label>Request template</label>
+        <select id="oid4vp-template" name="template">
+          {{range $key, $tpl := .Body.Templates}}
+            <option value="{{$key}}">{{$tpl.Title}} — <em>{{$tpl.Disclosure}}</em></option>
+          {{end}}
+        </select>
+      </div>
+
+      <button class="btn"
+              hx-post="/verifier/verify/request"
+              hx-include="#oid4vp-template"
+              hx-target="#oid4vp-output"
+              hx-swap="innerHTML">Generate request →</button>
+    </div>
+
+    <div id="oid4vp-output"></div>
+  </div>
+
+  {{/* ============================================================
+       DIRECT VERIFY — scan / upload / paste
+       ============================================================ */}}
+  <div style="margin-top:3rem">
+    <div class="caps" style="margin-bottom:0.5rem">Verify a credential directly</div>
+    <p style="font-size:0.85rem;color:var(--ink-soft);margin-bottom:1rem">
+      For PDFs with embedded QR codes, or credentials shared as raw JWTs / SD-JWTs. Works offline — validates the issuer signature without a round-trip.
+    </p>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem">
+
+      {{/* Scan */}}
+      <div style="background:var(--bg-elev);border:1px solid var(--line);padding:1.5rem;border-radius:2px">
+        <h4 style="font-family:'Josefin Sans',sans-serif;font-weight:500;font-size:1.1rem;margin-bottom:0.25rem">Scan QR</h4>
+        <p style="font-size:0.82rem;color:var(--ink-soft);margin-bottom:1rem">From a printed PDF, a phone screen, or in person.</p>
+        <button class="btn small"
+                hx-post="/verifier/verify/direct"
+                hx-vals='{"method": "scan"}'
+                hx-target="#verify-result"
+                hx-swap="innerHTML">Simulate scan</button>
+      </div>
+
+      {{/* Upload */}}
+      <div style="background:var(--bg-elev);border:1px solid var(--line);padding:1.5rem;border-radius:2px">
+        <h4 style="font-family:'Josefin Sans',sans-serif;font-weight:500;font-size:1.1rem;margin-bottom:0.25rem">Upload PDF</h4>
+        <p style="font-size:0.82rem;color:var(--ink-soft);margin-bottom:1rem">Drop a credential PDF — we'll extract and verify the embedded QR.</p>
+        <button class="btn small"
+                hx-post="/verifier/verify/direct"
+                hx-vals='{"method": "upload"}'
+                hx-target="#verify-result"
+                hx-swap="innerHTML">Simulate upload</button>
+      </div>
+
+      {{/* Paste */}}
+      <div style="background:var(--bg-elev);border:1px solid var(--line);padding:1.5rem;border-radius:2px">
+        <h4 style="font-family:'Josefin Sans',sans-serif;font-weight:500;font-size:1.1rem;margin-bottom:0.25rem">Paste credential</h4>
+        <p style="font-size:0.82rem;color:var(--ink-soft);margin-bottom:0.75rem">Raw JWT, SD-JWT, or JSON-LD VC.</p>
+        <form hx-post="/verifier/verify/direct"
+              hx-target="#verify-result"
+              hx-swap="innerHTML"
+              style="display:flex;flex-direction:column;gap:0.5rem">
+          <input type="hidden" name="method" value="paste">
+          <textarea name="credential_data" rows="3" class="mono"
+                    placeholder="eyJhbGci…"
+                    style="font-size:0.7rem;background:var(--bg);border:1px solid var(--line);padding:0.5rem;color:var(--ink);font-family:'JetBrains Mono',monospace;border-radius:2px;resize:vertical"></textarea>
+          <button class="btn small" type="submit">Verify →</button>
+        </form>
+      </div>
+
+    </div>
+
+    <div id="verify-result"></div>
+  </div>
+
+  <div class="btn-row" style="margin-top:2.5rem">
+    <a href="/" class="btn ghost">← Home</a>
+  </div>
+
+  {{/* DPG-specific warning */}}
+  {{if eq .Session.VerifierDpg "Inji Verify"}}
+    <div style="background:var(--bg-elev);border:1px solid var(--line);border-left:3px solid var(--warn);padding:1.25rem;margin-top:2rem;border-radius:2px">
+      <div class="caps" style="font-size:0.65rem;color:var(--warn);margin-bottom:0.25rem">Known issue · INJIVER-1131 (Inji Verify v0.16.0)</div>
+      <p style="font-size:0.82rem;color:var(--ink-soft);margin:0">
+        Cross-device OID4VP validates presentations as successful even when a wrong VC is submitted. Relying parties must implement credential-type validation server-side until this is fixed upstream.
+      </p>
+    </div>
+  {{end}}
+</section>
+{{end}}
+
+{{define "fragment_oid4vp_request_output"}}
+<div class="cred-preview" style="margin-top:1.5rem">
+  <div class="caps">Presentation request · {{.Template.Title}}</div>
+  <div style="font-size:0.85rem;color:var(--ink-soft);margin:0.5rem 0 1rem">
+    Asking for: <span class="mono">{{range $i, $f := .Template.Fields}}{{if $i}}, {{end}}{{$f}}{{end}}</span>
+    <br>Format: <span class="mono">{{.Template.Format}}</span> · Disclosure: <span class="mono">{{.Template.Disclosure}}</span>
+  </div>
+
+  <div class="split">
+    {{/* Cross-device: QR */}}
+    <div>
+      <div class="caps" style="font-size:0.65rem;margin-bottom:0.5rem">Cross-device — scan with wallet</div>
+      <div class="qr-wrap" style="padding:1rem">
+        <div class="qr-box"></div>
+      </div>
+    </div>
+    {{/* Same-device: link */}}
+    <div>
+      <div class="caps" style="font-size:0.65rem;margin-bottom:0.5rem">Same-device — open in wallet</div>
+      <div class="link-display" style="margin-top:0.5rem">{{.RequestURI}}</div>
+      <div class="btn-row">
+        <button class="btn small ghost" onclick="copyText('{{.RequestURI}}')">Copy link</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="btn-row" style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px dashed var(--line-soft)">
+    <button class="btn"
+            hx-post="/verifier/verify/response"
+            hx-target="#verify-result"
+            hx-swap="innerHTML">Simulate holder response →</button>
+    <span style="font-size:0.78rem;color:var(--ink-mute);align-self:center">state: <span class="mono">{{.State}}</span></span>
+  </div>
+</div>
+{{end}}
+
+{{define "fragment_verify_result"}}
+<div class="verify-result {{if .Valid}}valid{{else}}invalid{{end}}" style="margin-top:1.5rem">
+  <div class="verify-banner {{if .Valid}}valid{{else}}invalid{{end}}">
+    <span class="icon">{{if .Valid}}✓{{else}}✕{{end}}</span>
+    <div>
+      <h3>{{if .Valid}}Credential valid{{else}}Credential invalid{{end}}</h3>
+      <p>{{if .Valid}}Signature verified, issuer trusted, within validity period.{{else}}Signature could not be verified against the issuer's public key.{{end}}</p>
+    </div>
+  </div>
+
+  <dl class="cred-rows">
+    <dt>method</dt>      <dd>{{.Method}}</dd>
+    <dt>format</dt>      <dd><span class="mono">{{.Format}}</span></dd>
+    <dt>issuer</dt>      <dd><span class="mono">{{.Issuer}}</span></dd>
+    <dt>subject</dt>     <dd><span class="mono">{{.Subject}}</span></dd>
+    <dt>issued</dt>      <dd>{{.Issued}}</dd>
+    {{if .Requested}}
+      <dt>fields received</dt>
+      <dd><span class="mono">{{range $i, $f := .Requested}}{{if $i}}, {{end}}{{$f}}{{end}}</span></dd>
+    {{end}}
+    <dt>revocation</dt>
+    <dd>
+      {{if .CheckedRevocation}}
+        {{if .Valid}}<span class="pill ok">not revoked</span>{{else}}<span class="pill err">revoked 2025-02-03</span>{{end}}
+      {{else}}
+        <span class="pill neutral">not checked — offline</span>
+      {{end}}
+    </dd>
+  </dl>
+</div>
+{{end}}

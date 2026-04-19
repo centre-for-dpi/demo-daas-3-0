@@ -1,0 +1,88 @@
+{{define "content_issuer_dpg"}}
+<section class="view active">
+  <div class="section-label"><span class="num">03</span><span class="caps">Issuer · Pick a DPG</span></div>
+  <h1 class="page-title">Choose your <em>issuing</em><br>backend.</h1>
+  <p class="subtitle">Each DPG below is an open-source issuer stack. Capability claims reflect the specific versions noted on each card. Click a card to see flows, supported formats, and known caveats.</p>
+
+  <div id="issuer-dpg-grid" class="dpg-grid">
+    {{template "fragment_issuer_dpg_grid" .Body}}
+  </div>
+
+  <div class="btn-row" style="margin-top:2rem">
+    <a href="/auth" class="btn ghost">← Back</a>
+    <button type="button"
+            id="issuer-dpg-continue"
+            class="btn {{if not .Body.Expanded}}btn-disabled{{end}}"
+            hx-post="/issuer/dpg"
+            hx-target="body">
+      Continue →
+    </button>
+  </div>
+</section>
+{{end}}
+
+{{define "fragment_issuer_dpg_grid"}}
+{{/* Takes {Dpgs, Expanded} */}}
+{{range $vendor, $dpg := .Dpgs}}
+  <button type="button"
+          class="dpg-card {{if eq $vendor $.Expanded}}expanded{{end}}"
+          hx-post="/issuer/dpg/toggle"
+          hx-vals='{"vendor": "{{$vendor}}"}'
+          hx-target="#issuer-dpg-grid"
+          hx-swap="innerHTML"
+          aria-expanded="{{if eq $vendor $.Expanded}}true{{else}}false{{end}}">
+    <div class="dpg-head">
+      <div>
+        <h3>{{$dpg.Vendor}}</h3>
+        <span class="dpg-tag">{{$dpg.Tag}}</span>
+        <span class="dpg-tag neutral">{{$dpg.Version}}</span>
+        <div class="dpg-tagline">{{$dpg.Tagline}}</div>
+      </div>
+      <span class="caret">▾</span>
+    </div>
+    <div class="dpg-details-inner">
+      <div class="capability">
+        <div class="cap-label">OID4VCI flow</div>
+        <div class="cap-value">
+          {{if $dpg.FlowPreAuth}}<span class="tech">pre-authorized code</span>{{end}}
+          {{if $dpg.FlowAuthCode}}<span class="tech">authorization code</span>{{end}}
+          {{if $dpg.FlowPresentationDuringIssue}}<span class="tech">presentation-during-issuance</span>{{end}}
+          <span class="plain">{{$dpg.FlowPlain}}</span>
+        </div>
+      </div>
+      <div class="capability">
+        <div class="cap-label">Formats</div>
+        <div class="cap-value">
+          {{range $dpg.Formats}}<span class="tech">{{.}}</span>{{end}}
+          <span class="plain">{{$dpg.FormatsPlain}}</span>
+        </div>
+      </div>
+      <div class="capability">
+        <div class="cap-label">Direct PDF export</div>
+        <div class="cap-value">
+          {{if $dpg.DirectPDF}}<span class="pill ok">supported</span>{{else}}<span class="pill warn">not in this version</span>{{end}}
+          <span class="plain">{{$dpg.DirectPDFPlain}}</span>
+        </div>
+      </div>
+      <div class="capability">
+        <div class="cap-label">Caveats</div>
+        <div class="cap-value"><span class="plain" style="color:var(--warn);font-style:normal">⚠ {{$dpg.Caveats}}</span></div>
+      </div>
+    </div>
+  </button>
+{{end}}
+{{end}}
+
+{{/* fragment_issuer_dpg_continue_oob updates the page-level Continue button
+     out-of-band. Rendered ONLY by handlers that change the expanded card —
+     never inlined in fragment_issuer_dpg_grid to avoid duplicate ids. */}}
+{{define "fragment_issuer_dpg_continue_oob"}}
+<button hx-swap-oob="outerHTML:#issuer-dpg-continue"
+        type="button"
+        id="issuer-dpg-continue"
+        class="btn {{if not .Expanded}}btn-disabled{{end}}"
+        hx-post="/issuer/dpg"
+        hx-target="body">
+  Continue →
+</button>
+{{end}}

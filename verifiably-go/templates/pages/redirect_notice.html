@@ -1,0 +1,19 @@
+{{define "content_redirect_notice"}}
+<section class="view active">
+  <div class="section-label"><span class="num">↗</span><span class="caps">External redirect</span></div>
+  <h1 class="page-title">Opening<br><em>{{.Body.Vendor}}</em>.</h1>
+
+  <div class="redirect-card">
+    <div class="caps">{{.Body.Version}}</div>
+    <h3>This flow happens in a different UI</h3>
+    <p>{{.Body.FlowPlain}}</p>
+    <p style="font-size:0.85rem;color:var(--ink-mute);margin-bottom:1.25rem;border-left:2px solid var(--line);padding-left:0.75rem"><strong>Caveats:</strong> {{.Body.Caveats}}</p>
+    <div class="btn-row">
+      <a href="/" class="btn ghost">← Back</a>
+      <button class="btn" onclick="toast('In a real deployment this opens {{.Body.Vendor}} in a new tab')">Open {{.Body.Vendor}} →</button>
+    </div>
+  </div>
+
+  <p style="margin-top:2rem;font-size:0.82rem;color:var(--ink-mute);max-width:64ch">In a real deployment, this is where your app hands off to the vendor's own UI (via an OAuth-style redirect or a deep-link). The session state you built up in Verifiably persists; when the user returns, they're back in the flow where they left off.</p>
+</section>
+{{end}}

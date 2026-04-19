@@ -1,0 +1,40 @@
+{{define "content_auth"}}
+<section class="view active">
+  <div class="section-label"><span class="num">02</span><span class="caps">Authenticate</span></div>
+  <h1 class="page-title">Sign in to continue as<br><em>{{.Session.Role}}</em>.</h1>
+  <p class="subtitle">Authentication is stubbed in this prototype. In a real deployment, either of the providers below would redirect out, authenticate you, and return a session token that the backend attaches to every adapter call.</p>
+
+  <div class="auth-wrap">
+    <div class="auth-card">
+      <div class="tab-row">
+        <button class="tab active" type="button">Sign in</button>
+        <button class="tab" type="button">Sign up</button>
+      </div>
+
+      <form method="post" action="/auth">
+        <div class="field">
+          <label>Email</label>
+          <input type="email" name="email" value="you@example.org" autocomplete="email">
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" name="password" value="••••••••" autocomplete="current-password">
+        </div>
+        <button class="btn" type="submit" style="width:100%">Continue →</button>
+      </form>
+
+      <div class="auth-provider">
+        <div class="caps" style="text-align:center;margin-bottom:0.75rem">Or use a provider</div>
+        <div class="provider-row">
+          <button class="provider-btn" type="button" onclick="toast('Keycloak SSO would open here')">
+            Keycloak<br><span class="caps">OIDC</span>
+          </button>
+          <button class="provider-btn" type="button" onclick="toast('WSO2 SSO would open here')">
+            WSO2 IS<br><span class="caps">SAML / OIDC</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{{end}}

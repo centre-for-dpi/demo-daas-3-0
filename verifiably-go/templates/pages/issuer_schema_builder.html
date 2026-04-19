@@ -1,0 +1,144 @@
+{{define "content_issuer_schema_builder"}}
+<section class="view active">
+  <div class="section-label"><span class="num">04a</span><span class="caps">Issuer · Build schema</span></div>
+  <h1 class="page-title">Build a<br><em>custom schema</em>.</h1>
+  <p class="subtitle">Define a credential schema for <span class="mono">{{.Session.IssuerDpg}}</span>. The JSON Schema on the right regenerates as you type.</p>
+
+  <div class="split" style="align-items:flex-start">
+    {{/* LEFT: form */}}
+    <div id="builder-form">
+      {{template "fragment_schema_builder_form" .Body}}
+    </div>
+
+    {{/* RIGHT: live JSON preview */}}
+    <div>
+      <div class="caps" style="margin-bottom:0.5rem">Live preview — JSON Schema 2020-12</div>
+      <pre id="json-preview" class="json-preview large">{{.Body.PreviewJSON}}</pre>
+    </div>
+  </div>
+
+  <div class="btn-row" style="margin-top:2rem">
+    <a href="/issuer/schema" class="btn ghost">← Cancel</a>
+    <button class="btn ghost"
+            type="submit"
+            form="builder-form-el"
+            hx-post="/issuer/schema/build/save"
+            hx-include="#builder-form-el"
+            hx-target="body">
+      Save schema
+    </button>
+    <button class="btn"
+            type="submit"
+            form="builder-form-el"
+            hx-post="/issuer/schema/build/save?use=1"
+            hx-include="#builder-form-el"
+            hx-target="body">
+      Save &amp; use →
+    </button>
+  </div>
+</section>
+{{end}}
+
+{{define "fragment_schema_builder_form"}}
+{{/*
+  The entire form lives in one block so add/remove-field responses can replace it wholesale.
+  On every input we POST the form to /preview which returns #json-preview with fresh JSON.
+*/}}
+<form id="builder-form-el"
+      hx-post="/issuer/schema/build/preview"
+      hx-trigger="input changed delay:250ms, change"
+      hx-target="#json-preview"
+      hx-swap="outerHTML"
+      style="display:flex;flex-direction:column;gap:1rem">
+
+  <div class="field">
+    <label>Name</label>
+    <input type="text" name="name" value="{{.Name}}" placeholder="e.g. Alumni Card" required>
+  </div>
+
+  <div class="field">
+    <label>Description</label>
+    <input type="text" name="desc" value="{{.Desc}}" placeholder="Short human-readable description">
+  </div>
+
+  <div class="field">
+    <label>Credential type
+      <span style="font-size:0.7rem;color:var(--ink-mute);font-weight:400;margin-left:0.25rem">(in addition to <span class="mono">VerifiableCredential</span>)</span>
+    </label>
+    <input type="text" name="extra_type" value="{{.ExtraType}}" placeholder="e.g. AlumniCard">
+  </div>
+
+  <div class="field">
+    <label>Format</label>
+    <select name="std">
+      {{$cur := .Std}}
+      <option value="w3c_vcdm_2"      {{if eq $cur "w3c_vcdm_2"}}selected{{end}}>w3c_vcdm_2 — W3C VCDM 2.0 (JSON-LD)</option>
+      <option value="w3c_vcdm_1"      {{if eq $cur "w3c_vcdm_1"}}selected{{end}}>w3c_vcdm_1 — W3C VCDM 1.1 (JSON-LD)</option>
+      <option value="sd_jwt_vc"       {{if hasPrefix $cur "sd_jwt_vc"}}selected{{end}}>sd_jwt_vc — IETF SD-JWT VC (draft)</option>
+      <option value="jwt_vc"          {{if eq $cur "jwt_vc"}}selected{{end}}>jwt_vc — plain JWT-VC</option>
+      <option value="mso_mdoc"        {{if eq $cur "mso_mdoc"}}selected{{end}}>mso_mdoc — ISO 18013-5 mDL/mDoc</option>
+    </select>
+  </div>
+
+  <div>
+    <div class="caps" style="margin-bottom:0.5rem">Claim fields</div>
+
+    <div id="field-rows" style="display:flex;flex-direction:column;gap:0.5rem">
+      {{range $i, $f := .Fields}}
+        {{template "_field_row" (dict "Idx" $i "Field" $f)}}
+      {{end}}
+    </div>
+
+    <button type="button"
+            class="btn ghost small"
+            style="margin-top:0.75rem"
+            hx-post="/issuer/schema/build/add-field"
+            hx-include="#builder-form-el"
+            hx-target="#builder-form"
+            hx-swap="innerHTML">
+      + Add field
+    </button>
+  </div>
+</form>
+{{end}}
+
+{{define "_field_row"}}
+<div style="display:grid;grid-template-columns:1fr 160px 72px 36px;gap:0.5rem;align-items:center">
+  <input type="text"
+         name="field_name_{{.Idx}}"
+         value="{{.Field.Name}}"
+         placeholder="field_name"
+         style="background:var(--bg);border:1px solid var(--line);padding:0.55rem 0.7rem;font-family:'JetBrains Mono',monospace;font-size:0.82rem;color:var(--ink);border-radius:2px">
+
+  <select name="field_datatype_{{.Idx}}"
+          style="background:var(--bg);border:1px solid var(--line);padding:0.55rem 0.6rem;font-family:inherit;font-size:0.82rem;color:var(--ink);border-radius:2px">
+    {{$dt := .Field.Datatype}}
+    {{$fmt := .Field.Format}}
+    <option value="string"      {{if and (eq $dt "string") (eq $fmt "")}}selected{{end}}>string</option>
+    <option value="number"      {{if eq $dt "number"}}selected{{end}}>number</option>
+    <option value="integer"     {{if eq $dt "integer"}}selected{{end}}>integer</option>
+    <option value="boolean"     {{if eq $dt "boolean"}}selected{{end}}>boolean</option>
+    <option value="string:date" {{if and (eq $dt "string") (eq $fmt "date")}}selected{{end}}>date</option>
+    <option value="string:uri"  {{if and (eq $dt "string") (eq $fmt "uri")}}selected{{end}}>uri</option>
+  </select>
+
+  <label style="font-size:0.75rem;color:var(--ink-mute);display:flex;align-items:center;gap:4px">
+    <input type="checkbox"
+           name="field_required_{{.Idx}}"
+           {{if .Field.Required}}checked{{end}}> req
+  </label>
+
+  <button type="button"
+          title="Remove field"
+          hx-post="/issuer/schema/build/remove-field"
+          hx-vals='{"idx": "{{.Idx}}"}'
+          hx-include="#builder-form-el"
+          hx-target="#builder-form"
+          hx-swap="innerHTML"
+          style="background:none;border:1px solid var(--line);color:var(--ink-mute);width:32px;height:32px;border-radius:2px;cursor:pointer">×</button>
+</div>
+{{end}}
+
+{{define "fragment_schema_preview"}}
+<pre id="json-preview" class="json-preview large">{{.PreviewJSON}}</pre>
+{{end}}

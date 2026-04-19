@@ -1,0 +1,82 @@
+{{define "content_holder_dpg"}}
+<section class="view active">
+  <div class="section-label"><span class="num">03</span><span class="caps">Holder · Pick a wallet</span></div>
+  <h1 class="page-title">Choose a<br><em>wallet</em>.</h1>
+  <p class="subtitle">The <span class="mono">API-based</span> wallet runs inline in this UI. The <span class="mono">Redirected</span> wallet opens in its own app — you'll be handed off after selection.</p>
+
+  <div id="holder-dpg-grid" class="dpg-grid">
+    {{template "fragment_holder_dpg_grid" .Body}}
+  </div>
+
+  <div class="btn-row" style="margin-top:2rem">
+    <a href="/auth" class="btn ghost">← Back</a>
+    <button type="button"
+            id="holder-dpg-continue"
+            class="btn {{if not .Body.Expanded}}btn-disabled{{end}}"
+            hx-post="/holder/dpg"
+            hx-target="body">
+      Continue →
+    </button>
+  </div>
+</section>
+{{end}}
+
+{{define "fragment_holder_dpg_grid"}}
+{{range $vendor, $dpg := .Dpgs}}
+  {{template "_hv_dpg_card" (dict "Vendor" $vendor "DPG" $dpg "Expanded" $.Expanded "Role" "holder")}}
+{{end}}
+{{end}}
+
+{{define "fragment_holder_dpg_continue_oob"}}
+<button hx-swap-oob="outerHTML:#holder-dpg-continue"
+        type="button"
+        id="holder-dpg-continue"
+        class="btn {{if not .Expanded}}btn-disabled{{end}}"
+        hx-post="/holder/dpg"
+        hx-target="body">
+  Continue →
+</button>
+{{end}}
+
+{{define "_hv_dpg_card"}}
+{{/* Shared card partial for holder + verifier DPG pickers. Takes {Vendor, DPG, Expanded, Role} */}}
+<button type="button"
+        class="dpg-card {{if eq .Vendor .Expanded}}expanded{{end}}"
+        hx-post="/{{.Role}}/dpg/toggle"
+        hx-vals='{"vendor": "{{.Vendor}}"}'
+        hx-target="#{{.Role}}-dpg-grid"
+        hx-swap="innerHTML"
+        aria-expanded="{{if eq .Vendor .Expanded}}true{{else}}false{{end}}">
+  <div class="dpg-head">
+    <div>
+      <h3>{{.DPG.Vendor}}</h3>
+      <span class="dpg-tag">{{.DPG.Tag}}</span>
+      <span class="dpg-tag neutral">{{.DPG.Version}}</span>
+      <div class="dpg-tagline">{{.DPG.Tagline}}</div>
+    </div>
+    <span class="caret">▾</span>
+  </div>
+  <div class="dpg-details-inner">
+    <div class="capability">
+      <div class="cap-label">Flow</div>
+      <div class="cap-value"><span class="plain">{{.DPG.FlowPlain}}</span></div>
+    </div>
+    <div class="capability">
+      <div class="cap-label">Formats</div>
+      <div class="cap-value">
+        {{range .DPG.Formats}}<span class="tech">{{.}}</span>{{end}}
+      </div>
+    </div>
+    <div class="capability">
+      <div class="cap-label">UI mode</div>
+      <div class="cap-value">
+        {{if .DPG.Redirect}}<span class="pill warn">redirects away</span>{{else}}<span class="pill ok">inline here</span>{{end}}
+      </div>
+    </div>
+    <div class="capability">
+      <div class="cap-label">Caveats</div>
+      <div class="cap-value"><span class="plain" style="color:var(--warn);font-style:normal">⚠ {{.DPG.Caveats}}</span></div>
+    </div>
+  </div>
+</button>
+{{end}}

@@ -1,0 +1,79 @@
+{{define "content_issuer_mode"}}
+<section class="view active">
+  <div class="section-label"><span class="num">05</span><span class="caps">Issuer · Mode</span></div>
+  <h1 class="page-title">How do you want to<br><em>issue</em> this?</h1>
+  <p class="subtitle">Pick a scale and a destination. Your choices determine the form you fill in next.</p>
+
+  <form method="post" action="/issuer/mode" id="mode-form">
+    <div style="margin-top:2rem">
+      <div class="caps" style="margin-bottom:1rem">Scale</div>
+      <div class="split">
+
+        <label class="option-card" style="cursor:pointer">
+          <input type="radio" name="scale" value="single" style="display:none"
+                 {{if eq .Body.SelectedScale "single"}}checked{{end}}>
+          <span>
+            <div class="caps">One credential</div>
+            <h3>Single subject</h3>
+            <p>Fill in the fields by hand or pull from an external source. Best for demonstrating flows or issuing one-offs.</p>
+          </span>
+        </label>
+
+        <label class="option-card" style="cursor:pointer">
+          <input type="radio" name="scale" value="bulk" style="display:none"
+                 {{if eq .Body.SelectedScale "bulk"}}checked{{end}}>
+          <span>
+            <div class="caps">Many credentials</div>
+            <h3>Bulk from CSV</h3>
+            <p>Upload a CSV, preview matching/mismatching rows, then issue in batch.</p>
+          </span>
+        </label>
+
+      </div>
+    </div>
+
+    <div style="margin-top:2.5rem">
+      <div class="caps" style="margin-bottom:1rem">Destination</div>
+      <div class="split">
+
+        <label class="option-card" style="cursor:pointer">
+          <input type="radio" name="dest" value="wallet" style="display:none"
+                 {{if eq .Body.SelectedDest "wallet"}}checked{{end}}>
+          <span>
+            <div class="caps">OID4VCI</div>
+            <h3>To a wallet</h3>
+            <p>Generate a credential offer. Holder scans a QR or follows a link to pull it into their wallet.</p>
+            <div class="req"><span class="pill ok">supported in {{.Body.Dpg.Version}}</span></div>
+          </span>
+        </label>
+
+        <label class="option-card {{if not .Body.Dpg.DirectPDF}}disabled{{end}}"
+               style="cursor:{{if .Body.Dpg.DirectPDF}}pointer{{else}}not-allowed{{end}}"
+               {{if not .Body.Dpg.DirectPDF}}onclick="toast('{{.Body.Dpg.Vendor}} {{.Body.Dpg.Version}} has no documented QR-on-PDF issuance path.');return false"{{end}}>
+          <input type="radio" name="dest" value="pdf" style="display:none"
+                 {{if eq .Body.SelectedDest "pdf"}}checked{{end}}
+                 {{if not .Body.Dpg.DirectPDF}}disabled{{end}}>
+          <span>
+            <div class="caps">QR on PDF</div>
+            <h3>As a PDF</h3>
+            <p>Embed the signed credential as a QR code on a printable PDF. Verifies offline from the paper.</p>
+            <div class="req">
+              {{if .Body.Dpg.DirectPDF}}
+                <span class="pill ok">supported in {{.Body.Dpg.Version}}</span> — QR Code Spec 1.1.0 embedding.
+              {{else}}
+                <span class="pill warn">not in {{.Body.Dpg.Version}}</span> — no documented direct PDF path. Credential must be delivered to a wallet via OID4VCI.
+              {{end}}
+            </div>
+          </span>
+        </label>
+
+      </div>
+    </div>
+
+    <div class="btn-row" style="margin-top:2rem">
+      <a href="/issuer/schema" class="btn ghost">← Back</a>
+      <button type="submit" class="btn">Continue →</button>
+    </div>
+  </form>
+</section>
+{{end}}

@@ -1,0 +1,262 @@
+{{define "content_issuer_issue"}}
+<section class="view active">
+  <div class="section-label"><span class="num">06</span><span class="caps">Issuer · Issue</span></div>
+  <h1 class="page-title">Issue a<br><em>{{.Body.Schema.Name}}</em>.</h1>
+  <p class="subtitle">
+    <span class="mono">{{.Body.IssuerDpg}}</span> ·
+    <span class="mono">{{.Body.Schema.Std}}</span> ·
+    {{if eq .Body.Scale "single"}}one subject{{else}}CSV upload{{end}} ·
+    {{if eq .Body.Dest "wallet"}}delivered via OID4VCI{{else}}printable PDF with embedded QR{{end}}
+  </p>
+
+  {{if eq .Body.Scale "single"}}
+    {{/* ----- SINGLE SUBJECT ----- */}}
+    <div style="margin-top:2rem">
+      <div class="caps" style="margin-bottom:0.75rem">Subject data source</div>
+      <div class="chip-row">
+        <button type="button"
+                class="chip {{if eq .Body.SingleSource "manual"}}active{{end}}"
+                hx-post="/issuer/issue/source"
+                hx-vals='{"source": "manual"}'
+                hx-target="#single-form-wrap"
+                hx-swap="outerHTML">Enter manually</button>
+
+        {{if eq .Body.IssuerDpg "walt.id"}}
+          <button type="button"
+                  class="chip {{if eq .Body.SingleSource "api"}}active{{end}}"
+                  hx-post="/issuer/issue/source"
+                  hx-vals='{"source": "api"}'
+                  hx-target="#single-form-wrap"
+                  hx-swap="outerHTML">Fetch from external API</button>
+        {{end}}
+
+        {{if eq .Body.IssuerDpg "Inji Certify"}}
+          <button type="button"
+                  class="chip {{if eq .Body.SingleSource "mosip"}}active{{end}}"
+                  hx-post="/issuer/issue/source"
+                  hx-vals='{"source": "mosip"}'
+                  hx-target="#single-form-wrap"
+                  hx-swap="outerHTML">MOSIP Identity Plugin</button>
+          <button type="button"
+                  class="chip {{if eq .Body.SingleSource "db"}}active{{end}}"
+                  hx-post="/issuer/issue/source"
+                  hx-vals='{"source": "db"}'
+                  hx-target="#single-form-wrap"
+                  hx-swap="outerHTML">Custom data provider plugin</button>
+          <button type="button"
+                  class="chip {{if eq .Body.SingleSource "pdi"}}active{{end}}"
+                  hx-post="/issuer/issue/source"
+                  hx-vals='{"source": "pdi"}'
+                  hx-target="#single-form-wrap"
+                  hx-swap="outerHTML">Presentation-during-issuance</button>
+        {{end}}
+      </div>
+    </div>
+
+    {{template "fragment_issue_single_form" .Body}}
+
+    <div class="btn-row">
+      <a href="/issuer/mode" class="btn ghost">← Back</a>
+      <button class="btn"
+              hx-post="/issuer/issue"
+              hx-include="#single-form-el"
+              hx-target="#issue-result"
+              hx-swap="innerHTML">Issue credential →</button>
+    </div>
+
+    <div id="issue-result"></div>
+
+  {{else}}
+    {{/* ----- BULK CSV ----- */}}
+    <div style="margin-top:2rem">
+      <div class="caps" style="margin-bottom:0.75rem">CSV upload</div>
+      <div style="background:var(--bg-elev);border:2px dashed var(--line);padding:2.5rem 2rem;border-radius:2px;text-align:center">
+        <div class="display" style="font-size:1.1rem;color:var(--ink-soft);margin-bottom:0.5rem">Drop a CSV here</div>
+        <div style="font-size:0.82rem;color:var(--ink-mute);margin-bottom:1rem">or</div>
+        <button class="btn ghost"
+                hx-post="/issuer/issue/csv"
+                hx-target="#csv-preview"
+                hx-swap="innerHTML">Use example CSV (247 rows)</button>
+        <div style="font-size:0.75rem;color:var(--ink-mute);margin-top:1rem">Expected columns: <span class="mono">{{range .Body.Fields}}{{.}}, {{end}}</span></div>
+      </div>
+    </div>
+
+    <div id="csv-preview"></div>
+
+    <div class="btn-row" style="margin-top:2rem">
+      <a href="/issuer/mode" class="btn ghost">← Back</a>
+    </div>
+  {{end}}
+</section>
+{{end}}
+
+{{define "fragment_issue_single_form"}}
+<div id="single-form-wrap">
+  <form id="single-form-el" style="margin-top:1.5rem">
+    {{if eq .SingleSource "manual"}}
+      <div class="form-grid">
+        {{range .Fields}}
+          <div class="field">
+            <label>{{replaceUnderscore .}}</label>
+            <input type="text" name="field_{{.}}" value="{{index $.FieldValues .}}">
+          </div>
+        {{end}}
+      </div>
+
+    {{else if eq .SingleSource "api"}}
+      <div class="field">
+        <label>API endpoint</label>
+        <input type="text" name="api_url" value="https://registrar.example.org/v1/graduates/{id}">
+      </div>
+      <div class="field">
+        <label>Authentication</label>
+        <input type="text" name="api_auth" value="Bearer ••••••">
+      </div>
+      <div class="field">
+        <label>Subject ID to fetch</label>
+        <input type="text" name="subject_id" value="2024-4821">
+      </div>
+      <p style="font-size:0.82rem;color:var(--ink-mute)">The issuer will GET <span class="mono">{api_url}</span> (substituting <span class="mono">{id}</span>) and map the response into the credential fields.</p>
+
+    {{else if eq .SingleSource "mosip"}}
+      <div class="field">
+        <label>MOSIP environment</label>
+        <input type="text" name="mosip_env" value="https://api.collab.mosip.net">
+      </div>
+      <div class="field">
+        <label>UIN / VID</label>
+        <input type="text" name="uin" value="3547-0013-9920">
+      </div>
+      <p style="font-size:0.82rem;color:var(--ink-mute)">Inji Certify's MOSIP Identity Plugin (new in v0.14.0) resolves the UIN against the MOSIP IDA service and pulls attested identity attributes.</p>
+
+    {{else if eq .SingleSource "db"}}
+      <div class="field">
+        <label>Data provider plugin</label>
+        <select name="plugin">
+          <option>Sunbird RC — Registry &amp; Credentialing</option>
+          <option>Custom REST plugin</option>
+          <option>Custom JDBC plugin</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Subject lookup key</label>
+        <input type="text" name="lookup_key" value="student_id=2024-4821">
+      </div>
+      <p style="font-size:0.82rem;color:var(--ink-mute)">Inji Certify supports pluggable data providers. Configure one at the Certify deployment, and Certify will use it to resolve subject data at issuance time.</p>
+
+    {{else if eq .SingleSource "pdi"}}
+      <div class="field">
+        <label>Required input credential type</label>
+        <input type="text" name="input_type" value="GovernmentID">
+      </div>
+      <p style="font-size:0.82rem;color:var(--ink-mute)">Presentation-during-issuance (new in Certify v0.14.0) asks the holder to present an existing VC before issuing this new one. Their wallet will prompt them for a matching credential as part of the offer flow.</p>
+    {{end}}
+  </form>
+</div>
+{{end}}
+
+{{define "fragment_issue_wallet_result"}}
+<div class="cred-preview" style="margin-top:1.5rem">
+  <div class="caps">OID4VCI offer ready</div>
+  <h3 style="margin:0.5rem 0; font-family:'Josefin Sans',sans-serif; font-weight:500; font-size:1.3rem">Credential offer generated</h3>
+  <div class="qr-wrap">
+    <div class="qr-box"></div>
+    <div style="margin-top:1rem; font-size:0.85rem; color:var(--ink-soft)">Have the holder scan with their wallet, or send them the link:</div>
+    <div class="link-display">{{.OfferURI}}</div>
+  </div>
+  <div class="btn-row">
+    <button class="btn ghost small" onclick="copyText('{{.OfferURI}}')">Copy link</button>
+    <span style="font-size:0.78rem;color:var(--ink-mute);align-self:center">Flow: <span class="mono">{{.Flow}}</span> · expires in {{.ExpiresIn}}s</span>
+  </div>
+</div>
+{{end}}
+
+{{define "fragment_issue_pdf_result"}}
+<div class="cred-preview" style="margin-top:1.5rem">
+  <div class="caps">PDF credential generated</div>
+  <h3 style="margin:0.5rem 0; font-family:'Josefin Sans',sans-serif; font-weight:500; font-size:1.3rem">{{.Schema.Name}} — ready to print</h3>
+  <div style="font-size:0.85rem; color:var(--ink-soft); margin-bottom:1rem">
+    Issued by {{.PDFResult.IssuerName}} (<span class="mono">{{.PDFResult.IssuerDID}}</span>).
+    A4, single page, human-readable fields + embedded credential QR (~{{.PDFResult.PayloadSizeKB}} KB).
+  </div>
+  <div class="btn-row">
+    <button class="btn"
+            hx-post="/issuer/issue/preview-pdf"
+            hx-target="#modal-root"
+            hx-swap="innerHTML">Preview PDF</button>
+    <button class="btn ghost" onclick="toast('Download started (simulated)')">Download .pdf</button>
+  </div>
+</div>
+{{end}}
+
+{{define "fragment_issue_csv_preview"}}
+<div style="margin-top:1.5rem">
+  <div class="caps" style="margin-bottom:0.5rem">graduates_2024_q3.csv — {{.Total}} rows</div>
+  <table>
+    <thead>
+      <tr>
+        {{range .Fields}}<th>{{.}}</th>{{end}}
+        <th>status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>{{range .Fields}}<td>{{index $.Values .}}</td>{{end}}<td><span class="pill ok">ready</span></td></tr>
+      <tr>{{range .Fields}}<td>{{index $.Values .}}</td>{{end}}<td><span class="pill ok">ready</span></td></tr>
+      <tr>
+        {{range $i, $f := .Fields}}
+          {{if eq $i 0}}
+            <td><em style="color:var(--err)">—missing—</em></td>
+          {{else}}
+            <td>{{index $.Values $f}}</td>
+          {{end}}
+        {{end}}
+        <td><span class="pill err">{{.Rejected}} rows</span></td>
+      </tr>
+    </tbody>
+  </table>
+  <div style="font-size:0.82rem;color:var(--ink-mute);margin-top:0.75rem">
+    {{.Accepted}} rows ready · {{.Rejected}} rows need attention
+    {{with index .Errors 0}}(missing <span class="mono">{{replaceUnderscore (trimPrefix .Reason "missing ")}}</span>){{end}}
+  </div>
+  <div class="btn-row">
+    <button class="btn" onclick="toast('Issuing {{.Accepted}} credentials…')">Issue {{.Accepted}} credentials</button>
+    <button class="btn ghost" onclick="toast('Download errors.csv (simulated)')">Download errors</button>
+  </div>
+</div>
+{{end}}
+
+{{define "fragment_pdf_preview_modal"}}
+<div class="modal-mask" onclick="if(event.target===this) this.remove()">
+  <div class="modal">
+    <button class="close" onclick="this.closest('.modal-mask').remove()">×</button>
+    <h2>PDF preview — {{.Schema.Name}}</h2>
+
+    <div class="pdf-page">
+      <div class="pdf-head">
+        <h3>{{.Schema.Name}}</h3>
+        <div class="sub">Issued by {{.PDFResult.IssuerName}} · {{.PDFResult.IssuerDID}}</div>
+      </div>
+      <div class="pdf-body">
+        <dl class="pdf-fields">
+          {{range .Fields}}
+            <dt>{{replaceUnderscore .}}</dt>
+            <dd>{{index $.PDFResult.Fields .}}</dd>
+          {{end}}
+        </dl>
+        <div class="pdf-qr"></div>
+      </div>
+      <div class="pdf-foot">
+        Credential format: {{.Schema.Std}} · verifiable offline via issuer public key · QR payload ~{{.PDFResult.PayloadSizeKB}} KB
+      </div>
+    </div>
+
+    <p style="font-size:0.82rem;color:var(--ink-mute);margin-top:1rem">
+      The QR above contains the full signed credential. A verifier can scan it offline and validate against the issuer's public key without any round-trip.
+    </p>
+
+    <div class="btn-row">
+      <button class="btn ghost" onclick="this.closest('.modal-mask').remove()">Close</button>
+    </div>
+  </div>
+</div>
+{{end}}
