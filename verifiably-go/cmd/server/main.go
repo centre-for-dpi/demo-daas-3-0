@@ -83,6 +83,16 @@ func main() {
 	// forward straight to inji-certify:8090, patching the request body for wallets
 	// that omit credential_definition.@context.
 	mux.HandleFunc("POST /inji-proxy/issuance/credential", h.InjiProxyCredential)
+	// did:web resolution for did:web:certify-nginx. Inji Certify's upstream
+	// did.json advertises a kid that doesn't match the kid its own signer
+	// uses, so Inji Verify fails with PublicKeyResolutionFailed. We serve a
+	// patched did.json that advertises every kid we've seen signed VCs use.
+	mux.HandleFunc("GET /inji-proxy/.well-known/did.json", h.InjiProxyDidJSON)
+	// Bitstring status-list credentials are signed with a DIFFERENT kid than
+	// the main VC (both derive from the same key, different code paths).
+	// Proxy this endpoint too so rememberSigningKids() records the status-list
+	// kid and our did.json advertises it before Inji Verify tries to resolve.
+	mux.HandleFunc("GET /inji-proxy/credentials/status-list/{id}", h.InjiProxyStatusList)
 
 	// Issuer
 	mux.HandleFunc("GET /issuer/dpg", h.ShowIssuerDpgs)

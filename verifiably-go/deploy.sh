@@ -636,6 +636,8 @@ start_container() {
     -e VERIFIABLY_ADDR=:8080 \
     -e VERIFIABLY_PUBLIC_URL="$VERIFIABLY_PUBLIC_URL" \
     -e LIBRETRANSLATE_URL="http://libretranslate:5000" \
+    -e INJI_CERTIFY_UPSTREAM_URL="http://inji-certify:8090" \
+    -e INJI_PROXY_EXTRA_KIDS="${VERIFIABLY_INJI_EXTRA_KIDS:-}" \
     "$VERIFIABLY_IMAGE" >/dev/null
 
   sleep 1

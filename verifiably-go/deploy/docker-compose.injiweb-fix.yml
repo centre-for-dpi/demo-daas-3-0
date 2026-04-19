@@ -63,7 +63,12 @@ services:
 
   # certify-nginx ALSO serves a copy of the catalog under /config/server/
   # (used by plugin callbacks); keep that aligned with the UI copy so
-  # downstream links don't drift.
+  # downstream links don't drift. We also replace its nginx.conf so
+  # /.well-known/did.json routes through verifiably-go's /inji-proxy —
+  # that lets us publish every kid Inji Certify's signer uses, fixing
+  # Inji Verify's PublicKeyResolutionFailed error (see certify-nginx.conf
+  # for the detailed why).
   certify-nginx:
     volumes:
       - {{VERIFIABLY_GO_DIR}}/deploy/injiweb-overrides/mimoto-issuers-config.json:/config/server/mimoto-issuers-config.json:ro
+      - {{VERIFIABLY_GO_DIR}}/deploy/injiweb-overrides/certify-nginx.conf:/etc/nginx/conf.d/default.conf:ro
