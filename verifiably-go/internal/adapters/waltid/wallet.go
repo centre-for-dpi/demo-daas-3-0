@@ -3,6 +3,7 @@ package waltid
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -14,6 +15,17 @@ import (
 	"github.com/verifiably/verifiably-go/internal/httpx"
 	"github.com/verifiably/verifiably-go/vctypes"
 )
+
+// base64urlDecode accepts base64url-encoded input with or without padding,
+// as JWT spec specifies unpadded but some implementations add it.
+func base64urlDecode(s string) ([]byte, error) {
+	// RawURLEncoding handles both with-padding and without via the Strict
+	// check being off; but to be safe, pad explicitly.
+	if pad := len(s) % 4; pad != 0 {
+		s += strings.Repeat("=", 4-pad)
+	}
+	return base64.URLEncoding.DecodeString(s)
+}
 
 // accountRequest is walt.id's AccountRequest body shape; the email variant is
 // what this adapter uses. Walt.id distinguishes variants by the fields present.
@@ -159,12 +171,33 @@ func (a *Adapter) ParseOffer(ctx context.Context, offerURI string) (vctypes.Cred
 	_ = json.Unmarshal(body, &parsed)
 
 	title := "Incoming credential"
-	if len(parsed.CredentialConfigurationIds) > 0 {
-		title = humanise(strings.SplitN(parsed.CredentialConfigurationIds[0], "_", 2)[0])
+	configID := firstOr(parsed.CredentialConfigurationIds, "")
+	if configID != "" {
+		title = humanise(strings.SplitN(configID, "_", 2)[0])
 	}
 	issuer := parsed.CredentialIssuer
 	if issuer == "" {
 		issuer = "(unknown issuer)"
+	}
+
+	fields := map[string]string{
+		"offer_uri": offerURI,
+		"config_id": configID,
+	}
+	// Best-effort: fetch the issuer's well-known openid-credential-issuer
+	// metadata and copy in the display name + claim slots the holder will
+	// receive if they accept. The pending card has no claim VALUES — the
+	// wallet only learns those after claiming — but knowing WHICH fields
+	// are coming + the issuer's display name is meaningful context.
+	if issuer != "" && configID != "" {
+		if slots, display := fetchCredentialSlots(ctx, issuer, configID); display != "" || len(slots) > 0 {
+			if display != "" {
+				title = display
+			}
+			if len(slots) > 0 {
+				fields["offered_fields"] = strings.Join(slots, ", ")
+			}
+		}
 	}
 
 	return vctypes.Credential{
@@ -173,11 +206,60 @@ func (a *Adapter) ParseOffer(ctx context.Context, offerURI string) (vctypes.Cred
 		Issuer: issuer,
 		Type:   "w3c_vcdm_2",
 		Status: "pending",
-		Fields: map[string]string{
-			"offer_uri": offerURI,
-			"config_id": firstOr(parsed.CredentialConfigurationIds, ""),
-		},
+		Fields: fields,
 	}, nil
+}
+
+// fetchCredentialSlots reads the issuer's well-known
+// openid-credential-issuer document, looks up the configID, and returns
+// the display name + claim keys. Best-effort: any network error returns
+// empty values so the caller falls back to the offer-only preview.
+func fetchCredentialSlots(ctx context.Context, issuerBase, configID string) (slots []string, display string) {
+	u := strings.TrimRight(issuerBase, "/") + "/.well-known/openid-credential-issuer"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, ""
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, ""
+	}
+	var doc struct {
+		CredentialConfigurationsSupported map[string]struct {
+			Display []struct {
+				Name string `json:"name"`
+			} `json:"display"`
+			CredentialDefinition struct {
+				CredentialSubject map[string]any `json:"credentialSubject"`
+			} `json:"credential_definition"`
+			Claims map[string]any `json:"claims"`
+		} `json:"credential_configurations_supported"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
+		return nil, ""
+	}
+	cfg, ok := doc.CredentialConfigurationsSupported[configID]
+	if !ok {
+		return nil, ""
+	}
+	if len(cfg.Display) > 0 && cfg.Display[0].Name != "" {
+		display = cfg.Display[0].Name
+	}
+	// Prefer credential_definition.credentialSubject (W3C VCDM shape);
+	// fall back to the flat claims map (SD-JWT VC shape).
+	pool := cfg.CredentialDefinition.CredentialSubject
+	if len(pool) == 0 {
+		pool = cfg.Claims
+	}
+	for k := range pool {
+		slots = append(slots, k)
+	}
+	return slots, display
 }
 
 func firstOr(xs []string, fallback string) string {
@@ -190,6 +272,12 @@ func firstOr(xs []string, fallback string) string {
 // ClaimCredential consummates the offer via /exchange/useOfferRequest. Walt.id
 // accepts the offer URI as plain text body; query params control the did used
 // and whether user input is required.
+//
+// After the claim succeeds, we re-list the wallet and find the credential we
+// just added so the returned vctypes.Credential carries its real
+// credentialSubject fields. Without this, the card that replaces the pending
+// one would still only show offer metadata — the claim values would only
+// appear after a subsequent /holder/wallet fetch.
 func (a *Adapter) ClaimCredential(ctx context.Context, cred vctypes.Credential) (vctypes.Credential, error) {
 	sess, err := a.ensureWalletSession(ctx)
 	if err != nil {
@@ -206,6 +294,35 @@ func (a *Adapter) ClaimCredential(ctx context.Context, cred vctypes.Credential) 
 	if err != nil {
 		return cred, err
 	}
+	cred.Status = "accepted"
+
+	// Best-effort: list the wallet and pick the newest credential whose
+	// config id matches this offer — that's almost always the one we just
+	// claimed. Walt.id's useOfferRequest response doesn't echo the stored
+	// credential's id, so we can't look up by primary key.
+	held, err := a.ListWalletCredentials(ctx)
+	if err != nil || len(held) == 0 {
+		return cred, nil
+	}
+	configID := cred.Fields["config_id"]
+	var match *vctypes.Credential
+	for i := range held {
+		h := &held[i]
+		if configID != "" && h.Fields["config_id"] == configID {
+			match = h
+			break
+		}
+	}
+	if match == nil {
+		// No config_id match — fall back to the last credential listed, which
+		// walt.id emits in insertion order.
+		match = &held[len(held)-1]
+	}
+	// Preserve the pending card's ID so the HTMX swap replaces the right card,
+	// but copy over everything else from the just-claimed credential.
+	pendingID := cred.ID
+	cred = *match
+	cred.ID = pendingID
 	cred.Status = "accepted"
 	return cred, nil
 }
@@ -240,8 +357,16 @@ func (a *Adapter) PresentCredential(ctx context.Context, req backend.PresentCred
 }
 
 // walletCredentialToVctype maps a walt.id WalletCredential onto vctypes.Credential.
-// The walt.id shape varies by credential format; we extract the common fields
-// (id, parsedDocument, document) and fall back gracefully.
+// The walt.id shape varies by credential format; we extract claims from
+// whichever body field is populated:
+//   - `parsedDocument` for JSON-LD VCs (already decoded)
+//   - `document` / `jwt` for JWT-style VCs (a compact JWS whose payload holds `vc`)
+//
+// All scalar claim types (string, number, boolean) are rendered into a
+// string for display; object/array values (address, dependents, etc.) are
+// JSON-encoded so the card still surfaces them instead of silently
+// dropping them, which was the symptom users saw for VCs that carry
+// anything other than flat strings.
 func walletCredentialToVctype(raw map[string]json.RawMessage) vctypes.Credential {
 	var id string
 	_ = json.Unmarshal(raw["id"], &id)
@@ -255,11 +380,12 @@ func walletCredentialToVctype(raw map[string]json.RawMessage) vctypes.Credential
 		Fields: map[string]string{},
 	}
 
-	// parsedDocument holds the VC body; pull out credentialSubject + type + issuer.
-	var parsed map[string]json.RawMessage
-	if err := json.Unmarshal(raw["parsedDocument"], &parsed); err == nil {
-		var issuer json.RawMessage
-		if issuer = parsed["issuer"]; issuer != nil {
+	// Prefer parsedDocument (JSON-LD, already-decoded). Fall back to
+	// decoding the `document` or `jwt` compact JWS and reading the `vc`
+	// payload claim.
+	parsed := pickParsedDocument(raw)
+	if parsed != nil {
+		if issuer := parsed["issuer"]; issuer != nil {
 			cred.Issuer = issuerString(issuer)
 		}
 		var types []string
@@ -272,9 +398,7 @@ func walletCredentialToVctype(raw map[string]json.RawMessage) vctypes.Credential
 				if k == "id" {
 					continue
 				}
-				if s, ok := v.(string); ok {
-					cred.Fields[k] = s
-				}
+				cred.Fields[k] = stringifyClaim(v)
 			}
 		}
 	}
@@ -285,6 +409,79 @@ func walletCredentialToVctype(raw map[string]json.RawMessage) vctypes.Credential
 		cred.Issuer = "Unknown issuer"
 	}
 	return cred
+}
+
+// pickParsedDocument returns the decoded VC body from whichever walt.id
+// field carries it. JSON-LD VCs use parsedDocument directly; JWT-encoded
+// VCs store a compact three-dot JWS in `document` or `jwt`, whose payload
+// holds the VC claim either at the top level or nested under `vc`.
+func pickParsedDocument(raw map[string]json.RawMessage) map[string]json.RawMessage {
+	var parsed map[string]json.RawMessage
+	if err := json.Unmarshal(raw["parsedDocument"], &parsed); err == nil && len(parsed) > 0 {
+		return parsed
+	}
+	for _, field := range []string{"document", "jwt"} {
+		var jws string
+		if err := json.Unmarshal(raw[field], &jws); err != nil || jws == "" {
+			continue
+		}
+		if payload := decodeJWSPayload(jws); payload != nil {
+			if vcRaw, ok := payload["vc"]; ok {
+				var vc map[string]json.RawMessage
+				if err := json.Unmarshal(vcRaw, &vc); err == nil {
+					return vc
+				}
+			}
+			return payload
+		}
+	}
+	return nil
+}
+
+// decodeJWSPayload base64url-decodes the middle segment of a compact JWS
+// and unmarshals it as a JSON object. Returns nil on any error.
+func decodeJWSPayload(jws string) map[string]json.RawMessage {
+	parts := strings.SplitN(jws, ".", 3)
+	if len(parts) < 2 {
+		return nil
+	}
+	body, err := base64urlDecode(parts[1])
+	if err != nil {
+		return nil
+	}
+	var out map[string]json.RawMessage
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil
+	}
+	return out
+}
+
+// stringifyClaim coerces any JSON claim value into a human-readable string.
+// Scalars render as themselves; containers (objects, arrays) are
+// JSON-encoded so the card still surfaces them rather than silently
+// dropping non-string claim values.
+func stringifyClaim(v any) string {
+	switch x := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return x
+	case bool:
+		if x {
+			return "true"
+		}
+		return "false"
+	case float64:
+		// json.Unmarshal into any gives float64 for numbers; trim the
+		// trailing .0 for integers so "25" doesn't render as "25.0".
+		if x == float64(int64(x)) {
+			return fmt.Sprintf("%d", int64(x))
+		}
+		return fmt.Sprintf("%g", x)
+	default:
+		b, _ := json.Marshal(v)
+		return string(b)
+	}
 }
 
 func issuerString(raw json.RawMessage) string {
