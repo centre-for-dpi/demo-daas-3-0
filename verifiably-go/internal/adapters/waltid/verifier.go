@@ -134,18 +134,30 @@ func (a *Adapter) RequestPresentation(ctx context.Context, req backend.Presentat
 	if format == "" {
 		format = credentialFormatForStd(tpl.Format)
 	}
-	selective := len(tpl.Fields) > 0 && strings.Contains(strings.ToLower(tpl.Disclosure), "selective")
+	selective := strings.Contains(strings.ToLower(tpl.Disclosure), "selective")
 	var entry map[string]any
-	if selective {
+	if len(tpl.Fields) > 0 {
+		// Always build the full input_descriptor when the verifier is
+		// asking for specific fields. limit_disclosure switches between
+		// "required" (selective) and "preferred" (full). Bare
+		// {format, vct} triggers walt.id to auto-generate a PD the
+		// wallet's usePresentationRequest can't deserialize
+		// ("Field 'input_descriptors' is required"), so we own PD
+		// construction end-to-end.
 		entry = buildSelectiveInputDescriptor(format, typeHint, tpl)
+		if !selective {
+			// Mark limit_disclosure=preferred on the full-disclosure path
+			// so the wallet doesn't strip non-listed disclosures.
+			if desc, ok := entry["input_descriptor"].(map[string]any); ok {
+				if cons, ok := desc["constraints"].(map[string]any); ok {
+					cons["limit_disclosure"] = "preferred"
+				}
+			}
+		}
 	} else {
 		entry = map[string]any{"format": format}
 		switch format {
 		case "vc+sd-jwt", "dc+sd-jwt":
-			// Walt.id's SD-JWT VC matcher requires the EXACT issuer-advertised
-			// vct — typically a full URL like http://issuer/draft13/BankId.
-			// Using a short type name here silently produces "no matches"
-			// against a wallet that holds the credential.
 			if tpl.Vct != "" {
 				entry["vct"] = tpl.Vct
 			} else {
