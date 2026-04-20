@@ -237,8 +237,15 @@ type PresentCredentialResult struct {
 }
 
 // VerificationResult is the output of both FetchPresentationResult and VerifyDirect.
+//
+// Pending=true signals that no holder has submitted a presentation yet — the
+// verifier session is still open. The UI renders this as an "awaiting
+// response" state instead of the red "invalid" card that would otherwise
+// result from Valid=false. Direct-verify callers always leave Pending at
+// its zero (false) — only the polling FetchPresentationResult ever sets it.
 type VerificationResult struct {
 	Valid             bool
+	Pending           bool      // no holder submission yet; the rest of the fields are unset
 	Method            string    // human-readable: "OID4VP · selective — only age_over_18 is shared"
 	Format            string    // credential format: "w3c_vcdm_2", "sd_jwt_vc (IETF)", etc.
 	Issuer            string    // issuer identifier (DID or URL)

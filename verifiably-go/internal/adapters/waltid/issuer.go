@@ -74,12 +74,21 @@ type credentialDefinitionEntry struct {
 // ListSchemas fetches the issuer's credential configurations and maps each one
 // onto a vctypes.Schema. Schema ID is the configuration id (e.g.
 // "UniversityDegree_jwt_vc_json"); Std is derived from the format.
+//
+// Walt.id exposes the same credential TYPE (e.g. "IdentityCredential") under
+// multiple configuration ids — one per signing suite / proof type (ed25519,
+// secp256k1, rsa). The underlying W3C VC is identical, just signed
+// differently, so surfacing three "Identity Credential" cards in the UI is
+// pure noise for the operator picking a schema. Collapse entries with the
+// same (Name, Std) tuple, keeping the first id encountered — which is the
+// one later calls use to target issuance.
 func (a *Adapter) ListSchemas(ctx context.Context, issuerDpg string) ([]vctypes.Schema, error) {
 	var meta credentialIssuerMetadata
 	path := fmt.Sprintf("/%s/.well-known/openid-credential-issuer", a.cfg.StandardVersion)
 	if err := a.issuer.DoJSON(ctx, "GET", path, nil, &meta, nil); err != nil {
 		return nil, fmt.Errorf("fetch issuer metadata: %w", err)
 	}
+	seen := make(map[string]struct{}, len(meta.CredentialConfigurationsSupported))
 	out := make([]vctypes.Schema, 0, len(meta.CredentialConfigurationsSupported))
 	for id, cfg := range meta.CredentialConfigurationsSupported {
 		std := formatToStd(cfg.Format)
@@ -88,6 +97,11 @@ func (a *Adapter) ListSchemas(ctx context.Context, issuerDpg string) ([]vctypes.
 			continue
 		}
 		name := displayNameFor(id, cfg)
+		key := name + "\x00" + std // NUL separator so "Foo|sd" doesn't collide with "Foo" + "|sd"
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
 		out = append(out, vctypes.Schema{
 			ID:         id,
 			Name:       name,

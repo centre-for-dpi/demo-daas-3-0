@@ -207,6 +207,18 @@ func (a *Adapter) FetchPresentationResult(ctx context.Context, state, templateKe
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
+	// If the session never reached a terminal state, the holder simply
+	// hasn't submitted a presentation yet. Surface that as Pending so the
+	// UI renders an "awaiting response" card instead of a red "invalid"
+	// banner that would be misleading — Valid=false on an un-submitted
+	// session means "no input", not "bad input".
+	if !isTerminalSession(res) {
+		return backend.VerificationResult{
+			Pending: true,
+			Method:  fmt.Sprintf("OID4VP · %s", tpl.Disclosure),
+			Format:  tpl.Format,
+		}, nil
+	}
 	return backend.VerificationResult{
 		Valid:             overallResult(res),
 		Method:            fmt.Sprintf("OID4VP · %s", tpl.Disclosure),

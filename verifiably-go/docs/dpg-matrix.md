@@ -35,6 +35,20 @@ out below with the workaround the verifiably-go inji-proxy applies.
   Our verifier adapter uses the PE 2.0 path; switching to v1.0 means
   redoing `RequestPresentation` and `FetchPresentationResult` against
   `/openid4vc/v1/*` endpoints when they're available.
+- **Wallet ⇄ verifier OID4VP submit is broken on v0.18.2 + latest.**
+  `POST /wallet-api/wallet/{id}/exchange/usePresentationRequest` returns
+  `400 "Element class kotlinx.serialization.json.JsonArray is not a
+  JsonPrimitive"` regardless of credential or format. Root cause is an
+  inter-service spec skew inside walt.id itself: verifier-api emits the
+  Presentation Definition with
+  `input_descriptors[].format.jwt_vc_json.alg: ["EdDSA"]` (array, per PE
+  2.0) but wallet-api deserializes the `alg` field as a single `String`
+  and throws. Reproduced on both `waltid/wallet-api:latest` (2026-04-10)
+  and `waltid/wallet-api:0.18.2`. No verifiably-go fix possible —
+  tracked as an upstream walt.id issue. The Send-presentation button
+  surfaces the raw upstream error body in a toast so users see why the
+  submit failed. Workaround: use walt.id's own OID4VP demo app, or
+  wait for an upstream fix.
 - No documented QR-on-PDF export path. `IssueAsPDF` falls back to `DirectPDF: false`.
 - The Kotlin wallet's OID4VCI client strips `credential_definition.@context`
   from credential requests. When using walt.id wallet against Inji Certify,

@@ -40,7 +40,7 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile
 
   issuer-api:
-    image: waltid/issuer-api:latest
+    image: waltid/issuer-api:0.18.2
     restart: unless-stopped
     depends_on:
       - caddy
@@ -51,7 +51,7 @@ services:
       - ./issuer-api/config:/waltid-issuer-api/config
 
   verifier-api:
-    image: waltid/verifier-api:latest
+    image: waltid/verifier-api:0.18.2
     restart: unless-stopped
     depends_on:
       - caddy
@@ -62,7 +62,7 @@ services:
       - ./verifier-api/config:/waltid-verifier-api/config
 
   wallet-api:
-    image: waltid/wallet-api:latest
+    image: waltid/wallet-api:0.18.2
     restart: unless-stopped
     depends_on:
       postgres:
