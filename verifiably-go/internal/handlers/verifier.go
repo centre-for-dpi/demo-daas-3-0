@@ -10,63 +10,150 @@ import (
 )
 
 // ShowVerify renders the verifier page (OID4VP request generator + direct
-// verify). Also surfaces the schema catalog so the "Build a custom request"
-// card can offer them as a starting point.
+// verify). The custom-request card (the only UI path now) needs the schema
+// catalog so the user can pick which credential type to request.
 func (h *H) ShowVerify(w http.ResponseWriter, r *http.Request) {
 	sess := h.Sessions.MustGet(w, r)
 	if sess.VerifierDpg == "" {
 		h.redirect(w, r, "/verifier/dpg")
 		return
 	}
-	templates, err := h.Adapter.ListOID4VPTemplates(r.Context())
-	if err != nil {
-		h.errorToast(w, r, err.Error())
-		return
-	}
 	dpgs, _ := h.Adapter.ListVerifierDpgs(r.Context())
 	schemas, _ := h.Adapter.ListAllSchemas(r.Context())
-	body := map[string]any{
-		"Templates":       templates,
-		"VerifierDpgObj":  dpgs[sess.VerifierDpg],
-		"Schemas":         schemas,
-		"CustomTemplate":  sess.CustomOID4VPTemplate,
-		"CustomSchemaID":  sess.CustomOID4VPSchemaID,
+	if sess.VerifierSchemaFilter == "" {
+		sess.VerifierSchemaFilter = "all"
 	}
+	body := verifierCustomData(sess, schemas, dpgs[sess.VerifierDpg])
 	h.render(w, r, "verifier_verify", h.pageData(sess, body))
 }
 
-// GenerateRequest creates an OID4VP presentation request. Two modes:
-//
-//   - Preset: form.template is one of the curated ListOID4VPTemplates keys.
-//
-//   - Custom: form.template == "custom" and the form ALSO carries schema_id,
-//     field_key[], and disclosure from the "Build a custom request" card.
-//     Handler assembles an inline OID4VPTemplate on the fly so the user
-//     clicks ONE button (no intermediate "Assemble template" step that
-//     would leave the dropdown stale).
+// verifierPresentableSchemas drops variants the backend verifier can't
+// accept, and drops schemas whose every variant would be rejected. Walt.id's
+// verifier refuses `jwt_vc_json-ld` (missing from its VCFormat enum) and
+// `dc+sd-jwt` (rejected by VerifierService.getPresentationFormat). Showing
+// them in the verifier picker is a pure footgun — the user builds a request
+// they can never satisfy.
+func verifierPresentableSchemas(schemas []vctypes.Schema) []vctypes.Schema {
+	out := make([]vctypes.Schema, 0, len(schemas))
+	for _, s := range schemas {
+		if len(s.Variants) == 0 {
+			// Custom schemas carry no variants — trust the adapter that
+			// surfaced them (they've already passed the issuer flow).
+			out = append(out, s)
+			continue
+		}
+		kept := make([]vctypes.SchemaVariant, 0, len(s.Variants))
+		for _, v := range s.Variants {
+			if v.CanPresent {
+				kept = append(kept, v)
+			}
+		}
+		if len(kept) == 0 {
+			continue
+		}
+		s.Variants = kept
+		// If the card's primary ID+Std referenced a dropped variant,
+		// rebase onto the first kept one so the default click-target is
+		// always a presentable format.
+		found := false
+		for _, v := range kept {
+			if v.ID == s.ID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			s = s.ApplyVariant(kept[0].ID)
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+// verifierCustomData builds the template body for the verifier page. Shared
+// between the full-page render and the /verifier/verify/build partial so the
+// card grid, filter chips, and preview all stay consistent when HTMX swaps
+// the custom-request body on card selection.
+func verifierCustomData(sess *Session, schemas []vctypes.Schema, dpg vctypes.DPG) map[string]any {
+	schemas = verifierPresentableSchemas(schemas)
+	// Filter by std: a card qualifies if ANY of its variants matches the
+	// active filter. When a non-"all" filter is active we also promote the
+	// matching variant to the card's default so selecting it picks a
+	// configuration id in that format.
+	filtered := make([]vctypes.Schema, 0, len(schemas))
+	for _, s := range schemas {
+		if sess.VerifierSchemaFilter != "all" && !schemaHasStd(s, sess.VerifierSchemaFilter) {
+			continue
+		}
+		if sess.VerifierSchemaFilter != "all" {
+			s = promoteVariantOfStd(s, sess.VerifierSchemaFilter)
+		}
+		if q := strings.ToLower(sess.VerifierSchemaQuery); q != "" {
+			hay := strings.ToLower(s.Name + " " + s.Desc + " " + s.Std)
+			if !strings.Contains(hay, q) {
+				continue
+			}
+		}
+		filtered = append(filtered, s)
+	}
+	stds := []string{"all"}
+	seen := map[string]bool{"all": true}
+	for _, s := range schemas {
+		if !seen[s.Std] {
+			seen[s.Std] = true
+			stds = append(stds, s.Std)
+		}
+		for _, v := range s.Variants {
+			if !seen[v.Std] {
+				seen[v.Std] = true
+				stds = append(stds, v.Std)
+			}
+		}
+	}
+	return map[string]any{
+		"VerifierDpgObj": dpg,
+		"Schemas":        filtered,
+		"AllSchemas":     schemas,
+		"Stds":           stds,
+		"Filter":         sess.VerifierSchemaFilter,
+		"Query":          sess.VerifierSchemaQuery,
+		"CustomTemplate": sess.CustomOID4VPTemplate,
+		"CustomSchemaID": sess.CustomOID4VPSchemaID,
+	}
+}
+
+// GenerateRequest creates an OID4VP presentation request from the
+// "Build a custom request" form: schema_id picks the credential type (and
+// via its variant id, the wire format); field_key[] + disclosure pick what
+// the holder will be asked to share. Assembles the template inline so one
+// click sends the request — no intermediate "assemble" step.
 func (h *H) GenerateRequest(w http.ResponseWriter, r *http.Request) {
 	sess := h.Sessions.MustGet(w, r)
 	if err := r.ParseForm(); err != nil {
 		h.errorToast(w, r, "Bad form: "+err.Error())
 		return
 	}
-	template := r.FormValue("template")
-	if template == "" {
-		template = "age"
+	tpl, err := h.assembleCustomTemplate(r)
+	if err != nil {
+		h.errorToast(w, r, err.Error())
+		return
+	}
+	sess.CustomOID4VPTemplate = &tpl
+	sess.CustomOID4VPSchemaID = r.FormValue("schema_id")
+	policies := r.Form["policy"]
+	if len(policies) == 0 {
+		// The user submitted with no boxes checked. Default to the three
+		// essential checks so the verifier still runs sensibly — otherwise
+		// walt.id accepts ANY VC (no signature check) which would silently
+		// pass tampered credentials.
+		policies = []string{"signature", "expired", "not-before"}
 	}
 	req := backend.PresentationRequest{
 		VerifierDpg: sess.VerifierDpg,
-		TemplateKey: template,
-	}
-	if template == "custom" {
-		tpl, err := h.assembleCustomTemplate(r)
-		if err != nil {
-			h.errorToast(w, r, err.Error())
-			return
-		}
-		sess.CustomOID4VPTemplate = &tpl
-		sess.CustomOID4VPSchemaID = r.FormValue("schema_id")
-		req.Template = &tpl
+		TemplateKey: "custom",
+		Template:    &tpl,
+		Policies:    policies,
+		WebhookURL:  strings.TrimSpace(r.FormValue("webhook_url")),
 	}
 	res, err := h.Adapter.RequestPresentation(r.Context(), req)
 	if err != nil {
@@ -75,7 +162,7 @@ func (h *H) GenerateRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	sess.CurrentOID4VPLink = res.RequestURI
 	sess.CurrentOID4VPState = res.State
-	sess.CurrentOID4VPTemplate = template
+	sess.CurrentOID4VPTemplate = "custom"
 	h.renderFragment(w, r, "fragment_oid4vp_request_output", res)
 }
 
@@ -94,8 +181,9 @@ func (h *H) assembleCustomTemplate(r *http.Request) (vctypes.OID4VPTemplate, err
 	}
 	var picked *vctypes.Schema
 	for i := range schemas {
-		if schemas[i].ID == schemaID {
-			picked = &schemas[i]
+		if schemas[i].HasVariantID(schemaID) {
+			resolved := h.resolveFields(schemas[i].ApplyVariant(schemaID))
+			picked = &resolved
 			break
 		}
 	}
@@ -126,20 +214,39 @@ func (h *H) assembleCustomTemplate(r *http.Request) (vctypes.OID4VPTemplate, err
 	if disclosure == "" {
 		disclosure = "full"
 	}
+	// Pull the canonical credential type + full vct URL off the picked
+	// variant so the verifier's PD filter matches the wallet's held
+	// credential exactly. The previous title→guess path appended "Credential"
+	// to everything, which broke types whose real name doesn't end that way
+	// (e.g. walt.id's "BankId") and used a bare short type instead of the
+	// full vct URL walt.id's SD-JWT matcher requires.
+	credType := picked.BaseType()
+	vct := ""
+	for _, v := range picked.Variants {
+		if v.ID == picked.ID {
+			vct = v.Vct
+			break
+		}
+	}
 	return vctypes.OID4VPTemplate{
-		Title:      picked.Name,
-		Fields:     fields,
-		Format:     picked.Std,
-		Disclosure: disclosureSummary(disclosure, fields),
+		Title:          picked.Name,
+		Fields:         fields,
+		Format:         picked.Std,
+		Disclosure:     disclosureSummary(disclosure, fields),
+		CredentialType: credType,
+		Vct:            vct,
 	}, nil
 }
 
-// BuildVerifierTemplate renders the field-picker fragment for the schema
-// the user selected. Fires from the schema dropdown's change event so the
-// checkboxes appear immediately; the actual template is re-assembled at
-// Generate time (via assembleCustomTemplate) rather than stashed here —
-// that keeps the dropdown and the built template from drifting out of
-// sync when the user changes their mind.
+// BuildVerifierTemplate re-renders the card grid + field picker fragment
+// for the verifier's custom-request form. Accepts three kinds of input:
+//   - schema_id=<variant id>: user picked a card's format chip.
+//   - filter=<std>: user clicked a std-filter chip above the cards.
+//   - q=<text>: user typed in the search box.
+//
+// Any of these re-renders the whole fragment_verifier_custom_body so the
+// card list, active-chip highlighting, hidden schema_id input, and field
+// picker stay in sync without juggling multiple OOB swaps.
 func (h *H) BuildVerifierTemplate(w http.ResponseWriter, r *http.Request) {
 	sess := h.Sessions.MustGet(w, r)
 	if sess.VerifierDpg == "" {
@@ -150,74 +257,80 @@ func (h *H) BuildVerifierTemplate(w http.ResponseWriter, r *http.Request) {
 		h.errorToast(w, r, "Bad form: "+err.Error())
 		return
 	}
-	schemaID := r.FormValue("schema_id")
-	if schemaID == "" {
-		// Empty dropdown → clear the preview area.
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(""))
-		return
-	}
 	schemas, err := h.Adapter.ListAllSchemas(r.Context())
 	if err != nil {
 		h.errorToast(w, r, "Could not load schemas: "+err.Error())
 		return
 	}
+
+	// Filter state (persisted on session so a re-render from a chip/search
+	// click doesn't lose the other's selection).
+	if f := r.FormValue("filter"); f != "" {
+		sess.VerifierSchemaFilter = f
+	}
+	if sess.VerifierSchemaFilter == "" {
+		sess.VerifierSchemaFilter = "all"
+	}
+	if _, hasQ := r.Form["q"]; hasQ {
+		sess.VerifierSchemaQuery = r.FormValue("q")
+	}
+
+	// Schema selection. A non-empty schema_id on this POST means the user
+	// just clicked a card's format chip — resolve it against variants and
+	// pin sess.CustomOID4VPSchemaID so Generate picks it up.
+	schemaID := r.FormValue("schema_id")
+	if schemaID != "" {
+		sess.CustomOID4VPSchemaID = schemaID
+	}
+	schemaID = sess.CustomOID4VPSchemaID
+
 	var picked *vctypes.Schema
-	for i := range schemas {
-		if schemas[i].ID == schemaID {
-			picked = &schemas[i]
-			break
-		}
-	}
-	if picked == nil {
-		h.errorToast(w, r, "Unknown schema "+schemaID)
-		return
-	}
-	// Pre-check fields already selected on the prior render (if any) so
-	// switching schemas doesn't erase selections the user made on the
-	// same schema. Otherwise default to every field.
-	var selected []string
-	if raw := r.Form["field_key"]; len(raw) > 0 {
-		valid := make(map[string]bool, len(picked.FieldsSpec))
-		for _, f := range picked.FieldsSpec {
-			valid[f.Name] = true
-		}
-		for _, f := range raw {
-			if valid[f] {
-				selected = append(selected, f)
+	if schemaID != "" {
+		for i := range schemas {
+			if schemas[i].HasVariantID(schemaID) {
+				resolved := h.resolveFields(schemas[i].ApplyVariant(schemaID))
+				picked = &resolved
+				break
 			}
 		}
 	}
-	if len(selected) == 0 {
-		for _, f := range picked.FieldsSpec {
-			selected = append(selected, f.Name)
-		}
-	}
-	sess.CustomOID4VPSchemaID = schemaID
-	// Build a preview template purely so the fragment can show a "will
-	// request: …" line; Generate rebuilds from the live form values.
-	preview := vctypes.OID4VPTemplate{
-		Title:      picked.Name,
-		Fields:     selected,
-		Format:     picked.Std,
-		Disclosure: disclosureSummary(r.FormValue("disclosure"), selected),
-	}
-	h.renderFragment(w, r, "fragment_custom_oid4vp_preview", map[string]any{
-		"Template": preview,
-		"SchemaID": schemaID,
-		"Schema":   *picked,
-		"Selected": fieldSet(selected),
-	})
-}
 
-// fieldSet returns a lookup from field name → true so templates can
-// render the right "checked" state without iterating the slice per field.
-func fieldSet(xs []string) map[string]bool {
-	out := make(map[string]bool, len(xs))
-	for _, x := range xs {
-		out[x] = true
+	// Compute selected fields. Preserve prior selections for the same
+	// schema; default to every field when the user just switched to a new
+	// schema (signaled by the schema_id query param being present).
+	var selected []string
+	if picked != nil {
+		if r.FormValue("schema_id") == "" {
+			// Re-render driven by filter/search — keep the user's checks.
+			if raw := r.Form["field_key"]; len(raw) > 0 {
+				valid := make(map[string]bool, len(picked.FieldsSpec))
+				for _, f := range picked.FieldsSpec {
+					valid[f.Name] = true
+				}
+				for _, f := range raw {
+					if valid[f] {
+						selected = append(selected, f)
+					}
+				}
+			}
+		}
+		if len(selected) == 0 {
+			for _, f := range picked.FieldsSpec {
+				selected = append(selected, f.Name)
+			}
+		}
+		preview := vctypes.OID4VPTemplate{
+			Title:      picked.Name,
+			Fields:     selected,
+			Format:     picked.Std,
+			Disclosure: disclosureSummary(r.FormValue("disclosure"), selected),
+		}
+		sess.CustomOID4VPTemplate = &preview
 	}
-	return out
+
+	dpgs, _ := h.Adapter.ListVerifierDpgs(r.Context())
+	body := verifierCustomData(sess, schemas, dpgs[sess.VerifierDpg])
+	h.renderFragment(w, r, "fragment_verifier_custom_body", body)
 }
 
 // disclosureSummary renders the plain-language string shown on the request
@@ -241,7 +354,33 @@ func (h *H) SimulateResponse(w http.ResponseWriter, r *http.Request) {
 		h.errorToast(w, r, err.Error())
 		return
 	}
-	h.renderFragment(w, r, "fragment_verify_result", res)
+	// Adapters that use a preset-template keyed lookup have no way to
+	// reconstruct an inline custom template — paper over the empty
+	// Method/Format on the Pending branch so the "awaiting response" card
+	// still shows what the user actually asked for.
+	if sess.CustomOID4VPTemplate != nil {
+		tpl := sess.CustomOID4VPTemplate
+		if res.Method == "" || strings.HasSuffix(res.Method, "· ") {
+			res.Method = "OID4VP · " + tpl.Disclosure
+		}
+		if res.Format == "" {
+			res.Format = tpl.Format
+		}
+		if len(res.Requested) == 0 {
+			res.Requested = tpl.Fields
+		}
+		if res.CredentialTitle == "" {
+			res.CredentialTitle = tpl.Title
+		}
+	}
+	// Terminal state → also emit the OOB button swap so the HTMX poller
+	// on #verify-poll-btn stops firing every 3s. Pending stays as a
+	// single-fragment response so polling continues.
+	if res.Pending {
+		h.renderFragment(w, r, "fragment_verify_result", res)
+		return
+	}
+	h.renderFragments(w, r, res, "fragment_verify_result", "fragment_verify_stop_polling")
 }
 
 // VerifyDirect handles scan/upload/paste direct verification.

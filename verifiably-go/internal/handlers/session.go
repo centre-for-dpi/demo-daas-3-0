@@ -63,6 +63,12 @@ type Session struct {
 	// CustomOID4VPSchemaID is the schema the custom template was built from,
 	// so the field-picker fragment can re-render with its selections intact.
 	CustomOID4VPSchemaID string
+	// VerifierSchemaFilter / VerifierSchemaQuery drive the card-browser's
+	// std chips + search input on the verifier's custom-request section.
+	// Mirrors SchemaFilter/SchemaQuery on the issuer side but kept separate
+	// so switching role doesn't blow away the other role's filter state.
+	VerifierSchemaFilter string
+	VerifierSchemaQuery  string
 
 	// LastWalletError is the most recent error from a wallet action
 	// (paste, scan, accept). Rendered as an inline banner on the wallet

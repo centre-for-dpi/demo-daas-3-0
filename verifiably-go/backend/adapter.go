@@ -204,6 +204,12 @@ type PresentationRequest struct {
 	VerifierDpg string
 	TemplateKey string // adapter-defined; maps to the verifier's stored presentation templates
 	Template    *vctypes.OID4VPTemplate
+	// Policies is the list of verification policies the operator selected
+	// (see walt.id's vc_policies / vp_policies). Recognized values:
+	// "signature" | "expired" | "not-before" | "webhook". Adapters that
+	// don't support per-request policy tuning ignore the list.
+	Policies   []string
+	WebhookURL string // only used when "webhook" is in Policies
 }
 
 // PresentationRequestResult describes a generated OID4VP request.
@@ -253,4 +259,18 @@ type VerificationResult struct {
 	Requested         []string  // fields received (OID4VP only; nil for direct verify)
 	Issued            time.Time // when the credential was originally issued
 	CheckedRevocation bool      // false for offline scan (no status-list lookup possible)
+	// PoliciesApplied names the verification policies that were actually run
+	// on the submitted credential (e.g. "signature", "expired"). Used by the
+	// result fragment to show "the VP was verified along with:" like walt.id's
+	// portal. Empty for direct-verify callers that don't expose policy info.
+	PoliciesApplied []string
+	// DisclosedFields holds the holder-disclosed claim values extracted from
+	// the VP token. The map key is the claim name, the value is the string
+	// rendering (scalars stringified, nested objects JSON-encoded). Used by
+	// the flip-side of the result card to show the actual data that was
+	// shared — like walt.id's "Presented Credentials" panel.
+	DisclosedFields map[string]string
+	// CredentialTitle is the human-readable name of the presented credential
+	// type (e.g. "Bank Id") — rendered as a heading on the flipped result.
+	CredentialTitle string
 }

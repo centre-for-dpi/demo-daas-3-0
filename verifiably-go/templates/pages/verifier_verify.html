@@ -13,115 +13,71 @@
       Generate an <span class="mono">openid4vp://</span> request. The holder scans or opens the link in their wallet; their wallet collects matching claims and returns them here.
     </p>
 
-    {{/* Two paths, two cards. The operator picks ONE — either a curated
-         preset (left) OR a custom schema-driven request (right). Each
-         card has a single Generate-request button that fires the OID4VP
-         session directly; no intermediate "assemble" step that could
-         leave the UI out of sync. */}}
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1rem">
+    <form id="custom-template-form"
+          hx-post="/verifier/verify/request"
+          hx-target="#oid4vp-output"
+          hx-swap="innerHTML"
+          style="background:var(--bg-elev);border:1px solid var(--line);padding:1.5rem;border-radius:2px;margin:0">
+      <input type="hidden" name="template" value="custom">
+      <p style="font-size:0.82rem;color:var(--ink-soft);margin-bottom:1rem">
+        Pick a credential type below, choose its format, check the fields you need, then generate.
+      </p>
 
-      {{/* ---------- Preset templates ---------- */}}
-      <form class="card"
-            hx-post="/verifier/verify/request"
-            hx-target="#oid4vp-output"
-            hx-swap="innerHTML"
-            style="background:var(--bg-elev);border:1px solid var(--line);padding:1.5rem;border-radius:2px;margin:0">
-        <div class="caps" style="margin-bottom:0.5rem">Preset templates</div>
-        <div class="field">
-          <label for="oid4vp-template">Request template</label>
-          <select id="oid4vp-template" name="template">
-            {{range $key, $tpl := .Body.Templates}}
-              <option value="{{$key}}">{{$tpl.Title}} — <em>{{$tpl.Disclosure}}</em></option>
-            {{end}}
-          </select>
+      <div class="field" style="margin-bottom:1rem">
+        <label>Disclosure</label>
+        <div style="display:flex;gap:1rem;font-size:0.85rem">
+          <label style="display:inline-flex;align-items:center;gap:0.35rem">
+            <input type="radio" name="disclosure" value="selective" checked>
+            selective — only checked fields shared
+          </label>
+          <label style="display:inline-flex;align-items:center;gap:0.35rem">
+            <input type="radio" name="disclosure" value="full">
+            full credential shared
+          </label>
         </div>
-        <button class="btn" type="submit">Generate request →</button>
-      </form>
+      </div>
 
-      {{/* ---------- Custom (schema-driven) ---------- */}}
-      <form id="custom-template-form"
-            hx-post="/verifier/verify/request"
-            hx-target="#oid4vp-output"
-            hx-swap="innerHTML"
-            style="background:var(--bg-elev);border:1px solid var(--line);padding:1.5rem;border-radius:2px;margin:0">
-        <input type="hidden" name="template" value="custom">
-        <div class="caps" style="margin-bottom:0.5rem">Build a custom request</div>
-        <p style="font-size:0.82rem;color:var(--ink-soft);margin-bottom:1rem">
-          Pick a schema, check the fields you need, choose selective or full disclosure, then generate.
-        </p>
-
-        {{/* Filter chips + search narrow the dropdown. Pure client-side:
-             the dropdown holds every schema, the JS helper (see
-             static/js/app.js #initSchemaPicker) hides options whose std
-             or name doesn't match the active chip + query. Keeps the
-             existing hx-post="change" wiring — the select's `change`
-             event fires the server fetch that populates the field picker
-             below as soon as the user actually commits a schema. */}}
-        <div class="field">
-          <label for="custom-schema-id">Schema</label>
-
-          <div id="schema-filter-chips" class="chip-row" data-schema-filter
-               style="display:flex;flex-wrap:wrap;gap:0.35rem;margin-bottom:0.5rem">
-            <button type="button" class="chip active" data-std="all">all</button>
-            {{range schemaStdList .Body.Schemas}}
-              <button type="button" class="chip" data-std="{{.}}">{{.}}</button>
-            {{end}}
-          </div>
-
-          <input type="search" id="schema-search" data-schema-search
-                 placeholder="Search schemas…" autocomplete="off"
-                 style="width:100%;padding:0.5rem 0.7rem;margin-bottom:0.5rem;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:2px;font-size:0.85rem">
-
-          <select id="custom-schema-id" name="schema_id" data-schema-select
-                  hx-post="/verifier/verify/build"
-                  hx-trigger="change"
-                  hx-target="#custom-template-preview"
-                  hx-swap="innerHTML"
-                  hx-include="closest form">
-            <option value="">— choose a schema —</option>
-            {{range .Body.Schemas}}
-              <option value="{{.ID}}" data-std="{{.Std}}" data-search="{{.Name | lowerStr}} {{.Std | lowerStr}}"
-                      {{if eq $.Body.CustomSchemaID .ID}}selected{{end}}>{{.Name}} · {{.Std}}</option>
-            {{end}}
-          </select>
-          <div id="schema-filter-empty"
-               style="display:none;font-size:0.82rem;color:var(--ink-mute);margin-top:0.35rem;font-style:italic">
-            No schemas match the current filters.
-          </div>
+      {{/* Credential policies — mirrors walt.id's Customise Verification
+           section. Signature / Expired / Not Before are default-on so a
+           verifier still runs the core checks even if the operator leaves
+           everything alone. Webhook is off by default and pairs with an
+           inline URL input that only matters when the box is ticked. */}}
+      <div class="field" style="margin-bottom:1rem">
+        <label>Credential Policies</label>
+        <div style="display:flex;flex-direction:column;gap:0.35rem;font-size:0.85rem">
+          <label style="display:inline-flex;align-items:center;gap:0.35rem">
+            <input type="checkbox" name="policy" value="signature" checked>
+            Signature — the issuer's signature verifies
+          </label>
+          <label style="display:inline-flex;align-items:center;gap:0.35rem">
+            <input type="checkbox" name="policy" value="expired" checked>
+            Expired — credential is within its validity window
+          </label>
+          <label style="display:inline-flex;align-items:center;gap:0.35rem">
+            <input type="checkbox" name="policy" value="not-before" checked>
+            Not Before — credential isn't being used before it's valid
+          </label>
+          <label style="display:inline-flex;align-items:center;gap:0.35rem;flex-wrap:wrap">
+            <input type="checkbox" name="policy" value="webhook">
+            Webhook — notify
+            <input type="url" name="webhook_url" placeholder="https://webhook.site/…"
+                   style="flex:1;min-width:200px;padding:0.3rem 0.5rem;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:2px;font-size:0.8rem">
+          </label>
         </div>
+      </div>
 
-        <div class="field" style="margin-top:1rem">
-          <label>Disclosure</label>
-          <div style="display:flex;gap:1rem;font-size:0.85rem">
-            <label style="display:inline-flex;align-items:center;gap:0.35rem">
-              <input type="radio" name="disclosure" value="selective" checked>
-              selective — only checked fields shared
-            </label>
-            <label style="display:inline-flex;align-items:center;gap:0.35rem">
-              <input type="radio" name="disclosure" value="full">
-              full credential shared
-            </label>
-          </div>
-        </div>
+      {{/* Card grid + filter + field picker. Swapped whole on card
+           selection / filter / search by /verifier/verify/build so the
+           active-chip highlighting and hidden schema_id stay coherent
+           without out-of-band updates. */}}
+      <div id="verifier-custom-body">
+        {{template "fragment_verifier_custom_body" .Body}}
+      </div>
 
-        {{/* Fields appear here after a schema is chosen. Rendered by
-             fragment_custom_oid4vp_preview. Changing the schema dropdown
-             triggers a fresh fragment render via hx-trigger=change. */}}
-        <div id="custom-template-preview" style="margin-top:1rem">
-          {{if .Body.CustomTemplate}}
-            {{template "fragment_custom_oid4vp_preview" (dict
-              "Template" (deref .Body.CustomTemplate)
-              "SchemaID" .Body.CustomSchemaID
-              "Schema"   (indexSchemas .Body.Schemas .Body.CustomSchemaID)
-              "Selected" (fieldSet .Body.CustomTemplate.Fields))}}
-          {{end}}
-        </div>
-
-        <button class="btn" type="submit" style="margin-top:1rem">
-          Generate request →
-        </button>
-      </form>
-    </div>
+      <button class="btn" type="submit" style="margin-top:1rem">
+        Generate request →
+      </button>
+    </form>
 
     <div id="oid4vp-output" style="margin-top:1.5rem"></div>
 
@@ -250,19 +206,40 @@
   </div>
 
   <div class="btn-row" style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px dashed var(--line-soft);align-items:center">
+    {{/* Auto-polls every 3s after a 2s initial delay, AND fires
+         immediately on manual click — the button is the fallback for
+         when polling is slow or the operator wants to force-refresh.
+         When the server renders a terminal fragment_verify_result it
+         ALSO emits an OOB replacement of #verify-poll-btn without the
+         polling trigger, so the re-verify doesn't loop once we've got
+         a valid/invalid outcome. */}}
     <button class="btn"
+            id="verify-poll-btn"
             hx-post="/verifier/verify/response"
+            hx-trigger="click, load delay:2s, every 3s"
             hx-target="#verify-result"
             hx-swap="innerHTML"
-            hx-indicator="#verify-busy"
-            hx-disabled-elt="this">Check for holder response →</button>
+            hx-indicator="#verify-busy">Check now →</button>
     <span id="verify-busy" class="htmx-indicator" style="font-size:0.82rem;color:var(--ink-mute)">checking…</span>
     <span style="font-size:0.78rem;color:var(--ink-mute);align-self:center">state: <span class="mono">{{.State}}</span></span>
   </div>
   <p style="font-size:0.78rem;color:var(--ink-mute);margin-top:0.75rem">
-    The verifier polls its own session endpoint. Click the button once the holder has responded on their wallet.
+    The verifier auto-checks every few seconds once the request is live. Hit <em>Check now</em> for an immediate refresh.
   </p>
 </div>
+{{end}}
+
+{{/* OOB replacement for the poll button — rendered alongside the
+     terminal result card so auto-polling stops as soon as the holder
+     responds. Kept as its own template so the Pending branch doesn't
+     emit it (we want polling to continue while waiting). */}}
+{{define "fragment_verify_stop_polling"}}
+<button id="verify-poll-btn"
+        class="btn small ghost"
+        disabled
+        hx-swap-oob="true"
+        title="Polling stopped — response received"
+  >✓ Response received</button>
 {{end}}
 
 {{define "fragment_verify_result"}}
@@ -282,36 +259,171 @@
   </div>
 </div>
 {{else}}
-<div class="verify-result {{if .Valid}}valid{{else}}invalid{{end}}" style="margin-top:1.5rem">
-  <div class="verify-banner {{if .Valid}}valid{{else}}invalid{{end}}">
-    <span class="icon">{{if .Valid}}✓{{else}}✕{{end}}</span>
-    <div>
-      <h3>{{if .Valid}}Credential valid{{else}}Credential invalid{{end}}</h3>
-      <p>{{if .Valid}}Signature verified, issuer trusted, within validity period.{{else}}Signature could not be verified against the issuer's public key.{{end}}</p>
+{{/* Flip card: front shows the verification verdict (green when valid, red
+     when invalid) plus which policies ran. Hovering flips to the back,
+     which lists the holder's actual disclosed claim values — equivalent
+     to walt.id's "Presented Credentials" panel. If the adapter couldn't
+     extract fields (unknown VP format), the back just repeats the verdict. */}}
+<div class="verify-flip {{if .Valid}}valid{{else}}invalid{{end}}" style="margin-top:1.5rem">
+  <div class="verify-flip-inner">
+
+    <div class="verify-flip-face verify-flip-front">
+      <div class="verify-banner {{if .Valid}}valid{{else}}invalid{{end}}">
+        <span class="icon">{{if .Valid}}✓{{else}}✕{{end}}</span>
+        <div>
+          <h3>{{if .Valid}}Credential valid{{else}}Credential invalid{{end}}</h3>
+          <p>
+            {{if .Valid}}
+              Signature verified, issuer trusted, within validity period.
+            {{else}}
+              One or more policies failed — the credential can't be trusted as-is.
+            {{end}}
+          </p>
+        </div>
+      </div>
+
+      <dl class="cred-rows">
+        <dt>method</dt>  <dd>{{.Method}}</dd>
+        <dt>format</dt>  <dd><span class="mono">{{.Format}}</span></dd>
+        <dt>issuer</dt>  <dd><span class="mono">{{.Issuer}}</span></dd>
+        <dt>subject</dt> <dd><span class="mono">{{.Subject}}</span></dd>
+        <dt>issued</dt>  <dd>{{.Issued}}</dd>
+        {{if .PoliciesApplied}}
+          <dt>policies</dt>
+          <dd>
+            {{range $i, $p := .PoliciesApplied}}{{if $i}} · {{end}}<span class="pill {{if $.Valid}}ok{{else}}err{{end}}">{{$p}}</span>{{end}}
+          </dd>
+        {{end}}
+        {{if .Requested}}
+          <dt>fields received</dt>
+          <dd><span class="mono">{{range $i, $f := .Requested}}{{if $i}}, {{end}}{{$f}}{{end}}</span></dd>
+        {{end}}
+      </dl>
+
+      <p class="verify-flip-hint">hover to see the disclosed fields</p>
+    </div>
+
+    <div class="verify-flip-face verify-flip-back">
+      <div class="caps" style="margin-bottom:0.4rem">Presented Credentials</div>
+      {{if .CredentialTitle}}
+        <h3 style="margin:0 0 0.75rem;font-family:'Josefin Sans',sans-serif;font-weight:500;font-size:1.3rem">{{.CredentialTitle}}</h3>
+      {{end}}
+      {{if .DisclosedFields}}
+        <dl class="cred-rows">
+          {{range $k, $v := .DisclosedFields}}
+            <dt>{{replaceUnderscore $k}}</dt>
+            <dd>{{$v}}</dd>
+          {{end}}
+        </dl>
+      {{else}}
+        <p style="font-size:0.85rem;color:var(--ink-soft);margin:0">
+          No structured claim values were disclosed — the wallet returned
+          only the signed envelope. This is normal for full-disclosure
+          requests against W3C VC-JWT credentials without per-claim
+          selective disclosure.
+        </p>
+      {{end}}
     </div>
   </div>
-
-  <dl class="cred-rows">
-    <dt>method</dt>      <dd>{{.Method}}</dd>
-    <dt>format</dt>      <dd><span class="mono">{{.Format}}</span></dd>
-    <dt>issuer</dt>      <dd><span class="mono">{{.Issuer}}</span></dd>
-    <dt>subject</dt>     <dd><span class="mono">{{.Subject}}</span></dd>
-    <dt>issued</dt>      <dd>{{.Issued}}</dd>
-    {{if .Requested}}
-      <dt>fields received</dt>
-      <dd><span class="mono">{{range $i, $f := .Requested}}{{if $i}}, {{end}}{{$f}}{{end}}</span></dd>
-    {{end}}
-    <dt>revocation</dt>
-    <dd>
-      {{if .CheckedRevocation}}
-        {{if .Valid}}<span class="pill ok">not revoked</span>{{else}}<span class="pill err">revoked 2025-02-03</span>{{end}}
-      {{else}}
-        <span class="pill neutral">not checked — offline</span>
-      {{end}}
-    </dd>
-  </dl>
 </div>
 {{end}}
+{{end}}
+
+{{define "fragment_verifier_custom_body"}}
+{{/* Carries the picked schema's variant id so the parent form submits the
+     right configuration id on Generate. Empty until the user clicks a
+     card's format chip. */}}
+<input type="hidden" name="schema_id" value="{{.CustomSchemaID}}">
+
+<div style="margin-bottom:0.75rem">
+  <div class="chip-row" style="margin-bottom:0.5rem">
+    {{range .Stds}}
+      <button type="button"
+              class="chip small {{if eq . $.Filter}}active{{end}}"
+              hx-post="/verifier/verify/build"
+              hx-vals='{"filter": "{{.}}"}'
+              hx-target="#verifier-custom-body"
+              hx-swap="innerHTML"
+              hx-include="closest form">{{.}}</button>
+    {{end}}
+  </div>
+
+  <input type="search"
+         name="q"
+         placeholder="Search credentials…"
+         value="{{.Query}}"
+         autocomplete="off"
+         hx-post="/verifier/verify/build"
+         hx-trigger="input changed delay:250ms, search"
+         hx-target="#verifier-custom-body"
+         hx-swap="innerHTML"
+         hx-include="closest form"
+         style="width:100%;padding:0.5rem 0.7rem;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:2px;font-size:0.85rem">
+</div>
+
+<div class="schema-list" style="max-height:340px;overflow-y:auto">
+  {{if not .Schemas}}
+    <div class="empty" style="grid-column:1 / -1;font-size:0.85rem;color:var(--ink-mute)">
+      No credentials match the current filters.
+    </div>
+  {{end}}
+
+  {{range .Schemas}}
+    {{$cardSelected := false}}
+    {{if eq .ID $.CustomSchemaID}}{{$cardSelected = true}}{{end}}
+    {{range .Variants}}{{if eq .ID $.CustomSchemaID}}{{$cardSelected = true}}{{end}}{{end}}
+
+    <div class="schema-card {{if $cardSelected}}selected{{end}}"
+         data-name="{{.Name}}" data-std="{{.Std}}">
+      <h4 style="margin:0 0 0.25rem">{{.Name}}</h4>
+      <div class="desc" style="font-size:0.78rem;margin-bottom:0.4rem">
+        {{len .FieldsSpec}} field{{if ne (len .FieldsSpec) 1}}s{{end}} ·
+        served in {{if .Variants}}{{len .Variants}} format{{if ne (len .Variants) 1}}s{{end}}{{else}}{{.Std}}{{end}}
+      </div>
+
+      {{if .Variants}}
+        {{/* Hide formats the backend verifier can't accept for
+             presentation requests — walt.id Community Stack v0.18.2
+             rejects jwt_vc_json-ld (missing from VCFormat enum) and
+             dc+sd-jwt (thrown by VerifierService.getPresentationFormat).
+             Showing them here would let the user build a request that
+             always returns "not a valid format". */}}
+        <div class="chip-row" style="flex-wrap:wrap;gap:0.3rem">
+          {{range .Variants}}
+            {{if .CanPresent}}
+              <button type="button"
+                      class="chip small {{if eq .ID $.CustomSchemaID}}active{{end}}"
+                      title="{{.Format}}"
+                      hx-post="/verifier/verify/build"
+                      hx-vals='{"schema_id": "{{.ID}}"}'
+                      hx-target="#verifier-custom-body"
+                      hx-swap="innerHTML"
+                      hx-include="closest form">{{.Label}}</button>
+            {{end}}
+          {{end}}
+        </div>
+      {{else}}
+        <button type="button"
+                class="chip small {{if $cardSelected}}active{{end}}"
+                hx-post="/verifier/verify/build"
+                hx-vals='{"schema_id": "{{.ID}}"}'
+                hx-target="#verifier-custom-body"
+                hx-swap="innerHTML"
+                hx-include="closest form">{{.Std}}</button>
+      {{end}}
+    </div>
+  {{end}}
+</div>
+
+<div id="custom-template-preview" style="margin-top:1rem">
+  {{if .CustomTemplate}}
+    {{template "fragment_custom_oid4vp_preview" (dict
+      "Template" (deref .CustomTemplate)
+      "SchemaID" .CustomSchemaID
+      "Schema"   (indexSchemas .AllSchemas .CustomSchemaID)
+      "Selected" (fieldSet .CustomTemplate.Fields))}}
+  {{end}}
+</div>
 {{end}}
 
 {{define "fragment_custom_oid4vp_preview"}}
