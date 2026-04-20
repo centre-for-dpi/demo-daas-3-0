@@ -106,15 +106,33 @@ func (a *Adapter) RequestPresentation(ctx context.Context, req backend.Presentat
 		}
 	}
 	// Build a Presentation-Exchange request asking for any VC whose type
-	// contains one of the template's fields. Walt.id's current PE path accepts
-	// a simple `{"format":"jwt_vc_json","type":"UniversityDegreeCredential"}`
-	// style entry; we use a generic request that the verifier will match
-	// against any credential present in the wallet.
-	creds := []map[string]any{
-		{"format": credentialFormatForStd(tpl.Format), "type": typeHint},
+	// contains one of the template's fields. Walt.id's E2E test suite uses
+	// two specific request shapes, and the wallet-api's OID4VP submit
+	// crashes on anything else:
+	//
+	//   jwt_vc_json   →  {"format": "jwt_vc_json", "type": "<CredentialType>"}
+	//   vc+sd-jwt     →  {"format": "vc+sd-jwt",   "vct":  "<full-vct-URL>"}
+	//
+	// (see waltid-services/waltid-e2e-tests/src/test/resources/presentation/
+	// *-presentation-request.json for the canonical fixtures.)
+	format := credentialFormatForStd(tpl.Format)
+	entry := map[string]any{"format": format}
+	switch format {
+	case "vc+sd-jwt", "dc+sd-jwt":
+		// walt.id's SD-JWT VC matcher keys off vct. Use the type as the
+		// vct tail; when a caller threads a fully-qualified URL (via a
+		// custom template set up from the issuer's schema id) we honor
+		// that verbatim.
+		if strings.HasPrefix(typeHint, "http://") || strings.HasPrefix(typeHint, "https://") {
+			entry["vct"] = typeHint
+		} else {
+			entry["vct"] = typeHint
+		}
+	default:
+		entry["type"] = typeHint
 	}
 	body := verifyBody{
-		RequestCredentials: creds,
+		RequestCredentials: []map[string]any{entry},
 	}
 	raw, err := a.verifier.DoRaw(ctx, "POST", "/openid4vc/verify", jsonReader(body), "application/json", nil)
 	if err != nil {

@@ -75,43 +75,91 @@ type credentialDefinitionEntry struct {
 // onto a vctypes.Schema. Schema ID is the configuration id (e.g.
 // "UniversityDegree_jwt_vc_json"); Std is derived from the format.
 //
-// Walt.id exposes the same credential TYPE (e.g. "IdentityCredential") under
-// multiple configuration ids — one per signing suite / proof type (ed25519,
-// secp256k1, rsa). The underlying W3C VC is identical, just signed
-// differently, so surfacing three "Identity Credential" cards in the UI is
-// pure noise for the operator picking a schema. Collapse entries with the
-// same (Name, Std) tuple, keeping the first id encountered — which is the
-// one later calls use to target issuance.
+// Walt.id exposes the same credential TYPE under multiple configuration ids —
+// one per format (jwt_vc_json, jwt_vc_json-ld, ldp_vc, vc+sd-jwt, dc+sd-jwt,
+// mso_mdoc) and multiple map to the same Std in our taxonomy. If we surfaced
+// all of them each type appears 3-6 times and, worse, the dedup-by-name
+// approach would nondeterministically pick a format walt.id's OID4VP
+// verify/present pipeline doesn't exercise end-to-end.
+//
+// Walt.id's own E2E test suite (waltid-e2e-tests) ships two canonical pairs:
+//
+//   - jwt_vc_json   ↔ OpenBadgeCredential_jwt_vc_json
+//   - vc+sd-jwt     ↔ identity_credential_vc+sd-jwt
+//
+// We follow that precedent: for each (Name, Std) tuple we prefer the format
+// walt.id has tested (see `preferredFormatForStd`), dropping the others.
+// Result: schema picker shows one card per walt.id-blessed combo, and the
+// verifier's OID4VP request asks for the exact format the holder has.
 func (a *Adapter) ListSchemas(ctx context.Context, issuerDpg string) ([]vctypes.Schema, error) {
 	var meta credentialIssuerMetadata
 	path := fmt.Sprintf("/%s/.well-known/openid-credential-issuer", a.cfg.StandardVersion)
 	if err := a.issuer.DoJSON(ctx, "GET", path, nil, &meta, nil); err != nil {
 		return nil, fmt.Errorf("fetch issuer metadata: %w", err)
 	}
-	seen := make(map[string]struct{}, len(meta.CredentialConfigurationsSupported))
-	out := make([]vctypes.Schema, 0, len(meta.CredentialConfigurationsSupported))
+	// Bucket all entries per (Name, Std) so we can rank-pick within a bucket.
+	type entry struct {
+		id  string
+		cfg credentialConfigurationEntry
+	}
+	buckets := map[string][]entry{}
+	order := []string{} // preserves first-seen order so output is stable
 	for id, cfg := range meta.CredentialConfigurationsSupported {
 		std := formatToStd(cfg.Format)
 		if std == "" {
-			// Skip VP-only configurations — they aren't issuance schemas.
-			continue
+			continue // skip VP-only configurations
 		}
 		name := displayNameFor(id, cfg)
-		key := name + "\x00" + std // NUL separator so "Foo|sd" doesn't collide with "Foo" + "|sd"
-		if _, dup := seen[key]; dup {
-			continue
+		key := name + "\x00" + std
+		if _, ok := buckets[key]; !ok {
+			order = append(order, key)
 		}
-		seen[key] = struct{}{}
+		buckets[key] = append(buckets[key], entry{id, cfg})
+	}
+	out := make([]vctypes.Schema, 0, len(order))
+	for _, key := range order {
+		bucket := buckets[key]
+		pick := bucket[0]
+		for _, e := range bucket[1:] {
+			if formatRank(e.cfg.Format) > formatRank(pick.cfg.Format) {
+				pick = e
+			}
+		}
+		name := displayNameFor(pick.id, pick.cfg)
 		out = append(out, vctypes.Schema{
-			ID:         id,
+			ID:         pick.id,
 			Name:       name,
-			Std:        std,
+			Std:        formatToStd(pick.cfg.Format),
 			DPGs:       []string{issuerDpg},
 			Desc:       fmt.Sprintf("Live credential configuration served by %s.", issuerDpg),
-			FieldsSpec: fieldsForCredentialType(id),
+			FieldsSpec: fieldsForCredentialType(pick.id),
 		})
 	}
 	return out, nil
+}
+
+// formatRank returns a score for a walt.id format; higher wins the
+// dedup-pick. The ranking mirrors the combinations walt.id's own
+// waltid-e2e-tests suite exercises end-to-end, so the formats we surface
+// are the ones with a tested issue → claim → present → verify path.
+func formatRank(f string) int {
+	switch f {
+	case "jwt_vc_json":
+		return 100 // walt.id's canonical jwt test (OpenBadgeCredential_jwt_vc_json)
+	case "vc+sd-jwt":
+		return 90 // walt.id's canonical SD-JWT test (identity_credential_vc+sd-jwt)
+	case "dc+sd-jwt":
+		return 85 // newer SD-JWT variant walt.id is moving toward
+	case "mso_mdoc":
+		return 80 // mdoc is its own Std so doesn't actually compete
+	case "jwt_vc_json-ld":
+		return 30
+	case "ldp_vc":
+		return 20
+	case "jwt_vc":
+		return 10
+	}
+	return 0
 }
 
 // ListAllSchemas delegates to ListSchemas — the registry handles aggregation
@@ -143,7 +191,7 @@ func (a *Adapter) PrefillSubjectFields(_ context.Context, _ vctypes.Schema) (map
 // walt.id ignores unknown fields.
 type issuanceRequest struct {
 	IssuerKey                 json.RawMessage `json:"issuerKey"`
-	CredentialConfigurationId string          `json:"credentialConfigurationId"`
+	CredentialConfigurationId string          `json:"credentialConfigurationEntryId"`
 	CredentialData            json.RawMessage `json:"credentialData,omitempty"`
 	Vct                       string          `json:"vct,omitempty"`
 	MdocData                  json.RawMessage `json:"mdocData,omitempty"`
