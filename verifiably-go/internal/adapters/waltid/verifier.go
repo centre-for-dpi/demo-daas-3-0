@@ -125,7 +125,15 @@ func (a *Adapter) RequestPresentation(ctx context.Context, req backend.Presentat
 	// getDefaultInputDescriptorConstraints which only filters by vct/type —
 	// effectively full disclosure. So when tpl.Disclosure is selective and
 	// the template lists fields, we build the full input_descriptor here.
-	format := credentialFormatForStd(tpl.Format)
+	// Prefer the explicit wire format the handler plumbed through —
+	// that preserves the user's chip selection within a Std bucket
+	// (jwt_vc_json vs ldp_vc vs jwt_vc inside w3c_vcdm_2). Falling back
+	// to the Std-mapped default hard-codes jwt_vc_json for w3c_vcdm_2
+	// and silently drops the LDP / JWT (legacy) chip choices.
+	format := tpl.WireFormat
+	if format == "" {
+		format = credentialFormatForStd(tpl.Format)
+	}
 	selective := len(tpl.Fields) > 0 && strings.Contains(strings.ToLower(tpl.Disclosure), "selective")
 	var entry map[string]any
 	if selective {

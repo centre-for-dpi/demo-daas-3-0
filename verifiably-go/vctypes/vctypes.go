@@ -210,7 +210,7 @@ type Credential struct {
 type OID4VPTemplate struct {
 	Title      string
 	Fields     []string
-	Format     string
+	Format     string // the verifiably-go Std ("w3c_vcdm_2", "sd_jwt_vc (IETF)", "mso_mdoc")
 	Disclosure string // plain-language disclosure summary shown to the verifier operator
 	// CredentialType is the canonical walt.id credential type (e.g.
 	// "BankId", "OpenBadgeCredential") — used as the `type` filter when
@@ -222,6 +222,15 @@ type OID4VPTemplate struct {
 	// demands the exact issuer-advertised URL, not a short type name.
 	// Empty for non-SD-JWT templates.
 	Vct string
+	// WireFormat is the exact walt.id format key (jwt_vc_json / ldp_vc /
+	// vc+sd-jwt / etc.) the verifier's presentation_definition should
+	// specify. Format carries the Std — a taxonomy grouping — but one
+	// Std spans multiple wire formats (w3c_vcdm_2 covers jwt_vc_json,
+	// jwt_vc_json-ld, ldp_vc, jwt_vc), and walt.id's matcher treats
+	// each as distinct. Adapters prefer WireFormat over Format when
+	// building the PD, so the specific chip the user clicked survives
+	// into the request.
+	WireFormat string
 }
 
 // IssuerIdentity is the operator's own display identity (the "who's issuing this").

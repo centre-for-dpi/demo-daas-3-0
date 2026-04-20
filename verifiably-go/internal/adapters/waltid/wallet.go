@@ -684,19 +684,46 @@ func extractPDFormat(pd map[string]any) string {
 	return ""
 }
 
-// incompatibilityMessage produces the "why no match" sentence. If ANY held
-// credential's title matches what the verifier is asking for, name the
-// format mismatch specifically — that's the common "you have it, but in
-// the wrong format" case the operator actually needs to act on.
+// incompatibilityMessage produces the "why no match" sentence. When the
+// wallet holds credentials of the same type but in different wire formats,
+// name BOTH formats explicitly — the operator's usual fix is either
+// (a) ask the verifier to request the format the holder has, or
+// (b) re-issue in the format the verifier wants. Saying only "not in X
+// format" without naming the format the holder DOES have leaves them
+// guessing why walt.id (which sees both as "w3c_vcdm_2") insists on an
+// exact wire-format match.
 func incompatibilityMessage(pd map[string]any, held []vctypes.Credential, wantFormat string) string {
 	wantType, _ := describePD(pd)
-	// Is there a held credential with the same title-ish type but wrong format?
+	// Collect the formats the wallet has this type in.
+	haveFormats := map[string]bool{}
+	var sameTitle string
 	for _, c := range held {
 		if strings.EqualFold(sanitizeIncompatibleName(c.Title), sanitizeIncompatibleName(wantType)) {
-			return fmt.Sprintf(
-				"your wallet has a %q but not in %s format (walt.id rejects format mismatches even when the type matches). Re-issue the credential in the requested format or pick a different credential type.",
-				c.Title, wantFormat)
+			sameTitle = c.Title
+			if c.Format != "" {
+				haveFormats[c.Format] = true
+			}
 		}
+	}
+	if sameTitle != "" {
+		fmts := make([]string, 0, len(haveFormats))
+		for f := range haveFormats {
+			if f != wantFormat {
+				fmts = append(fmts, f)
+			}
+		}
+		if len(fmts) > 0 {
+			return fmt.Sprintf(
+				"your wallet has %q in %s but this verifier is asking for %s specifically. Walt.id's matcher treats each wire format as distinct even when they belong to the same taxonomy (w3c_vcdm_2 covers jwt_vc_json, jwt_vc_json-ld, ldp_vc, and jwt_vc separately). Ask the verifier to request %s, or re-issue the credential as %s.",
+				sameTitle,
+				strings.Join(fmts, ", "),
+				wantFormat,
+				fmts[0],
+				wantFormat)
+		}
+		return fmt.Sprintf(
+			"your wallet has %q but not in %s format. Walt.id rejects format mismatches even when the type matches. Re-issue the credential in %s or pick a different credential type.",
+			sameTitle, wantFormat, wantFormat)
 	}
 	return fmt.Sprintf(
 		"your wallet has no credential matching this request (verifier asked for %s in %s format). Accept a matching offer first, then try again.",

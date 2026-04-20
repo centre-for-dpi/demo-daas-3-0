@@ -222,9 +222,11 @@ func (h *H) assembleCustomTemplate(r *http.Request) (vctypes.OID4VPTemplate, err
 	// full vct URL walt.id's SD-JWT matcher requires.
 	credType := picked.BaseType()
 	vct := ""
+	wireFormat := ""
 	for _, v := range picked.Variants {
 		if v.ID == picked.ID {
 			vct = v.Vct
+			wireFormat = v.Format
 			break
 		}
 	}
@@ -235,6 +237,7 @@ func (h *H) assembleCustomTemplate(r *http.Request) (vctypes.OID4VPTemplate, err
 		Disclosure:     disclosureSummary(disclosure, fields),
 		CredentialType: credType,
 		Vct:            vct,
+		WireFormat:     wireFormat,
 	}, nil
 }
 

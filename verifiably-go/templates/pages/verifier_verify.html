@@ -182,7 +182,7 @@
   <div class="caps">Presentation request · {{.Template.Title}}</div>
   <div style="font-size:0.85rem;color:var(--ink-soft);margin:0.5rem 0 1rem">
     Asking for: <span class="mono">{{range $i, $f := .Template.Fields}}{{if $i}}, {{end}}{{$f}}{{end}}</span>
-    <br>Format: <span class="mono">{{.Template.Format}}</span> · Disclosure: <span class="mono">{{.Template.Disclosure}}</span>
+    <br>Format: <span class="mono">{{.Template.Format}}{{if .Template.WireFormat}} · {{.Template.WireFormat}}{{end}}</span> · Disclosure: <span class="mono">{{.Template.Disclosure}}</span>
   </div>
 
   <div class="split">
