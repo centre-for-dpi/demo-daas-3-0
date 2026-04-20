@@ -145,4 +145,41 @@
   // Re-run after htmx swaps so the picker works even when the verifier
   // page is loaded via hx-boost.
   document.body.addEventListener('htmx:load', initSchemaPicker);
+
+  // ---- Wallet search filter ----
+  // Each held credential card carries data-search with a lowercased
+  // corpus (title + issuer + type + format + claim names/values). Typing
+  // hides cards whose corpus doesn't contain the query. Pure client
+  // side; the HTMX swap that re-renders the wallet fragment re-runs this
+  // on htmx:load.
+  function initWalletSearch() {
+    const input = document.querySelector('[data-wallet-search]');
+    if (!input) return;
+    const cards = document.querySelectorAll('[data-wallet-card]');
+    const empty = document.getElementById('wallet-search-empty');
+    const counter = document.getElementById('wallet-search-count');
+    function apply() {
+      const q = input.value.trim().toLowerCase();
+      let visible = 0;
+      cards.forEach((c) => {
+        const corpus = c.getAttribute('data-search') || '';
+        const show = !q || corpus.indexOf(q) !== -1;
+        c.style.display = show ? '' : 'none';
+        if (show) visible++;
+      });
+      if (empty) empty.style.display = visible === 0 ? 'block' : 'none';
+      if (counter) {
+        if (q && visible !== cards.length) {
+          counter.textContent = visible + ' of ' + cards.length;
+          counter.style.display = '';
+        } else {
+          counter.style.display = 'none';
+        }
+      }
+    }
+    input.addEventListener('input', apply);
+    apply();
+  }
+  initWalletSearch();
+  document.body.addEventListener('htmx:load', initWalletSearch);
 })();

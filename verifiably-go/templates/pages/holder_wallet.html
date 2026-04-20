@@ -92,9 +92,10 @@
     {{end}}
 
     {{/* Held */}}
-    <div class="caps" style="margin:{{if .WalletPending}}2rem{{else}}0{{end}} 0 0.75rem">
-      In your wallet
-      <span class="pill neutral" style="margin-left:0.5rem">{{len .WalletCreds}}</span>
+    <div class="caps" style="margin:{{if .WalletPending}}2rem{{else}}0{{end}} 0 0.75rem;display:flex;align-items:center;gap:0.5rem">
+      <span>In your wallet</span>
+      <span class="pill neutral">{{len .WalletCreds}}</span>
+      <span id="wallet-search-count" class="pill neutral" style="display:none">filtered</span>
     </div>
 
     {{if not .WalletCreds}}
@@ -103,10 +104,22 @@
         Receive a credential from the left to see it here.
       </div>
     {{else}}
+      {{/* Client-side search — filters cards by title, issuer, type,
+           format, claim names, and claim values. No server round-trip
+           since the wallet list is already on the page. */}}
+      <input type="search" id="wallet-search" data-wallet-search
+             placeholder="Search held credentials (name, issuer, format, claim value)…"
+             autocomplete="off"
+             style="width:100%;padding:0.55rem 0.75rem;margin-bottom:0.75rem;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:2px;font-size:0.85rem">
+
       <div class="wallet-stack" style="margin-top:0">
         {{range .WalletCreds}}
           {{template "_wallet_held_card" .}}
         {{end}}
+      </div>
+      <div id="wallet-search-empty"
+           style="display:none;padding:1.5rem;background:var(--bg-elev);border:1px dashed var(--line);border-radius:2px;text-align:center;color:var(--ink-mute);font-size:0.85rem;font-style:italic">
+        No held credentials match that search.
       </div>
       <div class="btn-row" style="margin-top:1.25rem">
         <a href="/holder/present" class="btn ghost">Present to a verifier →</a>
@@ -148,11 +161,16 @@
 {{end}}
 
 {{define "_wallet_held_card"}}
-<div class="wallet-cred accepted">
+{{/* data-search is a pre-lowered corpus the wallet search JS greps —
+     includes the title, issuer, type, format, and every claim name/value
+     so a search for "jo" or "bank id" or "sd_jwt" or a date all land
+     on the right card. */}}
+<div class="wallet-cred accepted" data-wallet-card
+     data-search="{{.Title | lowerStr}} {{.Issuer | lowerStr}} {{.Type | lowerStr}} {{.Format | lowerStr}}{{range $k, $v := .Fields}} {{$k | lowerStr}} {{$v | lowerStr}}{{end}}">
   <div class="cred-meta">
     <div>
       <h4>{{.Title}}</h4>
-      <div style="font-size:0.82rem;color:var(--ink-mute)">from {{.Issuer}} · <span class="mono">{{.Type}}</span></div>
+      <div style="font-size:0.82rem;color:var(--ink-mute)">from {{.Issuer}} · <span class="mono">{{if .Format}}{{.Format}}{{else}}{{.Type}}{{end}}</span></div>
     </div>
     <span class="pill ok">held</span>
   </div>
