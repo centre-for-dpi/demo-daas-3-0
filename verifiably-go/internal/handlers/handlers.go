@@ -3,10 +3,10 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"html/template"
 	"log"
 	"net/http"
-	"strings"
 	"sync"
 
 	"github.com/verifiably/verifiably-go/backend"
@@ -690,9 +690,21 @@ func (h *H) PickVerifierDpg(w http.ResponseWriter, r *http.Request) {
 // HX-Reswap: none tells HTMX not to swap the target — otherwise the empty
 // response body replaces the target's content and the page appears to wipe.
 // For non-HTMX it renders a plain error page.
+//
+// HX-Trigger MUST be valid JSON of the form `{"event":"detail"}` for htmx to
+// dispatch `event` with `detail` attached. The older `event:detail` shorthand
+// parses as a single event named literally "event:detail" — which won't match
+// the `toast` listener, so the user sees nothing. That was the silent-failure
+// symptom on Send presentation and Check for holder response.
 func (h *H) errorToast(w http.ResponseWriter, r *http.Request, msg string) {
 	if isHTMX(r) {
-		w.Header().Set("HX-Trigger", "toast:"+strings.ReplaceAll(msg, `"`, `'`))
+		payload, err := json.Marshal(map[string]string{"toast": msg})
+		if err != nil {
+			// json.Marshal of a simple map[string]string doesn't realistically
+			// fail, but fall back to a plain event so something still fires.
+			payload = []byte(`{"toast":"server error"}`)
+		}
+		w.Header().Set("HX-Trigger", string(payload))
 		w.Header().Set("HX-Reswap", "none")
 		w.WriteHeader(200)
 		return

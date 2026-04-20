@@ -99,6 +99,12 @@
     </div>
 
     <div id="oid4vp-output" style="margin-top:1.5rem"></div>
+
+    {{/* Verification result lands here — shared between the OID4VP "Check
+         for holder response" button (inside fragment_oid4vp_request_output)
+         and the direct-verify forms below. Lives at the verifier page
+         level so neither flow can post into a missing target. */}}
+    <div id="verify-result" style="margin-top:1.5rem"></div>
   </div>
 
 
@@ -167,8 +173,6 @@
       {{end}}
 
     </div>
-
-    <div id="verify-result"></div>
   </div>
   {{end}}
 
@@ -220,11 +224,14 @@
     </div>
   </div>
 
-  <div class="btn-row" style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px dashed var(--line-soft)">
+  <div class="btn-row" style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px dashed var(--line-soft);align-items:center">
     <button class="btn"
             hx-post="/verifier/verify/response"
             hx-target="#verify-result"
-            hx-swap="innerHTML">Check for holder response →</button>
+            hx-swap="innerHTML"
+            hx-indicator="#verify-busy"
+            hx-disabled-elt="this">Check for holder response →</button>
+    <span id="verify-busy" class="htmx-indicator" style="font-size:0.82rem;color:var(--ink-mute)">checking…</span>
     <span style="font-size:0.78rem;color:var(--ink-mute);align-self:center">state: <span class="mono">{{.State}}</span></span>
   </div>
   <p style="font-size:0.78rem;color:var(--ink-mute);margin-top:0.75rem">

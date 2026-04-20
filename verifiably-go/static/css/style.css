@@ -507,3 +507,16 @@ tr:hover td { background: var(--bg-elev); }
   vertical-align: middle;
 }
 .debug-banner .mono { background: var(--bg); padding: 1px 4px; border-radius: 2px; font-size: 0.72rem; }
+
+/* htmx-indicator — elements flagged with .htmx-indicator are hidden until
+   htmx attaches them to an in-flight request, at which point htmx adds
+   `.htmx-request` to the requester. Two states so the same element can be
+   used via `hx-indicator="#id"` (requester class) or a child of a form
+   using `hx-indicator` (htmx adds htmx-request to the indicator itself). */
+.htmx-indicator {
+  display: none;
+}
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator {
+  display: inline-block;
+}
