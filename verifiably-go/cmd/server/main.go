@@ -139,6 +139,7 @@ func main() {
 	mux.HandleFunc("POST /verifier/verify/request", h.GenerateRequest)
 	mux.HandleFunc("POST /verifier/verify/response", h.SimulateResponse)
 	mux.HandleFunc("POST /verifier/verify/direct", h.VerifyDirect)
+	mux.HandleFunc("POST /verifier/verify/build", h.BuildVerifierTemplate)
 
 	log.Printf("verifiably-go listening on %s (debug markers: %v)", addr, debug)
 	if err := http.ListenAndServe(addr, mux); err != nil {
@@ -229,6 +230,36 @@ func funcMap() template.FuncMap {
 				m[key] = pairs[i+1]
 			}
 			return m, nil
+		},
+
+		// deref dereferences a pointer-to-struct so templates can feed the
+		// value into sub-template calls. Returns the zero value if nil.
+		"deref": func(p *vctypes.OID4VPTemplate) vctypes.OID4VPTemplate {
+			if p == nil {
+				return vctypes.OID4VPTemplate{}
+			}
+			return *p
+		},
+
+		// indexSchemas looks up a schema by ID in a []vctypes.Schema slice.
+		// Returns the zero Schema if no match.
+		"indexSchemas": func(schemas []vctypes.Schema, id string) vctypes.Schema {
+			for _, s := range schemas {
+				if s.ID == id {
+					return s
+				}
+			}
+			return vctypes.Schema{}
+		},
+
+		// fieldSet returns a lookup map from a []string so templates can
+		// use {{index $.Selected .Name}} without iterating the slice per field.
+		"fieldSet": func(xs []string) map[string]bool {
+			out := make(map[string]bool, len(xs))
+			for _, x := range xs {
+				out[x] = true
+			}
+			return out
 		},
 	}
 }

@@ -84,10 +84,26 @@ type verifyBody struct {
 
 // RequestPresentation creates a verifier session. Walt.id returns the full
 // authorize URL as the plain-text response body.
+//
+// Accepts either a preset TemplateKey or an inline req.Template; the latter
+// wins when both are set. Handlers use the inline path for custom
+// user-assembled requests; the keyed path covers the curated presets.
 func (a *Adapter) RequestPresentation(ctx context.Context, req backend.PresentationRequest) (backend.PresentationRequestResult, error) {
-	tpl, ok := oid4vpTemplates[req.TemplateKey]
-	if !ok {
-		return backend.PresentationRequestResult{}, fmt.Errorf("unknown template key %q", req.TemplateKey)
+	var tpl vctypes.OID4VPTemplate
+	typeHint := credentialTypeForTemplate(req.TemplateKey)
+	if req.Template != nil {
+		tpl = *req.Template
+		// Custom templates don't map back to a preset key, so derive the
+		// credential type hint from the inline template's own name when
+		// possible, otherwise fall back to a generic VerifiableCredential
+		// filter so walt.id matches anything in the wallet.
+		typeHint = credentialTypeForCustomTemplate(tpl)
+	} else {
+		var ok bool
+		tpl, ok = oid4vpTemplates[req.TemplateKey]
+		if !ok {
+			return backend.PresentationRequestResult{}, fmt.Errorf("unknown template key %q", req.TemplateKey)
+		}
 	}
 	// Build a Presentation-Exchange request asking for any VC whose type
 	// contains one of the template's fields. Walt.id's current PE path accepts
@@ -95,7 +111,7 @@ func (a *Adapter) RequestPresentation(ctx context.Context, req backend.Presentat
 	// style entry; we use a generic request that the verifier will match
 	// against any credential present in the wallet.
 	creds := []map[string]any{
-		{"format": credentialFormatForStd(tpl.Format), "type": credentialTypeForTemplate(req.TemplateKey)},
+		{"format": credentialFormatForStd(tpl.Format), "type": typeHint},
 	}
 	body := verifyBody{
 		RequestCredentials: creds,
@@ -111,6 +127,50 @@ func (a *Adapter) RequestPresentation(ctx context.Context, req backend.Presentat
 		State:      state,
 		Template:   tpl,
 	}, nil
+}
+
+// credentialTypeForCustomTemplate derives a walt.id PE "type" filter for a
+// user-assembled template. Uses the template's title (Camel-cased words
+// joined) if it resembles a credential name; otherwise returns the generic
+// VerifiableCredential filter which matches any VC the wallet holds.
+func credentialTypeForCustomTemplate(tpl vctypes.OID4VPTemplate) string {
+	title := strings.TrimSpace(tpl.Title)
+	if title == "" {
+		return "VerifiableCredential"
+	}
+	// Title-case and strip non-alphanumerics to guess a type name.
+	var b strings.Builder
+	capNext := true
+	for _, r := range title {
+		if r >= 'A' && r <= 'Z' {
+			b.WriteRune(r)
+			capNext = false
+			continue
+		}
+		if r >= 'a' && r <= 'z' {
+			if capNext {
+				b.WriteRune(r - 32)
+			} else {
+				b.WriteRune(r)
+			}
+			capNext = false
+			continue
+		}
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+			capNext = false
+			continue
+		}
+		capNext = true
+	}
+	guess := b.String()
+	if guess == "" {
+		return "VerifiableCredential"
+	}
+	if !strings.HasSuffix(guess, "Credential") {
+		guess += "Credential"
+	}
+	return guess
 }
 
 // sessionResult is the slim shape this adapter reads out of
@@ -134,7 +194,7 @@ type sessionResult struct {
 // action); we make up to N short-interval polls so a holder that just
 // presented via the wallet-api sees the result promptly.
 func (a *Adapter) FetchPresentationResult(ctx context.Context, state, templateKey string) (backend.VerificationResult, error) {
-	tpl, _ := oid4vpTemplates[templateKey]
+	tpl := oid4vpTemplates[templateKey] // zero value for unknown/custom keys is fine — we only use tpl.Fields for shape
 	path := "/openid4vc/session/" + url.PathEscape(state)
 	var res sessionResult
 	deadline := time.Now().Add(8 * time.Second)

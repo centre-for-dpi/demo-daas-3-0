@@ -20,6 +20,11 @@
           {{range $key, $tpl := .Body.Templates}}
             <option value="{{$key}}">{{$tpl.Title}} — <em>{{$tpl.Disclosure}}</em></option>
           {{end}}
+          {{if .Body.CustomTemplate}}
+            <option value="custom" selected>
+              [custom] {{.Body.CustomTemplate.Title}} — <em>{{.Body.CustomTemplate.Disclosure}}</em>
+            </option>
+          {{end}}
         </select>
       </div>
 
@@ -31,7 +36,62 @@
     </div>
 
     <div id="oid4vp-output"></div>
+
+    {{/* ---------- Build a custom request ---------- */}}
+    <div style="margin-top:2rem;background:var(--bg-elev);border:1px solid var(--line);padding:1.5rem;border-radius:2px">
+      <div class="caps" style="margin-bottom:0.5rem">Build a custom request</div>
+      <p style="font-size:0.82rem;color:var(--ink-soft);margin-bottom:1rem">
+        Pick a schema, check the fields you need, choose whether to request the full credential or selective disclosure. The assembled template appears in the dropdown above under <span class="mono">[custom]</span>.
+      </p>
+
+      <form id="custom-template-form"
+            hx-post="/verifier/verify/build"
+            hx-target="#custom-template-preview"
+            hx-swap="innerHTML">
+        <div class="field">
+          <label for="custom-schema-id">Schema</label>
+          <select id="custom-schema-id" name="schema_id">
+            <option value="">— choose a schema —</option>
+            {{range .Body.Schemas}}
+              <option value="{{.ID}}" {{if eq $.Body.CustomSchemaID .ID}}selected{{end}}>{{.Name}} · <span class="mono">{{.Std}}</span></option>
+            {{end}}
+          </select>
+        </div>
+
+        <div class="field" style="margin-top:1rem">
+          <label>Disclosure</label>
+          <div style="display:flex;gap:1rem;font-size:0.85rem">
+            <label style="display:inline-flex;align-items:center;gap:0.35rem">
+              <input type="radio" name="disclosure" value="selective" checked>
+              selective — only checked fields are shared
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:0.35rem">
+              <input type="radio" name="disclosure" value="full">
+              full credential shared
+            </label>
+          </div>
+        </div>
+
+        {{/* Fields appear here after a schema is chosen. Rendered by the
+             fragment_custom_oid4vp_preview fragment which writes both the
+             field checkboxes and the preview into this container. */}}
+        <div id="custom-template-preview" style="margin-top:1rem">
+          {{if .Body.CustomTemplate}}
+            {{template "fragment_custom_oid4vp_preview" (dict
+              "Template" (deref .Body.CustomTemplate)
+              "SchemaID" .Body.CustomSchemaID
+              "Schema"   (indexSchemas .Body.Schemas .Body.CustomSchemaID)
+              "Selected" (fieldSet .Body.CustomTemplate.Fields))}}
+          {{end}}
+        </div>
+
+        <button class="btn small ghost" type="submit" style="margin-top:1rem">
+          Assemble template →
+        </button>
+      </form>
+    </div>
   </div>
+
 
   {{/* ============================================================
        DIRECT VERIFY — scan / upload / paste.
@@ -193,5 +253,23 @@
       {{end}}
     </dd>
   </dl>
+</div>
+{{end}}
+
+{{define "fragment_custom_oid4vp_preview"}}
+<div class="caps" style="margin-bottom:0.5rem">Fields in <em>{{.Schema.Name}}</em></div>
+<div style="display:flex;flex-wrap:wrap;gap:0.5rem 1.25rem;font-size:0.85rem">
+  {{range .Schema.FieldsSpec}}
+    <label style="display:inline-flex;align-items:center;gap:0.35rem">
+      <input type="checkbox" name="field_key" value="{{.Name}}"
+             {{if index $.Selected .Name}}checked{{end}}>
+      <span>{{replaceUnderscore .Name}}</span>
+    </label>
+  {{end}}
+</div>
+<div style="margin-top:1rem;padding:0.75rem 1rem;background:var(--bg);border-left:3px solid var(--ok);font-size:0.82rem">
+  <strong>{{.Template.Title}}</strong> · <span class="mono">{{.Template.Format}}</span><br>
+  Requesting: <span class="mono">{{range $i, $f := .Template.Fields}}{{if $i}}, {{end}}{{$f}}{{end}}</span><br>
+  Disclosure: <em>{{.Template.Disclosure}}</em>
 </div>
 {{end}}

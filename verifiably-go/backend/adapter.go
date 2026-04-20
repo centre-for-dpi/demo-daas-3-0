@@ -192,10 +192,18 @@ type BulkError struct {
 	Reason string
 }
 
-// PresentationRequest is the input to RequestPresentation.
+// PresentationRequest is the input to RequestPresentation. Callers can
+// drive the verifier in two modes:
+//
+//   - By key:   set TemplateKey to a preset the adapter knows about.
+//   - By value: set Template to an inline OID4VPTemplate (typically one the
+//               handler assembled from a schema + user-selected fields).
+//               Adapters that see a non-nil Template use it verbatim and
+//               ignore TemplateKey.
 type PresentationRequest struct {
 	VerifierDpg string
 	TemplateKey string // adapter-defined; maps to the verifier's stored presentation templates
+	Template    *vctypes.OID4VPTemplate
 }
 
 // PresentationRequestResult describes a generated OID4VP request.

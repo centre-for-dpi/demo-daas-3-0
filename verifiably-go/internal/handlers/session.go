@@ -55,6 +55,14 @@ type Session struct {
 	CurrentOID4VPLink      string
 	CurrentOID4VPState     string
 	CurrentOID4VPTemplate  string
+	// Custom template the user assembled via the "Build custom request"
+	// flow. Set by BuildVerifierTemplate; consumed by RequestCustomPresentation
+	// and echoed back to the preview fragment so the user can review what
+	// they're about to request before hitting Generate.
+	CustomOID4VPTemplate *vctypes.OID4VPTemplate
+	// CustomOID4VPSchemaID is the schema the custom template was built from,
+	// so the field-picker fragment can re-render with its selections intact.
+	CustomOID4VPSchemaID string
 
 	// LastWalletError is the most recent error from a wallet action
 	// (paste, scan, accept). Rendered as an inline banner on the wallet
