@@ -116,31 +116,36 @@ func (a *Adapter) RequestPresentation(ctx context.Context, req backend.Presentat
 			return backend.PresentationRequestResult{}, fmt.Errorf("unknown template key %q", req.TemplateKey)
 		}
 	}
-	// Build a Presentation-Exchange request asking for any VC whose type
-	// contains one of the template's fields. Walt.id's E2E test suite uses
-	// two specific request shapes, and the wallet-api's OID4VP submit
-	// crashes on anything else:
-	//
-	//   jwt_vc_json   →  {"format": "jwt_vc_json", "type": "<CredentialType>"}
-	//   vc+sd-jwt     →  {"format": "vc+sd-jwt",   "vct":  "<full-vct-URL>"}
-	//
-	// (see waltid-services/waltid-e2e-tests/src/test/resources/presentation/
-	// *-presentation-request.json for the canonical fixtures.)
+	// Build the request_credentials entry. For selective disclosure to
+	// actually restrict which claims the wallet reveals, we need to pass
+	// an EXPLICIT input_descriptor with limit_disclosure=required and one
+	// path per requested field. Walt.id's RequestedCredential honors
+	// inputDescriptor verbatim when set (RequestedCredential.toInputDescriptor
+	// in waltid-verifier-api); the short {format, vct} shape falls back to
+	// getDefaultInputDescriptorConstraints which only filters by vct/type —
+	// effectively full disclosure. So when tpl.Disclosure is selective and
+	// the template lists fields, we build the full input_descriptor here.
 	format := credentialFormatForStd(tpl.Format)
-	entry := map[string]any{"format": format}
-	switch format {
-	case "vc+sd-jwt", "dc+sd-jwt":
-		// Walt.id's SD-JWT VC matcher requires the EXACT issuer-advertised
-		// vct — typically a full URL like http://issuer/draft13/BankId.
-		// Using a short type name here silently produces "no matches"
-		// against a wallet that holds the credential.
-		if tpl.Vct != "" {
-			entry["vct"] = tpl.Vct
-		} else {
-			entry["vct"] = typeHint
+	selective := len(tpl.Fields) > 0 && strings.Contains(strings.ToLower(tpl.Disclosure), "selective")
+	var entry map[string]any
+	if selective {
+		entry = buildSelectiveInputDescriptor(format, typeHint, tpl)
+	} else {
+		entry = map[string]any{"format": format}
+		switch format {
+		case "vc+sd-jwt", "dc+sd-jwt":
+			// Walt.id's SD-JWT VC matcher requires the EXACT issuer-advertised
+			// vct — typically a full URL like http://issuer/draft13/BankId.
+			// Using a short type name here silently produces "no matches"
+			// against a wallet that holds the credential.
+			if tpl.Vct != "" {
+				entry["vct"] = tpl.Vct
+			} else {
+				entry["vct"] = typeHint
+			}
+		default:
+			entry["type"] = typeHint
 		}
-	default:
-		entry["type"] = typeHint
 	}
 	body := verifyBody{
 		RequestCredentials: []map[string]any{entry},
@@ -158,6 +163,90 @@ func (a *Adapter) RequestPresentation(ctx context.Context, req backend.Presentat
 		State:      state,
 		Template:   tpl,
 	}, nil
+}
+
+// buildSelectiveInputDescriptor returns a request_credentials entry with a
+// full inputDescriptor instructing the wallet to reveal ONLY the requested
+// fields. The field JSONPaths differ per format:
+//
+//   - SD-JWT VC (vc+sd-jwt / dc+sd-jwt): claims are top-level, so paths are
+//     `$.<field>`. Plus a `$.vct` filter so the wallet picks the right
+//     credential when more than one vct could match.
+//   - W3C VC-JWT (jwt_vc_json / ldp_vc / jwt_vc): claims are under
+//     credentialSubject, so paths are `$.vc.credentialSubject.<field>`.
+//     Plus a `$.vc.type` filter.
+//   - mso_mdoc: claims are namespace-keyed, so paths are
+//     `$['<namespace>']['<field>']`.
+//
+// limit_disclosure is only meaningful for formats that support selective
+// disclosure natively (SD-JWT, mdoc). For plain JWT VC it's advisory —
+// walt.id's wallet either returns the whole credential or refuses; we
+// mark it "preferred" so the wallet attempts a best-effort and doesn't
+// fail the PD match.
+func buildSelectiveInputDescriptor(format, typeHint string, tpl vctypes.OID4VPTemplate) map[string]any {
+	descriptorID := typeHint
+	if descriptorID == "" {
+		descriptorID = tpl.Title
+	}
+	if descriptorID == "" {
+		descriptorID = "custom-request"
+	}
+	fields := []any{}
+	switch format {
+	case "vc+sd-jwt", "dc+sd-jwt":
+		vct := tpl.Vct
+		if vct == "" {
+			vct = typeHint
+		}
+		fields = append(fields, map[string]any{
+			"path": []string{"$.vct"},
+			"filter": map[string]any{
+				"type":    "string",
+				"pattern": vct,
+			},
+		})
+		for _, f := range tpl.Fields {
+			fields = append(fields, map[string]any{
+				"path": []string{"$." + f},
+			})
+		}
+	case "mso_mdoc":
+		ns := "org.iso.18013.5.1"
+		for _, f := range tpl.Fields {
+			fields = append(fields, map[string]any{
+				"path":           []string{fmt.Sprintf("$['%s']['%s']", ns, f)},
+				"intentToRetain": false,
+			})
+		}
+	default:
+		fields = append(fields, map[string]any{
+			"path": []string{"$.vc.type"},
+			"filter": map[string]any{
+				"type":    "string",
+				"pattern": typeHint,
+			},
+		})
+		for _, f := range tpl.Fields {
+			fields = append(fields, map[string]any{
+				"path": []string{"$.vc.credentialSubject." + f},
+			})
+		}
+	}
+	constraints := map[string]any{"fields": fields}
+	switch format {
+	case "vc+sd-jwt", "dc+sd-jwt", "mso_mdoc":
+		constraints["limit_disclosure"] = "required"
+	default:
+		constraints["limit_disclosure"] = "preferred"
+	}
+	return map[string]any{
+		"format": format,
+		"input_descriptor": map[string]any{
+			"id":          descriptorID,
+			"format":      map[string]any{format: map[string]any{}},
+			"constraints": constraints,
+		},
+	}
 }
 
 // credentialTypeForCustomTemplate derives a walt.id PE "type" filter for a
