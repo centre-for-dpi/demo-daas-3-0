@@ -1,22 +1,21 @@
 # LLM
 .claude
 
+# Sibling projects — kept local only; not part of the verifiably-go repo.
+# Re-add any of these if the split reverses.
+ui-demo/
+scripts/
+references/
+agent-service/
+
 # Plans
-./ui-demo/implementation-plan.md
 go-build-plan.md
 
 # Loose scratch copy of the wallet-demo-client p12 — the real copy lives
-# at ui-demo/docker/injiweb/config/certs/oidckeystore.p12 which IS tracked.
+# at verifiably-go/deploy/compose/injiweb/config/certs/oidckeystore.p12
+# which IS tracked.
 /oidckeystore.p12/
 
-# Runtime state
-ui-demo/cache/
-ui-demo/walletbag.json
-ui-demo/server
-
-# E2E test dependencies
-ui-demo/node_modules/
-ui-demo/package-lock.json
 
 # verifiably-go runtime state
 # - config/*.json is rendered from deploy.sh stanzas on every `deploy.sh run`
