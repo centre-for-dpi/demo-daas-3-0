@@ -130,7 +130,9 @@ func main() {
 	mux.HandleFunc("POST /holder/wallet/accept", h.AcceptCred)
 	mux.HandleFunc("POST /holder/wallet/reject", h.RejectCred)
 	mux.HandleFunc("GET /holder/present", h.ShowPresent)
+	mux.HandleFunc("POST /holder/present/confirm", h.ConfirmPresent)
 	mux.HandleFunc("POST /holder/present/submit", h.SubmitPresent)
+	mux.HandleFunc("POST /holder/present/decline", h.DeclinePresent)
 
 	// Verifier
 	mux.HandleFunc("GET /verifier/dpg", h.ShowVerifierDpgs)

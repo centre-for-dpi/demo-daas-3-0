@@ -335,6 +335,23 @@ func (r *Registry) PresentCredential(ctx context.Context, req backend.PresentCre
 	return ad.PresentCredential(ctx, req)
 }
 
+// PreviewPresentation routes to the holder adapter's optional
+// backend.PresentationPreviewer implementation. Registry implements the
+// interface so handlers that use the registry as backend.Adapter see the
+// capability transparently; adapters that don't support preview get a
+// zero-value response rather than an error, mirroring the fallback path
+// in the handler.
+func (r *Registry) PreviewPresentation(ctx context.Context, req backend.PresentCredentialRequest) (backend.PresentationPreview, error) {
+	ad, err := r.holderFor(req.HolderDpg)
+	if err != nil {
+		return backend.PresentationPreview{}, err
+	}
+	if p, ok := ad.(backend.PresentationPreviewer); ok {
+		return p.PreviewPresentation(ctx, req)
+	}
+	return backend.PresentationPreview{CredentialID: req.CredentialID}, nil
+}
+
 func (r *Registry) BootstrapOffers(ctx context.Context) ([]string, error) {
 	return r.ListExampleOffers(ctx)
 }

@@ -491,6 +491,25 @@ tr:hover td { background: var(--bg-elev); }
   text-align: right;
 }
 
+/* Holder-side consent interstitial shown before an OID4VP submit. Mirrors
+   walt.id's web wallet Disclose/Decline card so the operator can review
+   the exact claim values leaving the wallet. */
+.present-consent {
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 2px;
+  padding: 1.5rem;
+}
+.present-consent-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--line-soft);
+}
+
 /* ============================================================
    MODAL
    ============================================================ */

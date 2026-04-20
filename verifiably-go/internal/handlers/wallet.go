@@ -189,8 +189,56 @@ func (h *H) ShowPresent(w http.ResponseWriter, r *http.Request) {
 	}))
 }
 
-// SubmitPresent drives PresentCredential on the adapter for the chosen
-// credential + the verifier's request URI. Renders a result fragment.
+// ConfirmPresent renders the consent interstitial before an OID4VP submit.
+// Fetches the verifier's PD, extracts the requested fields + the values
+// the wallet would disclose, and presents them for the operator to review.
+// Adapters that don't implement PresentationPreviewer get a minimal
+// fallback preview (credential title only, no per-field breakdown).
+func (h *H) ConfirmPresent(w http.ResponseWriter, r *http.Request) {
+	sess := h.Sessions.MustGet(w, r)
+	if sess.HolderDpg == "" {
+		h.redirect(w, r, "/holder/dpg")
+		return
+	}
+	credID := r.FormValue("credential_id")
+	reqURI := r.FormValue("request_uri")
+	if credID == "" || reqURI == "" {
+		h.errorToast(w, r, "Pick a credential and paste the verifier's request URI")
+		return
+	}
+	prev := backend.PresentationPreview{CredentialID: credID}
+	if p, ok := h.Adapter.(backend.PresentationPreviewer); ok {
+		resolved, err := p.PreviewPresentation(r.Context(), backend.PresentCredentialRequest{
+			HolderDpg:    sess.HolderDpg,
+			CredentialID: credID,
+			RequestURI:   reqURI,
+		})
+		if err != nil {
+			h.errorToast(w, r, err.Error())
+			return
+		}
+		prev = resolved
+	}
+	// Fill in the title from the session's cached wallet list if the
+	// adapter didn't (minimum viable consent card still needs SOMETHING
+	// recognisable to review).
+	if prev.CredentialTitle == "" {
+		for _, c := range sess.WalletCreds {
+			if c.ID == credID {
+				prev.CredentialTitle = c.Title
+				break
+			}
+		}
+	}
+	h.renderFragment(w, r, "fragment_present_consent", map[string]any{
+		"Preview":    prev,
+		"RequestURI": reqURI,
+	})
+}
+
+// SubmitPresent actually submits the OID4VP presentation after the holder
+// clicks Disclose on the consent card. Same adapter call as before — the
+// new layer is purely an interstitial that can be declined.
 func (h *H) SubmitPresent(w http.ResponseWriter, r *http.Request) {
 	sess := h.Sessions.MustGet(w, r)
 	if sess.HolderDpg == "" {
@@ -213,4 +261,11 @@ func (h *H) SubmitPresent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.renderFragment(w, r, "fragment_present_result", res)
+}
+
+// DeclinePresent renders a "declined" fragment when the holder refuses to
+// disclose. No network call — just acknowledges the refusal and lets the
+// user try again with a different credential or different disclosure.
+func (h *H) DeclinePresent(w http.ResponseWriter, r *http.Request) {
+	h.renderFragment(w, r, "fragment_present_declined", nil)
 }

@@ -234,6 +234,46 @@ type PresentCredentialRequest struct {
 	DisclosedClaim []string // optional: subset of claims to disclose for SD-JWT VC
 }
 
+// PresentationPreview describes what a verifier is asking for and which
+// values the wallet would disclose if the holder confirms. Built by the
+// optional PresentationPreviewer interface (walt.id implements it); used
+// by /holder/present's consent interstitial so the operator reviews what
+// leaves the wallet before the actual OID4VP submit.
+type PresentationPreview struct {
+	// VerifierClientID is the client_id the verifier advertised — usually
+	// a base URL (e.g. http://verifier.example/openid4vc/verify). Rendered
+	// as the "requested by" line.
+	VerifierClientID string
+	// CredentialID + CredentialTitle echo what the holder picked.
+	CredentialID    string
+	CredentialTitle string
+	// Fields is one row per claim the verifier is asking for. Value is
+	// what the wallet has for that claim (empty when the held credential
+	// doesn't carry it); Required flags PD constraints that don't have a
+	// walt.id-style "optional" marker — for now everything requested is
+	// considered required.
+	Fields []PresentationField
+	// Disclosure mirrors the PD's limit_disclosure hint: "required" (SD-JWT
+	// honors per-field filtering), "preferred" (JWT VC sends the whole
+	// credential anyway), or "none" (no explicit limit_disclosure).
+	Disclosure string
+}
+
+// PresentationField is one claim row on the consent page.
+type PresentationField struct {
+	Name     string
+	Value    string
+	Required bool
+}
+
+// PresentationPreviewer is optionally implemented by adapters that can
+// resolve a verifier's presentation definition without submitting. Handlers
+// detect this via type assertion; non-implementing adapters get a minimal
+// fallback preview (just the picked credential, no per-field breakdown).
+type PresentationPreviewer interface {
+	PreviewPresentation(ctx context.Context, req PresentCredentialRequest) (PresentationPreview, error)
+}
+
 // PresentCredentialResult describes the outcome of a holder-side presentation.
 type PresentCredentialResult struct {
 	Success       bool

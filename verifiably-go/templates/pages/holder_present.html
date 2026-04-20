@@ -4,7 +4,13 @@
   <h1 class="page-title">Present a<br><em>credential</em>.</h1>
   <p class="subtitle">Paste the verifier's <span class="mono">openid4vp://</span> request (or any OID4VP link), pick a credential from your wallet, and submit the presentation.</p>
 
-  <form hx-post="/holder/present/submit"
+  {{/* Form now posts to /holder/present/confirm which renders the
+       consent interstitial; the real submit happens from inside that
+       fragment's Disclose button. Two-step flow exists so the holder
+       sees exactly which claim values will leave the wallet before
+       they go — walt.id's wallet-api honors the PD but doesn't show
+       a consent UI of its own when called directly. */}}
+  <form hx-post="/holder/present/confirm"
         hx-target="#present-result"
         hx-swap="innerHTML"
         hx-indicator="#present-busy"
@@ -34,8 +40,8 @@
 
     <div class="btn-row" style="margin:0;align-items:center">
       <a href="/holder/wallet" class="btn ghost">← Back to wallet</a>
-      <button class="btn" type="submit" {{if not .Body.Credentials}}disabled{{end}}>Send presentation →</button>
-      <span id="present-busy" class="htmx-indicator" style="font-size:0.82rem;color:var(--ink-mute)">sending…</span>
+      <button class="btn" type="submit" {{if not .Body.Credentials}}disabled{{end}}>Review & send →</button>
+      <span id="present-busy" class="htmx-indicator" style="font-size:0.82rem;color:var(--ink-mute)">preparing…</span>
     </div>
   </form>
 
@@ -52,6 +58,86 @@
     {{end}}
   {{end}}
 </section>
+{{end}}
+
+{{/* Consent interstitial — mirrors walt.id web wallet's Disclose/Decline
+     card. Shows which claim values are about to leave the wallet + the
+     PD's disclosure mode so the holder knows if per-field filtering is
+     actually in effect (limit_disclosure=required) or the whole
+     credential is going (preferred/none). */}}
+{{define "fragment_present_consent"}}
+{{$pv := .Preview}}
+<div class="present-consent">
+  <div class="caps" style="margin-bottom:0.5rem">Review what's being shared</div>
+  <div class="present-consent-head">
+    <div>
+      <h3 style="margin:0 0 0.25rem;font-family:'Josefin Sans',sans-serif;font-weight:500">{{if $pv.CredentialTitle}}{{$pv.CredentialTitle}}{{else}}Credential{{end}}</h3>
+      <div class="mono" style="font-size:0.78rem;color:var(--ink-mute)">
+        requested by {{if $pv.VerifierClientID}}{{$pv.VerifierClientID}}{{else}}(verifier){{end}}
+      </div>
+    </div>
+    <span class="pill {{if eq $pv.Disclosure "required"}}ok{{else if eq $pv.Disclosure "preferred"}}neutral{{else}}err{{end}}"
+          title="walt.id's PD limit_disclosure">
+      {{if eq $pv.Disclosure "required"}}selective disclosure{{else if eq $pv.Disclosure "preferred"}}partial (format-dependent){{else}}full credential{{end}}
+    </span>
+  </div>
+
+  {{if $pv.Fields}}
+    <div class="caps" style="font-size:0.65rem;margin:1rem 0 0.5rem">Claims the verifier is asking for</div>
+    <dl class="cred-rows">
+      {{range $pv.Fields}}
+        <dt>{{replaceUnderscore .Name}}</dt>
+        <dd>{{if .Value}}{{.Value}}{{else}}<em style="color:var(--ink-mute)">(not in this credential)</em>{{end}}</dd>
+      {{end}}
+    </dl>
+  {{else}}
+    <p style="font-size:0.85rem;color:var(--ink-soft);margin:1rem 0 0">
+      The verifier didn't itemise individual claims — the whole credential would be shared if you disclose.
+    </p>
+  {{end}}
+
+  <p style="font-size:0.78rem;color:var(--ink-mute);margin-top:1rem;font-style:italic">
+    {{if eq $pv.Disclosure "required"}}
+      Only the claims above will leave your wallet. Other values stay hidden even though the full credential is in your wallet.
+    {{else if eq $pv.Disclosure "preferred"}}
+      The verifier prefers per-claim disclosure but this credential format can't actually restrict what's shared — the whole credential will be sent.
+    {{else}}
+      This verifier didn't set disclosure limits, so the whole credential will be sent.
+    {{end}}
+  </p>
+
+  <div class="btn-row" style="margin-top:1.5rem">
+    <form style="display:inline"
+          hx-post="/holder/present/decline"
+          hx-target="#present-result"
+          hx-swap="innerHTML">
+      <button class="btn ghost" type="submit">Decline</button>
+    </form>
+    <form style="display:inline"
+          hx-post="/holder/present/submit"
+          hx-target="#present-result"
+          hx-swap="innerHTML"
+          hx-indicator="#consent-busy"
+          hx-disabled-elt="find button[type='submit']">
+      <input type="hidden" name="credential_id" value="{{$pv.CredentialID}}">
+      <input type="hidden" name="request_uri" value="{{.RequestURI}}">
+      <button class="btn" type="submit">Disclose →</button>
+    </form>
+    <span id="consent-busy" class="htmx-indicator" style="font-size:0.82rem;color:var(--ink-mute)">sending…</span>
+  </div>
+</div>
+{{end}}
+
+{{define "fragment_present_declined"}}
+<div class="verify-result" style="border-left:3px solid var(--warn)">
+  <div class="verify-banner">
+    <span class="icon" style="background:color-mix(in srgb, var(--warn) 20%, transparent);color:var(--warn)">↩</span>
+    <div>
+      <h3>Presentation declined</h3>
+      <p>Nothing was sent to the verifier. Pick another credential or edit the request to try again.</p>
+    </div>
+  </div>
+</div>
 {{end}}
 
 {{define "fragment_present_result"}}

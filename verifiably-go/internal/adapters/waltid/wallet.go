@@ -460,6 +460,144 @@ func (a *Adapter) fetchPresentationDefinition(ctx context.Context, requestURI st
 	return out
 }
 
+// PreviewPresentation fetches the verifier's PD and cross-references the
+// requested fields against the holder's picked credential so the consent
+// page can show "what's about to be shared" before the actual submit.
+// Implements backend.PresentationPreviewer.
+func (a *Adapter) PreviewPresentation(ctx context.Context, req backend.PresentCredentialRequest) (backend.PresentationPreview, error) {
+	sess, err := a.ensureWalletSession(ctx)
+	if err != nil {
+		return backend.PresentationPreview{}, err
+	}
+	authCtx := httpx.WithToken(ctx, sess.Token)
+	preview := backend.PresentationPreview{
+		CredentialID:     req.CredentialID,
+		VerifierClientID: extractClientID(req.RequestURI),
+	}
+	// Locate the held credential so we can surface its field values.
+	creds, _ := a.ListWalletCredentials(ctx)
+	var held *vctypes.Credential
+	for i := range creds {
+		if creds[i].ID == req.CredentialID {
+			held = &creds[i]
+			break
+		}
+	}
+	if held != nil {
+		preview.CredentialTitle = held.Title
+	}
+
+	pd := a.fetchPresentationDefinition(authCtx, req.RequestURI)
+	if pd == nil {
+		// No PD we can parse — fall back to the whole credential's field
+		// set so the operator still sees what would be shared.
+		if held != nil {
+			for k, v := range held.Fields {
+				if k == "offer_uri" || k == "config_id" {
+					continue
+				}
+				preview.Fields = append(preview.Fields, backend.PresentationField{
+					Name: k, Value: v, Required: false,
+				})
+			}
+		}
+		preview.Disclosure = "none"
+		return preview, nil
+	}
+	preview.Disclosure, preview.Fields = describePDFields(pd, held)
+	return preview, nil
+}
+
+// describePDFields extracts the requested field list from a PD and pairs
+// each with the held credential's value (when available). Returns the
+// limit_disclosure hint so the UI can describe what the wallet will
+// actually do — "required" truly restricts, "preferred" is advisory,
+// "none" means the entire credential goes.
+func describePDFields(pd map[string]any, held *vctypes.Credential) (string, []backend.PresentationField) {
+	descriptors, _ := pd["input_descriptors"].([]any)
+	if len(descriptors) == 0 {
+		return "none", nil
+	}
+	d, _ := descriptors[0].(map[string]any)
+	if d == nil {
+		return "none", nil
+	}
+	constraints, _ := d["constraints"].(map[string]any)
+	if constraints == nil {
+		return "none", nil
+	}
+	disclosure, _ := constraints["limit_disclosure"].(string)
+	if disclosure == "" {
+		disclosure = "none"
+	}
+	fields, _ := constraints["fields"].([]any)
+	out := make([]backend.PresentationField, 0, len(fields))
+	for _, f := range fields {
+		m, _ := f.(map[string]any)
+		if m == nil {
+			continue
+		}
+		paths, _ := m["path"].([]any)
+		if len(paths) == 0 {
+			continue
+		}
+		p, _ := paths[0].(string)
+		name := claimNameFromPath(p)
+		if name == "" {
+			continue // filter-only paths like $.vct + $.vc.type don't name a claim
+		}
+		val := ""
+		if held != nil {
+			val = held.Fields[name]
+		}
+		out = append(out, backend.PresentationField{
+			Name: name, Value: val, Required: true,
+		})
+	}
+	return disclosure, out
+}
+
+// claimNameFromPath strips JSONPath prefixes to yield the plain claim name
+// the UI should render. Drops the vct/type filter paths (those describe
+// credential identity, not claims to share).
+func claimNameFromPath(path string) string {
+	// SD-JWT top-level: $.<field>
+	if strings.HasPrefix(path, "$.") {
+		p := strings.TrimPrefix(path, "$.")
+		if p == "vct" || p == "vc.type" {
+			return ""
+		}
+		if strings.HasPrefix(p, "vc.credentialSubject.") {
+			return strings.TrimPrefix(p, "vc.credentialSubject.")
+		}
+		return p
+	}
+	// mdoc: $['namespace']['field']
+	if strings.HasPrefix(path, "$[") {
+		// Crude bracket-parse: last ['<name>'] is the field.
+		end := strings.LastIndex(path, "']")
+		if end < 0 {
+			return path
+		}
+		start := strings.LastIndex(path[:end], "['")
+		if start < 0 {
+			return path
+		}
+		return path[start+2 : end]
+	}
+	return path
+}
+
+// extractClientID pulls the client_id query param from an openid4vp:// URI
+// so the consent page can name the verifier.
+func extractClientID(requestURI string) string {
+	u, err := url.Parse(requestURI)
+	if err != nil {
+		return ""
+	}
+	return u.Query().Get("client_id")
+}
+
 // matchPD calls walt.id's match endpoint with an inline PD. Returns
 // (matches, ok). ok=false means the endpoint itself errored (network
 // fault, older wallet-api build without the endpoint); callers must
