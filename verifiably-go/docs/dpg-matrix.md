@@ -38,17 +38,56 @@ out below with the workaround the verifiably-go inji-proxy applies.
 - **Wallet ⇄ verifier OID4VP submit is broken on v0.18.2 + latest.**
   `POST /wallet-api/wallet/{id}/exchange/usePresentationRequest` returns
   `400 "Element class kotlinx.serialization.json.JsonArray is not a
-  JsonPrimitive"` regardless of credential or format. Root cause is an
-  inter-service spec skew inside walt.id itself: verifier-api emits the
-  Presentation Definition with
-  `input_descriptors[].format.jwt_vc_json.alg: ["EdDSA"]` (array, per PE
-  2.0) but wallet-api deserializes the `alg` field as a single `String`
-  and throws. Reproduced on both `waltid/wallet-api:latest` (2026-04-10)
-  and `waltid/wallet-api:0.18.2`. No verifiably-go fix possible —
-  tracked as an upstream walt.id issue. The Send-presentation button
-  surfaces the raw upstream error body in a toast so users see why the
-  submit failed. Workaround: use walt.id's own OID4VP demo app, or
-  wait for an upstream fix.
+  JsonPrimitive"` regardless of credential, DID, or format. Verified:
+
+  1. Our request body matches walt.id's OpenAPI spec — confirmed by
+     dumping `http://localhost:7001/api.json` and reading the
+     `UsePresentationRequest` schema directly. Required fields
+     `presentationRequest: string` and `selectedCredentials: array<string>`
+     are both present; `disclosures` and `did` are optional and provided
+     where walt.id accepts them.
+
+  2. The failure is inside walt.id's own code, not a parse error on our
+     body. Stack trace from the wallet-api logs points at
+     `id.walt.webwallet.service.SSIKit2WalletService.usePresentationRequest`.
+     Reading the source (`waltid-services/waltid-wallet-api/src/main/
+     kotlin/id/walt/webwallet/service/SSIKit2WalletService.kt`), the
+     failing block is:
+
+     ```kotlin
+     val tokenResponse = credentialWallet.processImplicitFlowAuthorization(...)
+     if (tokenResponse.vpToken!!.jsonPrimitive.content.contains("~"))
+         require(tokenResponse.vpToken!!.jsonPrimitive.content.last() != '~') { … }
+     ```
+
+     The `.jsonPrimitive` accessor throws exactly `"Element class
+     kotlinx.serialization.json.JsonArray is not a JsonPrimitive"` when
+     `vpToken` is a JsonArray. Per the OID4VP spec, `vp_token` MAY be a
+     string or an array (one entry per VP). walt.id's
+     `processImplicitFlowAuthorization` returns an array for the cases
+     we exercise; the subsequent SD-JWT-disclosure-suffix check
+     (`.contains("~")`) was written assuming a primitive and throws on
+     every submit.
+
+  3. Reproduced on both `waltid/wallet-api:latest` (built 2026-04-10)
+     and `waltid/wallet-api:0.18.2` (built 2026-03-27) with identical
+     behavior. walt.id's git tags don't align with the docker image
+     tags (their source repo uses calendar versioning), so we can't
+     diff the exact docker-image build against source line-for-line,
+     but the pattern is present on `main`.
+
+  No verifiably-go fix possible — it's an unconditional null-assertion-
+  style bug inside walt.id's wallet-api. The only walt.id endpoints
+  that submit a VP are `usePresentationRequest` and nothing else
+  (`resolvePresentationRequest` is GET-only metadata lookup). The
+  Send-presentation button surfaces walt.id's raw error body in a
+  toast so the symptom is visible.
+  Options to unblock: (a) file an upstream issue with walt.id citing
+  `SSIKit2WalletService.kt` + the `contains("~")` check, (b) run the
+  Inji Web end-to-end flow instead (unaffected by this walt.id bug),
+  (c) implement a custom OID4VP client that bypasses wallet-api and
+  signs the vp_token directly — non-trivial, requires access to the
+  wallet's private key.
 - No documented QR-on-PDF export path. `IssueAsPDF` falls back to `DirectPDF: false`.
 - The Kotlin wallet's OID4VCI client strips `credential_definition.@context`
   from credential requests. When using walt.id wallet against Inji Certify,
