@@ -293,7 +293,7 @@ func (a *Adapter) ClaimCredential(ctx context.Context, cred vctypes.Credential) 
 	_, err = a.wallet.DoRaw(httpx.WithToken(ctx, sess.Token), "POST", path,
 		strings.NewReader(offerURI), "text/plain", nil)
 	if err != nil {
-		return cred, err
+		return cred, friendlyClaimError(err, cred.Fields["config_id"])
 	}
 	cred.Status = "accepted"
 
@@ -354,7 +354,26 @@ func (a *Adapter) PresentCredential(ctx context.Context, req backend.PresentCred
 	}
 	authCtx := httpx.WithToken(ctx, sess.Token)
 
-	credID := a.resolveMatchedCredentialID(authCtx, sess.WalletID, req)
+	// Pre-flight: fetch the verifier's PD and ask the wallet which of its
+	// credentials satisfy it. If none do, fail fast with an error message
+	// that explains exactly which credential type + format the verifier
+	// wanted — otherwise the submit would produce a raw walt.id 400 saying
+	// only "presentationDefinitionMatch:false" which gives the user no
+	// hint about what to fix.
+	pd := a.fetchPresentationDefinition(authCtx, req.RequestURI)
+	credID := req.CredentialID
+	if pd != nil {
+		matched, ok := a.matchPD(authCtx, sess.WalletID, pd)
+		if ok && len(matched) == 0 {
+			wantType, wantFormat := describePD(pd)
+			return backend.PresentCredentialResult{}, fmt.Errorf(
+				"your wallet has no credential matching this request (verifier asked for %s in %s format); accept a matching offer first, then try again",
+				wantType, wantFormat)
+		}
+		if ok {
+			credID = pickBestMatch(matched, req.CredentialID)
+		}
+	}
 
 	body := map[string]any{
 		"presentationRequest": req.RequestURI,
@@ -367,7 +386,7 @@ func (a *Adapter) PresentCredential(ctx context.Context, req backend.PresentCred
 		fmt.Sprintf("/wallet-api/wallet/%s/exchange/usePresentationRequest", sess.WalletID),
 		jsonReaderBytes(mustJSON(body)), "application/json", nil)
 	if err != nil {
-		return backend.PresentCredentialResult{}, err
+		return backend.PresentCredentialResult{}, friendlyPresentError(err)
 	}
 	redirectURI := ""
 	if len(respRaw) > 0 {
@@ -383,57 +402,6 @@ func (a *Adapter) PresentCredential(ctx context.Context, req backend.PresentCred
 		SharedClaims:  req.DisclosedClaim,
 		VerifierState: redirectURI,
 	}, nil
-}
-
-// resolveMatchedCredentialID asks walt.id which held credentials satisfy
-// the verifier's PD and picks the one whose format walt.id's VP submit
-// pipeline actually handles. Walt.id only round-trips `jwt_vc_json` and
-// `vc+sd-jwt` end-to-end; returning any other format (ldp_vc,
-// jwt_vc_json-ld, jwt_vc) causes the wallet to build an array-form
-// vp_token and trip an internal .jsonPrimitive assertion.
-//
-// The match endpoint fetches + parses the PD itself — we POST the PD
-// inline (NOT the presentationRequest URI; that shape errors with
-// "Field 'input_descriptors' is required"). On wallet-api builds without
-// the match endpoint, or when no matches come back, fall through to the
-// caller-provided id.
-func (a *Adapter) resolveMatchedCredentialID(ctx context.Context, walletID string, req backend.PresentCredentialRequest) string {
-	fallback := req.CredentialID
-
-	pd := a.fetchPresentationDefinition(ctx, req.RequestURI)
-	if pd == nil {
-		log.Printf("waltid: fetchPresentationDefinition returned nil — submitting caller-picked id=%s", fallback)
-		return fallback
-	}
-	var matched []map[string]json.RawMessage
-	if err := a.wallet.DoJSON(ctx, "POST",
-		fmt.Sprintf("/wallet-api/wallet/%s/exchange/matchCredentialsForPresentationDefinition", walletID),
-		pd, &matched, nil); err != nil {
-		log.Printf("waltid: match endpoint failed: %v — submitting caller-picked id=%s", err, fallback)
-		return fallback
-	}
-	if len(matched) == 0 {
-		log.Printf("waltid: match returned 0 rows — submitting caller-picked id=%s", fallback)
-		return fallback
-	}
-	best := -1
-	bestID := fallback
-	for _, row := range matched {
-		var id, fmtVal string
-		_ = json.Unmarshal(row["id"], &id)
-		_ = json.Unmarshal(row["format"], &fmtVal)
-		if id == "" {
-			continue
-		}
-		rank := vpFormatRank(fmtVal)
-		log.Printf("waltid: match candidate id=%s format=%s rank=%d", id, fmtVal, rank)
-		if rank > best {
-			best = rank
-			bestID = id
-		}
-	}
-	log.Printf("waltid: picked id=%s rank=%d from %d matches", bestID, best, len(matched))
-	return bestID
 }
 
 // vpFormatRank returns a score for a credential format based on whether
@@ -490,6 +458,142 @@ func (a *Adapter) fetchPresentationDefinition(ctx context.Context, requestURI st
 		return nil
 	}
 	return out
+}
+
+// matchPD calls walt.id's match endpoint with an inline PD. Returns
+// (matches, ok). ok=false means the endpoint itself errored (network
+// fault, older wallet-api build without the endpoint); callers must
+// NOT treat that as "no matches found" — fall back to submitting with
+// the user-picked id and let walt.id return its own error.
+func (a *Adapter) matchPD(ctx context.Context, walletID string, pd map[string]any) ([]map[string]json.RawMessage, bool) {
+	var matched []map[string]json.RawMessage
+	if err := a.wallet.DoJSON(ctx, "POST",
+		fmt.Sprintf("/wallet-api/wallet/%s/exchange/matchCredentialsForPresentationDefinition", walletID),
+		pd, &matched, nil); err != nil {
+		log.Printf("waltid: matchPD failed: %v", err)
+		return nil, false
+	}
+	return matched, true
+}
+
+// pickBestMatch picks the highest-ranked (walt.id-tested format) id from
+// the match results. Falls back to the user-picked id if the ranking
+// produced no winner (all 0-ranked).
+func pickBestMatch(matched []map[string]json.RawMessage, fallback string) string {
+	best := -1
+	bestID := fallback
+	for _, row := range matched {
+		var id, fmtVal string
+		_ = json.Unmarshal(row["id"], &id)
+		_ = json.Unmarshal(row["format"], &fmtVal)
+		if id == "" {
+			continue
+		}
+		rank := vpFormatRank(fmtVal)
+		log.Printf("waltid: match candidate id=%s format=%s rank=%d", id, fmtVal, rank)
+		if rank > best {
+			best = rank
+			bestID = id
+		}
+	}
+	log.Printf("waltid: picked id=%s rank=%d from %d matches", bestID, best, len(matched))
+	return bestID
+}
+
+// describePD extracts a human-readable (type, format) pair from a PD's
+// first input descriptor. Used to explain failures when the wallet has
+// nothing matching — the UI can tell the user "you need a <type> in
+// <format> format" instead of the opaque walt.id error.
+func describePD(pd map[string]any) (typeName, format string) {
+	typeName = "VerifiableCredential"
+	format = "any"
+	descriptors, _ := pd["input_descriptors"].([]any)
+	if len(descriptors) == 0 {
+		return
+	}
+	d, _ := descriptors[0].(map[string]any)
+	if d == nil {
+		return
+	}
+	// Format is a map keyed by the VP format name (e.g. "vc+sd-jwt").
+	if fm, ok := d["format"].(map[string]any); ok {
+		for k := range fm {
+			format = k
+			break
+		}
+	}
+	// Type is declared via constraints.fields[*].filter.const|pattern or
+	// via the input-descriptor's id on walt.id's generated PDs.
+	if id, ok := d["id"].(string); ok && id != "" {
+		typeName = id
+	}
+	return
+}
+
+// friendlyClaimError surfaces the wallet's error verbatim; empirically
+// walt.id v0.18.2 claims every advertised format (jwt_vc_json, jwt_vc_json-ld,
+// ldp_vc, jwt_vc, vc+sd-jwt) cleanly when the issuer-side body is correct.
+// dc+sd-jwt is the one exception — issuance there requires the issuer DID
+// for the VC-subject id and walt.id's wallet-api 400s with
+// "Issuer DID was not given in issuance request" when it isn't. That's an
+// issuer-API quirk, not a format deficiency.
+func friendlyClaimError(err error, _ string) error {
+	return fmt.Errorf("wallet claim failed: %s", truncateClaim(err.Error(), 200))
+}
+
+// formatFromConfigID extracts the walt.id format key from a configuration
+// id like "AlpsTourReservation_jwt_vc_json-ld" → "jwt_vc_json-ld". Returns
+// "" when none of the known suffixes match (e.g. when configID is empty).
+func formatFromConfigID(configID string) string {
+	for _, suf := range []string{
+		"jwt_vc_json-ld", "jwt_vc_json", "vc+sd-jwt", "dc+sd-jwt",
+		"mso_mdoc", "ldp_vc", "jwt_vc",
+	} {
+		if strings.HasSuffix(configID, "_"+suf) {
+			return suf
+		}
+	}
+	return ""
+}
+
+func truncateClaim(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
+}
+
+// friendlyPresentError translates walt.id's wallet 400 body into a message
+// a non-walt.id-literate operator can act on. Empirically (against
+// walt.id Community Stack v0.18.2):
+//
+//   - "JsonArray is not a JsonPrimitive" fires when the wallet tries to
+//     build a vp_token for a credential in a format whose VP payload is a
+//     JSON object/array (ldp_vc, jwt_vc_json-ld) rather than a compact
+//     JWT string. walt.id's VP submit path calls .jsonPrimitive on the
+//     vpToken unconditionally (SSIKit2WalletService.kt) — fine for
+//     jwt_vc_json / vc+sd-jwt, throws for the others.
+//   - "VCFormat does not contain element with name 'jwt_vc_json-ld'" —
+//     the verifier's Kotlin format enum is missing that literal, so
+//     creating the verifier session for a jwt_vc_json-ld filter fails.
+//   - "presentationDefinitionMatch" + "false" — no held credential
+//     satisfies the PD; the pre-flight in PresentCredential usually
+//     catches this first with a more specific message.
+func friendlyPresentError(err error) error {
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "JsonArray") && strings.Contains(msg, "JsonPrimitive"):
+		return fmt.Errorf(
+			"walt.id's wallet-api v0.18.2 can't build a verifiable presentation for this credential format — its VP submit path only handles compact-JWT formats (jwt_vc_json, vc+sd-jwt). For jwt_vc_json-ld and ldp_vc the vpToken is a JSON object and the wallet throws internally. Re-issue the credential in JWT · W3C (jwt_vc_json) or SD-JWT · VC (vc+sd-jwt) and retry")
+	case strings.Contains(msg, "VCFormat does not contain"):
+		return fmt.Errorf(
+			"walt.id's verifier doesn't recognise this format (e.g. jwt_vc_json-ld is not in its Kotlin format enum). Re-issue the credential in a format the verifier supports — jwt_vc_json, ldp_vc, jwt_vc, or vc+sd-jwt all round-trip end-to-end")
+	case strings.Contains(msg, "presentationDefinitionMatch") && strings.Contains(msg, "false"):
+		return fmt.Errorf("the wallet couldn't build a presentation the verifier would accept — typically the held credential's format doesn't match what was requested")
+	case strings.Contains(msg, "signature") && strings.Contains(msg, "policy"):
+		return fmt.Errorf("the credential's signature could not be verified by the verifier (the issuer's key may not be trusted by this verifier)")
+	}
+	return err
 }
 
 // jsonReaderBytes adapts a precomputed []byte for DoRaw's io.Reader argument.
