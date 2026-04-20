@@ -92,4 +92,57 @@
       toast('Clipboard not available');
     }
   };
+
+  // ---- Schema picker filter (verifier: Build custom request) ----
+  // Wires the filter chips + search input that sit above a
+  // [data-schema-select] dropdown. Each <option> carries data-std and
+  // data-search; we hide options that don't match. Pure client-side;
+  // the existing HTMX hx-post on the select still fires on change.
+  function initSchemaPicker() {
+    const sel = document.querySelector('[data-schema-select]');
+    if (!sel) return;
+    const chips = document.querySelectorAll('[data-schema-filter] .chip');
+    const search = document.querySelector('[data-schema-search]');
+    const emptyMsg = document.getElementById('schema-filter-empty');
+    let activeStd = 'all';
+
+    function apply() {
+      const q = (search && search.value || '').trim().toLowerCase();
+      let visible = 0;
+      let firstVisible = null;
+      sel.querySelectorAll('option').forEach((o) => {
+        if (!o.value) { o.hidden = false; return; } // keep the placeholder
+        const std = o.getAttribute('data-std') || '';
+        const corpus = o.getAttribute('data-search') || '';
+        const matchesStd = activeStd === 'all' || std === activeStd;
+        const matchesQ = !q || corpus.indexOf(q) !== -1;
+        const show = matchesStd && matchesQ;
+        o.hidden = !show;
+        if (show) { visible++; if (!firstVisible) firstVisible = o; }
+      });
+      if (emptyMsg) emptyMsg.style.display = visible === 0 ? 'block' : 'none';
+      // If the currently-selected option got hidden, clear the selection so
+      // the placeholder shows again — avoids a confusing state where the
+      // visible options don't include the selected one.
+      const current = sel.querySelector('option[value="' + CSS.escape(sel.value) + '"]');
+      if (current && current.hidden) { sel.value = ''; }
+    }
+
+    chips.forEach((c) => {
+      c.addEventListener('click', () => {
+        chips.forEach((x) => x.classList.remove('active'));
+        c.classList.add('active');
+        activeStd = c.getAttribute('data-std') || 'all';
+        apply();
+      });
+    });
+    if (search) {
+      search.addEventListener('input', apply);
+    }
+    apply();
+  }
+  initSchemaPicker();
+  // Re-run after htmx swaps so the picker works even when the verifier
+  // page is loaded via hx-boost.
+  document.body.addEventListener('htmx:load', initSchemaPicker);
 })();

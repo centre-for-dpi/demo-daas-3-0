@@ -328,32 +328,100 @@ func (a *Adapter) ClaimCredential(ctx context.Context, cred vctypes.Credential) 
 }
 
 // PresentCredential responds to an OID4VP request via /exchange/usePresentationRequest.
+//
+// Two call shapes are tried in order to cover walt.id's wallet-api versions:
+//
+//   1. Match-then-present. Calls /exchange/matchCredentialsForPresentationDefinition
+//      first so the wallet resolves the PD URL, fetches the definition, and
+//      returns the credentials that match. If that succeeds we submit with
+//      the wallet's own canonical credential-id (which can differ from the
+//      id surfaced by ListWalletCredentials when walt.id re-emits ids
+//      per-presentation). If the match call fails we continue to step 2 —
+//      some older wallet-api builds don't expose the match endpoint.
+//
+//   2. Direct submit with the caller-provided CredentialID. This is the
+//      original code path; kept as a fallback because it works on builds
+//      where matchCredentialsForPresentationDefinition is missing.
+//
+// Either way, the raw 400 body is surfaced verbatim to the caller so the
+// UI toast shows the walt.id error (previously the user saw
+// "Bad Request" with no detail).
 func (a *Adapter) PresentCredential(ctx context.Context, req backend.PresentCredentialRequest) (backend.PresentCredentialResult, error) {
 	sess, err := a.ensureWalletSession(ctx)
 	if err != nil {
 		return backend.PresentCredentialResult{}, err
 	}
+	authCtx := httpx.WithToken(ctx, sess.Token)
+
+	credID := a.resolveMatchedCredentialID(authCtx, sess.WalletID, req)
+
 	body := map[string]any{
 		"presentationRequest": req.RequestURI,
-		"selectedCredentials": []string{req.CredentialID},
+		"selectedCredentials": []string{credID},
 	}
 	if len(req.DisclosedClaim) > 0 {
-		body["disclosures"] = map[string][]string{req.CredentialID: req.DisclosedClaim}
+		body["disclosures"] = map[string][]string{credID: req.DisclosedClaim}
 	}
-	var resp struct {
-		RedirectURI string `json:"redirectUri"`
-	}
-	if err := a.wallet.DoJSON(httpx.WithToken(ctx, sess.Token), "POST",
+	respRaw, err := a.wallet.DoRaw(authCtx, "POST",
 		fmt.Sprintf("/wallet-api/wallet/%s/exchange/usePresentationRequest", sess.WalletID),
-		body, &resp, nil); err != nil {
+		jsonReaderBytes(mustJSON(body)), "application/json", nil)
+	if err != nil {
 		return backend.PresentCredentialResult{}, err
+	}
+	redirectURI := ""
+	if len(respRaw) > 0 {
+		var parsed struct {
+			RedirectURI string `json:"redirectUri"`
+		}
+		_ = json.Unmarshal(respRaw, &parsed)
+		redirectURI = parsed.RedirectURI
 	}
 	return backend.PresentCredentialResult{
 		Success:       true,
 		Method:        "OID4VP · via wallet API",
 		SharedClaims:  req.DisclosedClaim,
-		VerifierState: resp.RedirectURI,
+		VerifierState: redirectURI,
 	}, nil
+}
+
+// resolveMatchedCredentialID asks walt.id which held credential matches the
+// verifier's presentation definition, so we submit the id walt.id itself
+// emitted (some builds mint fresh ids per-presentation). Falls back to the
+// caller-provided id if the match endpoint is missing or returns empty.
+func (a *Adapter) resolveMatchedCredentialID(ctx context.Context, walletID string, req backend.PresentCredentialRequest) string {
+	fallback := req.CredentialID
+
+	// The match endpoint takes the presentationRequest URI as body and
+	// returns an array of credentials that satisfy it. Only useful on
+	// wallet-api builds that expose it; we swallow errors and fall through.
+	var matched []map[string]json.RawMessage
+	body := map[string]any{"presentationRequest": req.RequestURI}
+	if err := a.wallet.DoJSON(ctx, "POST",
+		fmt.Sprintf("/wallet-api/wallet/%s/exchange/matchCredentialsForPresentationDefinition", walletID),
+		body, &matched, nil); err != nil {
+		return fallback
+	}
+	for _, row := range matched {
+		var id string
+		if err := json.Unmarshal(row["id"], &id); err == nil && id != "" {
+			return id
+		}
+	}
+	return fallback
+}
+
+// jsonReaderBytes adapts a precomputed []byte for DoRaw's io.Reader argument.
+func jsonReaderBytes(b []byte) *strings.Reader { return strings.NewReader(string(b)) }
+
+// mustJSON marshals v or returns a JSON null on error. Used when we're
+// building a small, known-safe map in code — failures are programmer bugs,
+// not runtime errors.
+func mustJSON(v any) []byte {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return []byte("null")
+	}
+	return b
 }
 
 // walletCredentialToVctype maps a walt.id WalletCredential onto vctypes.Credential.

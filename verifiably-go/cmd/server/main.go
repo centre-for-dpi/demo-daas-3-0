@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/verifiably/verifiably-go/internal/adapters/factory"
@@ -261,5 +262,29 @@ func funcMap() template.FuncMap {
 			}
 			return out
 		},
+
+		// schemaStdList returns the distinct Std values across a []Schema
+		// slice in stable sorted order. Used to render the filter chips
+		// above the verifier's schema picker without hardcoding format
+		// names in the template.
+		"schemaStdList": func(schemas []vctypes.Schema) []string {
+			seen := map[string]struct{}{}
+			for _, s := range schemas {
+				if s.Std != "" {
+					seen[s.Std] = struct{}{}
+				}
+			}
+			out := make([]string, 0, len(seen))
+			for k := range seen {
+				out = append(out, k)
+			}
+			sort.Strings(out)
+			return out
+		},
+
+		// lowerStr lowercases a string so a data-attribute can hold a
+		// pre-normalised search corpus — the client-side filter does a
+		// case-insensitive substring match without per-option work.
+		"lowerStr": strings.ToLower,
 	}
 }
