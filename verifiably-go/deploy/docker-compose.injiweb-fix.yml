@@ -1,4 +1,4 @@
-# Compose override layered on top of the shared ui-demo/docker/stack file.
+# Compose override layered on top of deploy/compose/stack/docker-compose.yml.
 # Patches the three injiweb services that otherwise crash-loop:
 #
 #   injiweb-mimoto        — upstream mimoto-bootstrap.properties sets

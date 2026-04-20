@@ -1,10 +1,16 @@
 # Deployment
 
-`deploy.sh` is the single entrypoint. It wraps `docker compose` around the
-shared `ui-demo/docker/stack/docker-compose.yml` (which defines every DPG
-container), layers a verifiably-go-specific override
+`deploy.sh` is the single entrypoint. It wraps `docker compose` around
+`deploy/compose/stack/docker-compose.yml` (the vendored MOSIP + walt.id
+service definitions), layers a verifiably-go-specific override
 (`deploy/docker-compose.injiweb-fix.yml`), and then runs the verifiably-go
 image as a separate container on the same docker network.
+
+`deploy/compose/` is self-contained — everything the compose file
+needs (Caddyfile, Keycloak realm JSON, WSO2IS certs, Inji Certify data
+CSVs, Mimoto bootstrap, oidc-ui nginx, seed scripts) lives there. The
+tree preserves the sibling `stack/` + `injiweb/` layout the compose file
+and seed scripts expect via relative paths.
 
 ## Subcommands
 
@@ -75,12 +81,12 @@ The override mounts:
 
 After `docker compose up` completes, `cmd_up` runs:
 
-- `ui-demo/docker/injiweb/seed-esignet-client.sh` — extracts the
+- `deploy/compose/injiweb/seed-esignet-client.sh` — extracts the
   `wallet-demo-client` public key from its p12 keystore, converts to JWK,
   and POSTs to eSignet's client-mgmt API. Idempotent; re-runs return
   `duplicate_client_id` and exit 0.
 
-- `ui-demo/docker/injiweb/seed-mock-identity.sh` — stuffs an identity
+- `deploy/compose/injiweb/seed-mock-identity.sh` — stuffs an identity
   (individualId `8267411072`, PIN `111111`) into mock-identity so the
   OTP login screen has something to authenticate.
 
@@ -111,13 +117,13 @@ Set before invoking `deploy.sh` or export in your shell:
 | `VERIFIABLY_PUBLIC_URL`           | `http://localhost:8080`   | Shown to the user after `deploy.sh run`                  |
 | `VERIFIABLY_IMAGE`                | `verifiably-go:local`     | Image tag for the build                                  |
 | `VERIFIABLY_CONTAINER`            | `verifiably-go`           | docker container name                                    |
-| `VERIFIABLY_COMPOSE_FILE`         | `../ui-demo/docker/stack/docker-compose.yml` | Primary compose file             |
+| `VERIFIABLY_COMPOSE_FILE`         | `deploy/compose/stack/docker-compose.yml` | Primary compose file                |
 | `VERIFIABLY_COMPOSE_OVERRIDE`     | `deploy/docker-compose.injiweb-fix.yml`      | Override file                    |
 | `VERIFIABLY_INJI_EXTRA_KIDS`      | _(empty)_                 | Pre-seed kids for the inji-proxy did.json handler — comma-separated list to use when restarting without re-issuance |
 | `VERIFIABLY_DEBUG_MOCK_MARKERS`   | `0`                       | Show `[mock]` pills on any UI surface still mock-backed   |
 
-The shared compose file also reads its own `.env` next to it
-(`ui-demo/docker/stack/.env`) which sets `PUBLIC_HOST=172.24.0.1` and
+The compose file also reads its own `.env` next to it
+(`deploy/compose/stack/.env`) which sets `PUBLIC_HOST=172.24.0.1` and
 `ESIGNET_PUBLIC_PORT=3005` / `INJIWEB_UI_PUBLIC_PORT=3004`. Those drive
 the URLs injected into the Inji Web SPA's `env.config.js` and the
 eSignet client's redirect URIs.
@@ -128,7 +134,7 @@ Today the server-side URLs hardcoded in `deploy.sh` stanzas assume
 `localhost`. Migrating to EC2 (or any public host) touches three files
 and one env var:
 
-1. `ui-demo/docker/stack/.env` — set `PUBLIC_HOST=ec2-…`. This
+1. `deploy/compose/stack/.env` — set `PUBLIC_HOST=ec2-…`. This
    immediately flows into Mimoto's `MIMOTO_URL`, eSignet's configured
    redirect, and the patched `mimoto-issuers-config.json`.
 
@@ -154,7 +160,7 @@ all issued VCs):
 ./deploy.sh down all
 
 docker compose -p waltid --profile injiweb \
-  -f ../ui-demo/docker/stack/docker-compose.yml \
+  -f deploy/compose/stack/docker-compose.yml \
   rm -f -v certify-postgres inji-certify inji-certify-preauth \
               certify-nginx injeweb-postgres injiweb-esignet \
               injiweb-mimoto injiweb-ui injiweb-oidc-ui \

@@ -2,7 +2,7 @@ package handlers
 
 // inji_proxy.go — minimal OID4VCI credential-request proxy for Inji Certify.
 //
-// Why this exists: certify-nginx (ui-demo/docker/stack/inji/certify-nginx/
+// Why this exists: certify-nginx (deploy/compose/stack/inji/certify-nginx/
 // nginx.conf) routes POST /v1/certify/issuance/credential to
 // http://host.docker.internal:8080/inji-proxy/issuance/credential. That's our
 // port. When the route doesn't resolve, Mimoto fails the credential download

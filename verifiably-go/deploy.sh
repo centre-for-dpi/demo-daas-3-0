@@ -28,7 +28,7 @@ set -euo pipefail
 # ------------------------------------------------------------------ config
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-: "${VERIFIABLY_COMPOSE_FILE:=$SCRIPT_DIR/../ui-demo/docker/stack/docker-compose.yml}"
+: "${VERIFIABLY_COMPOSE_FILE:=$SCRIPT_DIR/deploy/compose/stack/docker-compose.yml}"
 : "${VERIFIABLY_COMPOSE_OVERRIDE:=$SCRIPT_DIR/deploy/docker-compose.injiweb-fix.yml}"
 : "${VERIFIABLY_ADDR:=:8080}"
 : "${VERIFIABLY_HOST_PORT:=8080}"
@@ -81,7 +81,7 @@ compose() {
     # When docker compose layers multiple files, relative paths inside
     # each file are resolved relative to the FIRST -f argument, not the
     # file that declared them. That breaks our override — it ends up
-    # looking for the patched bootstrap under ui-demo/verifiably-go/…
+    # looking for the patched bootstrap under deploy/compose/stack/verifiably-go/…
     # which doesn't exist. Materialise a rendered override with an
     # absolute path instead.
     local rendered="$SCRIPT_DIR/config/docker-compose.injiweb-fix.rendered.yml"
@@ -402,6 +402,18 @@ cmd_up() {
   # them so they start with a clean layer.
   if [[ "$(scenario_needs_injiweb "$scenario")" == "yes" ]]; then
     recover_injiweb
+    # Mimoto's compose mount expects a writable copy of oidckeystore.p12 at
+    # deploy/compose/injiweb/config/certs-runtime/. The "certs-runtime" copy
+    # is regenerated from the pristine "certs" original so a fresh clone
+    # works before fetch-config.sh has ever run. Idempotent: only copies
+    # when the target is missing.
+    local cert_src="$SCRIPT_DIR/deploy/compose/injiweb/config/certs/oidckeystore.p12"
+    local cert_dst="$SCRIPT_DIR/deploy/compose/injiweb/config/certs-runtime/oidckeystore.p12"
+    if [[ -f "$cert_src" && ! -f "$cert_dst" ]]; then
+      mkdir -p "$(dirname "$cert_dst")"
+      cp "$cert_src" "$cert_dst"
+      green "  seeded $cert_dst from $cert_src"
+    fi
   fi
 
   bold "▶ Starting DPG services via docker compose"
@@ -429,8 +441,8 @@ cmd_up() {
   # identity into mock-identity so users can actually sign in.
   if [[ "$(scenario_needs_injiweb "$scenario")" == "yes" ]]; then
     bold "▶ Seeding Inji Web auth stack"
-    local esignet_seed="$SCRIPT_DIR/../ui-demo/docker/injiweb/seed-esignet-client.sh"
-    local mock_seed="$SCRIPT_DIR/../ui-demo/docker/injiweb/seed-mock-identity.sh"
+    local esignet_seed="$SCRIPT_DIR/deploy/compose/injiweb/seed-esignet-client.sh"
+    local mock_seed="$SCRIPT_DIR/deploy/compose/injiweb/seed-mock-identity.sh"
     if [[ -x "$esignet_seed" ]]; then
       (cd "$(dirname "$esignet_seed")" && "$esignet_seed") \
         || red "  seed-esignet-client failed (retry manually: $esignet_seed)"
