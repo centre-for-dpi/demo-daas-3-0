@@ -20,7 +20,7 @@
       {{if .Body.Credentials}}
         <select name="credential_id" required style="width:100%;padding:0.6rem;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:2px">
           {{range .Body.Credentials}}
-            <option value="{{.ID}}">{{.Title}} — {{.Issuer}}</option>
+            <option value="{{.ID}}" {{if eq $.Body.PreselectCredentialID .ID}}selected{{end}}>{{.Title}} — {{.Issuer}}</option>
           {{end}}
         </select>
       {{else}}

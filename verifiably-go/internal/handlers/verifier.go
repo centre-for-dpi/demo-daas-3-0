@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -34,11 +35,21 @@ func (h *H) ShowVerify(w http.ResponseWriter, r *http.Request) {
 	h.render(w, r, "verifier_verify", h.pageData(sess, body))
 }
 
-// GenerateRequest creates an OID4VP presentation request from a preset
-// template key OR, when the user picked "custom", from the template
-// assembled via BuildVerifierTemplate.
+// GenerateRequest creates an OID4VP presentation request. Two modes:
+//
+//   - Preset: form.template is one of the curated ListOID4VPTemplates keys.
+//
+//   - Custom: form.template == "custom" and the form ALSO carries schema_id,
+//     field_key[], and disclosure from the "Build a custom request" card.
+//     Handler assembles an inline OID4VPTemplate on the fly so the user
+//     clicks ONE button (no intermediate "Assemble template" step that
+//     would leave the dropdown stale).
 func (h *H) GenerateRequest(w http.ResponseWriter, r *http.Request) {
 	sess := h.Sessions.MustGet(w, r)
+	if err := r.ParseForm(); err != nil {
+		h.errorToast(w, r, "Bad form: "+err.Error())
+		return
+	}
 	template := r.FormValue("template")
 	if template == "" {
 		template = "age"
@@ -48,11 +59,14 @@ func (h *H) GenerateRequest(w http.ResponseWriter, r *http.Request) {
 		TemplateKey: template,
 	}
 	if template == "custom" {
-		if sess.CustomOID4VPTemplate == nil {
-			h.errorToast(w, r, "Build a custom request first")
+		tpl, err := h.assembleCustomTemplate(r)
+		if err != nil {
+			h.errorToast(w, r, err.Error())
 			return
 		}
-		req.Template = sess.CustomOID4VPTemplate
+		sess.CustomOID4VPTemplate = &tpl
+		sess.CustomOID4VPSchemaID = r.FormValue("schema_id")
+		req.Template = &tpl
 	}
 	res, err := h.Adapter.RequestPresentation(r.Context(), req)
 	if err != nil {
@@ -65,10 +79,67 @@ func (h *H) GenerateRequest(w http.ResponseWriter, r *http.Request) {
 	h.renderFragment(w, r, "fragment_oid4vp_request_output", res)
 }
 
-// BuildVerifierTemplate composes a custom OID4VPTemplate from a schema +
-// user-selected fields + disclosure mode. Stashes it on the session so
-// the Generate Request step can pick it up. Returns an HTMX fragment that
-// previews the composed template with edit-in-place behavior.
+// assembleCustomTemplate builds a OID4VPTemplate from the custom-request
+// form fields on r: schema_id picks the schema, field_key[] is the list of
+// fields to request (defaults to all schema fields if none are checked),
+// disclosure is "selective" or "full".
+func (h *H) assembleCustomTemplate(r *http.Request) (vctypes.OID4VPTemplate, error) {
+	schemaID := r.FormValue("schema_id")
+	if schemaID == "" {
+		return vctypes.OID4VPTemplate{}, fmt.Errorf("pick a schema first")
+	}
+	schemas, err := h.Adapter.ListAllSchemas(r.Context())
+	if err != nil {
+		return vctypes.OID4VPTemplate{}, fmt.Errorf("could not load schemas: %w", err)
+	}
+	var picked *vctypes.Schema
+	for i := range schemas {
+		if schemas[i].ID == schemaID {
+			picked = &schemas[i]
+			break
+		}
+	}
+	if picked == nil {
+		return vctypes.OID4VPTemplate{}, fmt.Errorf("unknown schema %q", schemaID)
+	}
+	fields := r.Form["field_key"]
+	if len(fields) == 0 {
+		// No boxes checked → request every field the schema declares.
+		for _, f := range picked.FieldsSpec {
+			fields = append(fields, f.Name)
+		}
+	}
+	// Reject fields that aren't in the schema.
+	valid := make(map[string]bool, len(picked.FieldsSpec))
+	for _, f := range picked.FieldsSpec {
+		valid[f.Name] = true
+	}
+	cleaned := fields[:0]
+	for _, f := range fields {
+		if valid[f] {
+			cleaned = append(cleaned, f)
+		}
+	}
+	fields = cleaned
+
+	disclosure := r.FormValue("disclosure")
+	if disclosure == "" {
+		disclosure = "full"
+	}
+	return vctypes.OID4VPTemplate{
+		Title:      picked.Name,
+		Fields:     fields,
+		Format:     picked.Std,
+		Disclosure: disclosureSummary(disclosure, fields),
+	}, nil
+}
+
+// BuildVerifierTemplate renders the field-picker fragment for the schema
+// the user selected. Fires from the schema dropdown's change event so the
+// checkboxes appear immediately; the actual template is re-assembled at
+// Generate time (via assembleCustomTemplate) rather than stashed here —
+// that keeps the dropdown and the built template from drifting out of
+// sync when the user changes their mind.
 func (h *H) BuildVerifierTemplate(w http.ResponseWriter, r *http.Request) {
 	sess := h.Sessions.MustGet(w, r)
 	if sess.VerifierDpg == "" {
@@ -81,16 +152,11 @@ func (h *H) BuildVerifierTemplate(w http.ResponseWriter, r *http.Request) {
 	}
 	schemaID := r.FormValue("schema_id")
 	if schemaID == "" {
-		h.errorToast(w, r, "Pick a schema first")
+		// Empty dropdown → clear the preview area.
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(""))
 		return
 	}
-	disclosure := r.FormValue("disclosure")
-	if disclosure == "" {
-		disclosure = "full"
-	}
-	fields := r.Form["field_key"] // repeated form field — one per checked box
-
-	// Resolve the schema so we can validate field names + grab the format.
 	schemas, err := h.Adapter.ListAllSchemas(r.Context())
 	if err != nil {
 		h.errorToast(w, r, "Could not load schemas: "+err.Error())
@@ -107,41 +173,40 @@ func (h *H) BuildVerifierTemplate(w http.ResponseWriter, r *http.Request) {
 		h.errorToast(w, r, "Unknown schema "+schemaID)
 		return
 	}
-	// If the caller ticked no boxes, default to every field the schema
-	// declares — a custom "full credential" template is still a valid
-	// thing to build.
-	if len(fields) == 0 {
+	// Pre-check fields already selected on the prior render (if any) so
+	// switching schemas doesn't erase selections the user made on the
+	// same schema. Otherwise default to every field.
+	var selected []string
+	if raw := r.Form["field_key"]; len(raw) > 0 {
+		valid := make(map[string]bool, len(picked.FieldsSpec))
 		for _, f := range picked.FieldsSpec {
-			fields = append(fields, f.Name)
+			valid[f.Name] = true
+		}
+		for _, f := range raw {
+			if valid[f] {
+				selected = append(selected, f)
+			}
 		}
 	}
-	// Validate the picked fields are actually part of the schema.
-	valid := make(map[string]bool, len(picked.FieldsSpec))
-	for _, f := range picked.FieldsSpec {
-		valid[f.Name] = true
-	}
-	cleaned := fields[:0]
-	for _, f := range fields {
-		if valid[f] {
-			cleaned = append(cleaned, f)
+	if len(selected) == 0 {
+		for _, f := range picked.FieldsSpec {
+			selected = append(selected, f.Name)
 		}
 	}
-	fields = cleaned
-
-	tpl := vctypes.OID4VPTemplate{
-		Title:      picked.Name,
-		Fields:     fields,
-		Format:     picked.Std,
-		Disclosure: disclosureSummary(disclosure, fields),
-	}
-	sess.CustomOID4VPTemplate = &tpl
 	sess.CustomOID4VPSchemaID = schemaID
-
+	// Build a preview template purely so the fragment can show a "will
+	// request: …" line; Generate rebuilds from the live form values.
+	preview := vctypes.OID4VPTemplate{
+		Title:      picked.Name,
+		Fields:     selected,
+		Format:     picked.Std,
+		Disclosure: disclosureSummary(r.FormValue("disclosure"), selected),
+	}
 	h.renderFragment(w, r, "fragment_custom_oid4vp_preview", map[string]any{
-		"Template": tpl,
+		"Template": preview,
 		"SchemaID": schemaID,
 		"Schema":   *picked,
-		"Selected": fieldSet(fields),
+		"Selected": fieldSet(selected),
 	})
 }
 

@@ -161,6 +161,9 @@ func (h *H) RejectCred(w http.ResponseWriter, r *http.Request) {
 }
 
 // ShowPresent renders the OID4VP presentation entry screen for the holder.
+// An optional ?credential=<id> query pre-selects the credential in the
+// picker; used when the holder clicks "Present this →" directly on a
+// wallet card so they land on the form with their choice already made.
 func (h *H) ShowPresent(w http.ResponseWriter, r *http.Request) {
 	sess := h.Sessions.MustGet(w, r)
 	if sess.HolderDpg == "" {
@@ -178,9 +181,11 @@ func (h *H) ShowPresent(w http.ResponseWriter, r *http.Request) {
 			creds = c
 		}
 	}
+	preselect := r.URL.Query().Get("credential")
 	h.render(w, r, "holder_present", h.pageData(sess, map[string]any{
-		"HolderDpgObj": dpgs[sess.HolderDpg],
-		"Credentials":  creds,
+		"HolderDpgObj":          dpgs[sess.HolderDpg],
+		"Credentials":           creds,
+		"PreselectCredentialID": preselect,
 	}))
 }
 

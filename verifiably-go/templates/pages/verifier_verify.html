@@ -13,44 +13,51 @@
       Generate an <span class="mono">openid4vp://</span> request. The holder scans or opens the link in their wallet; their wallet collects matching claims and returns them here.
     </p>
 
-    <div style="background:var(--bg-elev);border:1px solid var(--line);padding:1.5rem;border-radius:2px">
-      <div class="field">
-        <label>Request template</label>
-        <select id="oid4vp-template" name="template">
-          {{range $key, $tpl := .Body.Templates}}
-            <option value="{{$key}}">{{$tpl.Title}} — <em>{{$tpl.Disclosure}}</em></option>
-          {{end}}
-          {{if .Body.CustomTemplate}}
-            <option value="custom" selected>
-              [custom] {{.Body.CustomTemplate.Title}} — <em>{{.Body.CustomTemplate.Disclosure}}</em>
-            </option>
-          {{end}}
-        </select>
-      </div>
+    {{/* Two paths, two cards. The operator picks ONE — either a curated
+         preset (left) OR a custom schema-driven request (right). Each
+         card has a single Generate-request button that fires the OID4VP
+         session directly; no intermediate "assemble" step that could
+         leave the UI out of sync. */}}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1rem">
 
-      <button class="btn"
-              hx-post="/verifier/verify/request"
-              hx-include="#oid4vp-template"
-              hx-target="#oid4vp-output"
-              hx-swap="innerHTML">Generate request →</button>
-    </div>
+      {{/* ---------- Preset templates ---------- */}}
+      <form class="card"
+            hx-post="/verifier/verify/request"
+            hx-target="#oid4vp-output"
+            hx-swap="innerHTML"
+            style="background:var(--bg-elev);border:1px solid var(--line);padding:1.5rem;border-radius:2px;margin:0">
+        <div class="caps" style="margin-bottom:0.5rem">Preset templates</div>
+        <div class="field">
+          <label for="oid4vp-template">Request template</label>
+          <select id="oid4vp-template" name="template">
+            {{range $key, $tpl := .Body.Templates}}
+              <option value="{{$key}}">{{$tpl.Title}} — <em>{{$tpl.Disclosure}}</em></option>
+            {{end}}
+          </select>
+        </div>
+        <button class="btn" type="submit">Generate request →</button>
+      </form>
 
-    <div id="oid4vp-output"></div>
-
-    {{/* ---------- Build a custom request ---------- */}}
-    <div style="margin-top:2rem;background:var(--bg-elev);border:1px solid var(--line);padding:1.5rem;border-radius:2px">
-      <div class="caps" style="margin-bottom:0.5rem">Build a custom request</div>
-      <p style="font-size:0.82rem;color:var(--ink-soft);margin-bottom:1rem">
-        Pick a schema, check the fields you need, choose whether to request the full credential or selective disclosure. The assembled template appears in the dropdown above under <span class="mono">[custom]</span>.
-      </p>
-
+      {{/* ---------- Custom (schema-driven) ---------- */}}
       <form id="custom-template-form"
-            hx-post="/verifier/verify/build"
-            hx-target="#custom-template-preview"
-            hx-swap="innerHTML">
+            hx-post="/verifier/verify/request"
+            hx-target="#oid4vp-output"
+            hx-swap="innerHTML"
+            style="background:var(--bg-elev);border:1px solid var(--line);padding:1.5rem;border-radius:2px;margin:0">
+        <input type="hidden" name="template" value="custom">
+        <div class="caps" style="margin-bottom:0.5rem">Build a custom request</div>
+        <p style="font-size:0.82rem;color:var(--ink-soft);margin-bottom:1rem">
+          Pick a schema, check the fields you need, choose selective or full disclosure, then generate.
+        </p>
+
         <div class="field">
           <label for="custom-schema-id">Schema</label>
-          <select id="custom-schema-id" name="schema_id">
+          <select id="custom-schema-id" name="schema_id"
+                  hx-post="/verifier/verify/build"
+                  hx-trigger="change"
+                  hx-target="#custom-template-preview"
+                  hx-swap="innerHTML"
+                  hx-include="closest form">
             <option value="">— choose a schema —</option>
             {{range .Body.Schemas}}
               <option value="{{.ID}}" {{if eq $.Body.CustomSchemaID .ID}}selected{{end}}>{{.Name}} · <span class="mono">{{.Std}}</span></option>
@@ -63,7 +70,7 @@
           <div style="display:flex;gap:1rem;font-size:0.85rem">
             <label style="display:inline-flex;align-items:center;gap:0.35rem">
               <input type="radio" name="disclosure" value="selective" checked>
-              selective — only checked fields are shared
+              selective — only checked fields shared
             </label>
             <label style="display:inline-flex;align-items:center;gap:0.35rem">
               <input type="radio" name="disclosure" value="full">
@@ -72,9 +79,9 @@
           </div>
         </div>
 
-        {{/* Fields appear here after a schema is chosen. Rendered by the
-             fragment_custom_oid4vp_preview fragment which writes both the
-             field checkboxes and the preview into this container. */}}
+        {{/* Fields appear here after a schema is chosen. Rendered by
+             fragment_custom_oid4vp_preview. Changing the schema dropdown
+             triggers a fresh fragment render via hx-trigger=change. */}}
         <div id="custom-template-preview" style="margin-top:1rem">
           {{if .Body.CustomTemplate}}
             {{template "fragment_custom_oid4vp_preview" (dict
@@ -85,11 +92,13 @@
           {{end}}
         </div>
 
-        <button class="btn small ghost" type="submit" style="margin-top:1rem">
-          Assemble template →
+        <button class="btn" type="submit" style="margin-top:1rem">
+          Generate request →
         </button>
       </form>
     </div>
+
+    <div id="oid4vp-output" style="margin-top:1.5rem"></div>
   </div>
 
 
