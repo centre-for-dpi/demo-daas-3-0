@@ -81,6 +81,12 @@
 {{define "fragment_issue_single_form"}}
 <div id="single-form-wrap">
   <form id="single-form-el" style="margin-top:1.5rem">
+    {{/* Hidden inputs snapshot the issuer DPG + schema id at page-render
+         time. SubmitIssue prefers these over session state so a
+         container restart between page-load and submit doesn't blow up
+         with "unknown DPG: issuer \"\"" — the form is self-contained. */}}
+    <input type="hidden" name="issuer_dpg" value="{{.IssuerDpg}}">
+    <input type="hidden" name="schema_id"  value="{{.Schema.ID}}">
     {{if eq .SingleSource "manual"}}
       <div class="form-grid">
         {{/* Iterate FieldSpecs so the input type reflects the declared

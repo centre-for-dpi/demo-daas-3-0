@@ -127,13 +127,38 @@ func sourcesFromCapabilities(dpg vctypes.DPG) []sourceOption {
 // empty submissions: at least every required field in the schema must be
 // filled. Falling through without this check used to produce an offer with
 // no claims, which looked exactly like demo data and hid the real issuance.
+//
+// The handler reads IssuerDpg + SchemaID from the form first, then falls
+// back to the session. The form values are rendered as hidden inputs by
+// the issue template specifically so the page survives a container
+// restart: in-memory sessions get wiped on restart, but an already-loaded
+// form still has the originally-selected DPG + schema in its hidden
+// fields and submits without a cryptic "unknown DPG: issuer \"\"" error.
 func (h *H) SubmitIssue(w http.ResponseWriter, r *http.Request) {
 	sess := h.Sessions.MustGet(w, r)
 	_ = r.ParseForm()
+
+	issuerDpg := r.FormValue("issuer_dpg")
+	if issuerDpg == "" {
+		issuerDpg = sess.IssuerDpg
+	}
+	schemaID := r.FormValue("schema_id")
+	if schemaID == "" {
+		schemaID = sess.SchemaID
+	}
+	if issuerDpg == "" || schemaID == "" {
+		h.errorToast(w, r, "Session expired — click Back and restart from Pick a DPG")
+		return
+	}
+	// Re-sync the session so later pages (result fragment, navigation) see
+	// the right values even if they were wiped.
+	sess.IssuerDpg = issuerDpg
+	sess.SchemaID = schemaID
+
 	schemas, _ := h.Adapter.ListAllSchemas(r.Context())
 	var schema vctypes.Schema
 	for _, s := range schemas {
-		if s.ID == sess.SchemaID {
+		if s.ID == schemaID {
 			schema = s
 			break
 		}
