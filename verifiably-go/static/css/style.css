@@ -430,17 +430,17 @@ tr:hover td { background: var(--bg-elev); }
    ============================================================ */
 .wallet-stack { display: flex; flex-direction: column; gap: 1rem; margin-top: 1.5rem; }
 
-/* Horizontal 4-up row of the "receive" affordances across the top of the
-   wallet page. Collapses to 2 cols mid-width and 1 col narrow so the
-   cards never squeeze beyond ~220px each. */
+/* Two-wide grid of the "receive" affordances across the top of the
+   wallet page. 4 cards total → 2×2 layout so each tile has enough
+   width to show its copy + controls legibly without wrapping.
+   Collapses to 1 col below 640px. */
 .wallet-receive-row {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
   margin-bottom: 1rem;
 }
-@media (max-width: 1000px) { .wallet-receive-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 560px)  { .wallet-receive-row { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .wallet-receive-row { grid-template-columns: 1fr; } }
 .wallet-receive-card {
   background: var(--bg-elev);
   border: 1px solid var(--line);
