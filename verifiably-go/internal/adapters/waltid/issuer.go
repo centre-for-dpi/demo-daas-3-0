@@ -220,20 +220,24 @@ func sortVariantsByRank(vs []vctypes.SchemaVariant) {
 }
 
 // verifierSupportsFormat tracks which formats walt.id Community Stack's
-// verifier-api can accept in a request_credentials entry. Derived from
-// two code paths:
-//   - id.walt.w3c.utils.VCFormat enum (jwt_vc_json-ld is absent, so the
-//     verifier fails to parse the request body with
-//     "VCFormat does not contain element with name 'jwt_vc_json-ld'").
-//   - VerifierService.getPresentationFormat's when(credentialFormat)
-//     block, which only admits {mso_mdoc, sd_jwt_vc, ldp_vc, ldp,
-//     jwt_vc, jwt, jwt_vc_json}. sd_jwt_dc (dc+sd-jwt) falls through to
-//     the else branch and throws "not a valid format".
-// The UI uses this flag to hide non-presentable formats from the verifier
-// chip row and badge them as "issue-only" on the issuer side.
+// verifier-api can MATCH credentials for (accepts in the request AND can
+// actually round-trip through the wallet's matcher). Derived from:
+//
+//   - id.walt.w3c.utils.VCFormat enum (missing jwt_vc_json-ld).
+//   - VerifierService.getPresentationFormat's allow-list.
+//   - Empirical: ldp_vc credentials pass the enum + allow-list checks but
+//     walt.id's wallet-api leaves their parsedDocument empty, so the
+//     matchCredentialsForPresentationDefinition endpoint returns 0 matches
+//     regardless of the PD shape (even walt.id's own default PD). LDP
+//     is effectively issue-only at v0.18.2.
+//   - jwt_vc (legacy) hasn't been tested as thoroughly but empirically
+//     round-trips; kept on the list.
+//
+// The UI hides non-presentable formats from the verifier chip row and
+// badges them "issue-only" on the issuer side.
 func verifierSupportsFormat(format string) bool {
 	switch format {
-	case "jwt_vc_json", "jwt_vc", "ldp_vc", "vc+sd-jwt", "mso_mdoc":
+	case "jwt_vc_json", "jwt_vc", "vc+sd-jwt", "mso_mdoc":
 		return true
 	}
 	return false
