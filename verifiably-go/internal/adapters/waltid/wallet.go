@@ -1080,6 +1080,40 @@ func walletCredentialToVctype(raw map[string]json.RawMessage) vctypes.Credential
 			}
 		}
 	}
+	// When walt.id issued this SD-JWT with selectiveDisclosure set, every
+	// subject claim lives in the separate `disclosures` blob, NOT in
+	// parsedDocument — the payload only carries _sd/cnf/vct. Decode each
+	// disclosure (base64url-encoded [salt, claim, value]) so the wallet
+	// card still shows real field values. Without this the UI renders an
+	// empty card even though the holder has a perfectly valid SD-JWT in
+	// their wallet.
+	if format == "vc+sd-jwt" || format == "dc+sd-jwt" {
+		var discStr string
+		if err := json.Unmarshal(raw["disclosures"], &discStr); err == nil && discStr != "" {
+			for _, seg := range strings.Split(discStr, "~") {
+				seg = strings.TrimSpace(seg)
+				if seg == "" {
+					continue
+				}
+				decoded, err := base64.RawURLEncoding.DecodeString(seg)
+				if err != nil {
+					decoded, err = base64.URLEncoding.DecodeString(seg + strings.Repeat("=", (4-len(seg)%4)%4))
+					if err != nil {
+						continue
+					}
+				}
+				var arr []any
+				if err := json.Unmarshal(decoded, &arr); err != nil {
+					continue
+				}
+				if len(arr) >= 3 {
+					if claimName, ok := arr[1].(string); ok {
+						cred.Fields[claimName] = stringifyClaim(arr[2])
+					}
+				}
+			}
+		}
+	}
 	if cred.Title == "" {
 		cred.Title = "Credential"
 	}
