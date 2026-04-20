@@ -22,62 +22,56 @@
 </div>
 {{end}}
 
-<div class="split" style="align-items:flex-start;margin-top:2rem">
-  {{/* ---------- LEFT: Receive ---------- */}}
-  <div>
-    <div class="caps" style="margin-bottom:0.75rem">Receive a credential</div>
+<div style="margin-top:2rem">
+  {{/* ---------- TOP: Receive (horizontal 4-up) ---------- */}}
+  <div class="caps" style="margin-bottom:0.75rem">Receive a credential</div>
 
-    <div style="display:flex;flex-direction:column;gap:1rem">
+  <div class="wallet-receive-row">
 
-      {{/* Scan — uses getUserMedia + jsQR. Same scanner.js the verifier uses.
-            On successful decode, the payload is posted to /holder/wallet/paste
-            so the server treats it as if it had been pasted. */}}
-      <div style="background:var(--bg-elev);border:1px solid var(--line);padding:1.25rem;border-radius:2px">
-        <h4 style="font-family:'Josefin Sans',sans-serif;font-weight:500;font-size:1.1rem;margin-bottom:0.25rem">Scan issuer QR</h4>
-        <p style="font-size:0.82rem;color:var(--ink-soft);margin-bottom:0.75rem">Uses your device camera to read the offer QR live.</p>
+      {{/* Scan — uses getUserMedia + jsQR. Same scanner.js the verifier uses. */}}
+      <div class="wallet-receive-card">
+        <h4>Scan issuer QR</h4>
+        <p>Uses your device camera to read the offer QR live.</p>
         <button class="btn small" type="button"
                 id="wallet-scan-btn"
                 onclick="startWalletScan()">Start camera →</button>
-        <video id="wallet-scan-video" playsinline muted style="display:none;width:100%;max-width:280px;margin-top:0.75rem;border:1px solid var(--line);border-radius:2px"></video>
+        <video id="wallet-scan-video" playsinline muted style="display:none;width:100%;margin-top:0.75rem;border:1px solid var(--line);border-radius:2px"></video>
         <div id="wallet-scan-status" style="font-size:0.78rem;color:var(--ink-mute);margin-top:0.5rem"></div>
       </div>
 
-      {{/* Paste offer — fallback for same-device flows where the holder has
-           the credential-offer URI on their clipboard (e.g. issuer shared
-           via chat) and no QR to scan. */}}
-      <div style="background:var(--bg-elev);border:1px solid var(--line);padding:1.25rem;border-radius:2px">
-        <h4 style="font-family:'Josefin Sans',sans-serif;font-weight:500;font-size:1.1rem;margin-bottom:0.25rem">Paste offer link</h4>
-        <p style="font-size:0.82rem;color:var(--ink-soft);margin-bottom:0.75rem">Same-device — for <span class="mono">openid-credential-offer://</span> URIs.</p>
+      {{/* Paste offer */}}
+      <div class="wallet-receive-card">
+        <h4>Paste offer link</h4>
+        <p>Same-device — for <span class="mono">openid-credential-offer://</span> URIs.</p>
         <form hx-post="/holder/wallet/paste"
               hx-target="#wallet-body"
               hx-swap="innerHTML"
               style="display:flex;flex-direction:column;gap:0.5rem">
-          <textarea id="offer-paste" name="offer_uri" rows="3" class="mono"
+          <textarea id="offer-paste" name="offer_uri" rows="2" class="mono"
                     placeholder="openid-credential-offer://?credential_offer_uri=https://…"
-                    style="font-size:0.78rem;background:var(--bg);border:1px solid var(--line);padding:0.6rem;color:var(--ink);font-family:'JetBrains Mono',monospace;border-radius:2px;resize:vertical"></textarea>
-          <button class="btn small" type="submit">Process offer →</button>
+                    style="font-size:0.72rem;background:var(--bg);border:1px solid var(--line);padding:0.5rem;color:var(--ink);font-family:'JetBrains Mono',monospace;border-radius:2px;resize:vertical"></textarea>
+          <button class="btn small" type="submit">Process →</button>
         </form>
       </div>
 
-      {{/* Respond to verifier request — entry point for OID4VP presentation */}}
-      <div style="background:var(--bg-elev);border:1px solid var(--line);padding:1.25rem;border-radius:2px">
-        <h4 style="font-family:'Josefin Sans',sans-serif;font-weight:500;font-size:1.1rem;margin-bottom:0.25rem">Respond to a verifier</h4>
-        <p style="font-size:0.82rem;color:var(--ink-soft);margin-bottom:0.75rem">Got an <span class="mono">openid4vp://</span> link or QR from a verifier? Pick a held credential and submit the presentation.</p>
-        <a href="/holder/present" class="btn small ghost">Open presentation form →</a>
+      {{/* Respond to verifier request */}}
+      <div class="wallet-receive-card">
+        <h4>Respond to a verifier</h4>
+        <p>Got an <span class="mono">openid4vp://</span> link? Pick a held credential and submit the presentation.</p>
+        <a href="/holder/present" class="btn small ghost">Open form →</a>
       </div>
 
       {{/* Inbox note */}}
-      <div style="background:var(--bg-elev);border:1px solid var(--line);border-left:3px solid var(--warn);padding:1.25rem;border-radius:2px">
-        <h4 style="font-family:'Josefin Sans',sans-serif;font-weight:500;font-size:1.1rem;margin-bottom:0.25rem">Offers received</h4>
-        <p style="font-size:0.82rem;color:var(--ink-mute);margin:0;font-style:italic">
-          OID4VCI itself has no issuer→wallet push channel. Wallets that "notify" do so via their own operator backend (a walled inbox tied to the wallet account), not via the OID4VCI spec.
+      <div class="wallet-receive-card" style="border-left:3px solid var(--warn)">
+        <h4>Offers received</h4>
+        <p style="color:var(--ink-mute);font-style:italic">
+          OID4VCI itself has no issuer→wallet push channel. Wallets that "notify" do so via their operator's inbox, not the OID4VCI spec.
         </p>
       </div>
-    </div>
   </div>
 
-  {{/* ---------- RIGHT: Pending + held ---------- */}}
-  <div>
+  {{/* ---------- BOTTOM: Pending + held (full width) ---------- */}}
+  <div style="margin-top:2.5rem">
     {{/* Pending */}}
     {{if .WalletPending}}
       <div class="caps" style="margin-bottom:0.75rem">
@@ -169,23 +163,21 @@
 {{end}}
 
 {{define "_wallet_held_card"}}
-{{/* data-search is a pre-lowered corpus the wallet search JS greps —
-     includes title, issuer, type, format, and every claim name/value.
-     data-title carries the raw title for the type-filter dropdown. */}}
-<div class="wallet-cred accepted" data-wallet-card
+{{/* Credit-card-shaped held credential. 1.58:1 aspect ratio (ISO 7810
+     ID-1) so a grid of these reads as a stack of actual cards, not a
+     stretched-to-fit rectangle. data-search is a pre-lowered corpus
+     the wallet search JS greps; data-title feeds the type filter. */}}
+<div class="wallet-card" data-wallet-card
      data-title="{{.Title}}"
      data-search="{{.Title | lowerStr}} {{.Issuer | lowerStr}} {{.Type | lowerStr}} {{.Format | lowerStr}}{{range $k, $v := .Fields}} {{$k | lowerStr}} {{$v | lowerStr}}{{end}}">
-  <div class="cred-meta">
-    <div style="min-width:0">
-      <h4 title="{{.Title}}">{{.Title}}</h4>
-      <div style="font-size:0.72rem;color:var(--ink-mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="from {{.Issuer}}">{{.Issuer}}</div>
-      <div style="font-size:0.68rem;color:var(--ink-mute);margin-top:0.15rem"><span class="mono">{{if .Format}}{{.Format}}{{else}}{{.Type}}{{end}}</span></div>
-    </div>
-    <span class="pill ok" style="font-size:0.6rem">held</span>
+  <div class="wallet-card-top">
+    <h4 title="{{.Title}}">{{.Title}}</h4>
+    <span class="pill ok wallet-card-pill">held</span>
   </div>
+  <div class="wallet-card-issuer" title="from {{.Issuer}}">{{.Issuer}}</div>
 
   {{if .Fields}}
-    <dl class="cred-rows compact" style="margin-top:0.6rem">
+    <dl class="wallet-card-fields">
       {{range $k, $v := .Fields}}
         {{if and (ne $k "vct") (ne $k "offer_uri") (ne $k "config_id")}}
           <dt>{{replaceUnderscore $k}}</dt>
@@ -195,15 +187,18 @@
     </dl>
   {{end}}
 
-  <div class="btn-row" style="margin-top:0.65rem;justify-content:space-between;gap:0.35rem">
-    <button class="btn small ghost"
-            style="color:var(--err);border-color:var(--err)"
-            hx-post="/holder/wallet/delete"
-            hx-vals='{"credential_id": "{{.ID}}"}'
-            hx-target="#wallet-body"
-            hx-swap="innerHTML"
-            hx-confirm="Delete {{.Title}} from your wallet? This can't be undone.">Delete</button>
-    <a class="btn small" href="/holder/present?credential={{.ID}}">Present →</a>
+  <div class="wallet-card-foot">
+    <span class="mono wallet-card-format">{{if .Format}}{{.Format}}{{else}}{{.Type}}{{end}}</span>
+    <div class="wallet-card-actions">
+      <button class="wallet-card-btn del"
+              hx-post="/holder/wallet/delete"
+              hx-vals='{"credential_id": "{{.ID}}"}'
+              hx-target="#wallet-body"
+              hx-swap="innerHTML"
+              hx-confirm="Delete {{.Title}} from your wallet? This can't be undone."
+              title="Delete this credential">🗑</button>
+      <a class="wallet-card-btn present" href="/holder/present?credential={{.ID}}" title="Present this credential">Present →</a>
+    </div>
   </div>
 </div>
 {{end}}
