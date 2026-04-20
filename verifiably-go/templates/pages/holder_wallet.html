@@ -42,7 +42,9 @@
         <div id="wallet-scan-status" style="font-size:0.78rem;color:var(--ink-mute);margin-top:0.5rem"></div>
       </div>
 
-      {{/* Paste */}}
+      {{/* Paste offer — fallback for same-device flows where the holder has
+           the credential-offer URI on their clipboard (e.g. issuer shared
+           via chat) and no QR to scan. */}}
       <div style="background:var(--bg-elev);border:1px solid var(--line);padding:1.25rem;border-radius:2px">
         <h4 style="font-family:'Josefin Sans',sans-serif;font-weight:500;font-size:1.1rem;margin-bottom:0.25rem">Paste offer link</h4>
         <p style="font-size:0.82rem;color:var(--ink-soft);margin-bottom:0.75rem">Same-device — for <span class="mono">openid-credential-offer://</span> URIs.</p>
