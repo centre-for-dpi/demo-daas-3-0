@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -399,25 +400,22 @@ func (a *Adapter) PresentCredential(ctx context.Context, req backend.PresentCred
 func (a *Adapter) resolveMatchedCredentialID(ctx context.Context, walletID string, req backend.PresentCredentialRequest) string {
 	fallback := req.CredentialID
 
-	// Pull the PD out of the request URI. a.fetchPresentationDefinition
-	// uses the adapter's verifier httpx.Client, which is bound to the
-	// docker-internal verifier URL so the fetch works from inside the
-	// verifiably-go container (where `localhost:7003` doesn't resolve).
 	pd := a.fetchPresentationDefinition(ctx, req.RequestURI)
 	if pd == nil {
+		log.Printf("waltid: fetchPresentationDefinition returned nil — submitting caller-picked id=%s", fallback)
 		return fallback
 	}
 	var matched []map[string]json.RawMessage
 	if err := a.wallet.DoJSON(ctx, "POST",
 		fmt.Sprintf("/wallet-api/wallet/%s/exchange/matchCredentialsForPresentationDefinition", walletID),
-		pd, &matched, nil); err != nil || len(matched) == 0 {
+		pd, &matched, nil); err != nil {
+		log.Printf("waltid: match endpoint failed: %v — submitting caller-picked id=%s", err, fallback)
 		return fallback
 	}
-
-	// Pick the highest-ranked format. See waltid/issuer.go formatRank —
-	// only jwt_vc_json and vc+sd-jwt are walt.id's tested VP paths, so
-	// anything else scores low and we only fall through to it if no
-	// format-aligned match exists.
+	if len(matched) == 0 {
+		log.Printf("waltid: match returned 0 rows — submitting caller-picked id=%s", fallback)
+		return fallback
+	}
 	best := -1
 	bestID := fallback
 	for _, row := range matched {
@@ -428,11 +426,13 @@ func (a *Adapter) resolveMatchedCredentialID(ctx context.Context, walletID strin
 			continue
 		}
 		rank := vpFormatRank(fmtVal)
+		log.Printf("waltid: match candidate id=%s format=%s rank=%d", id, fmtVal, rank)
 		if rank > best {
 			best = rank
 			bestID = id
 		}
 	}
+	log.Printf("waltid: picked id=%s rank=%d from %d matches", bestID, best, len(matched))
 	return bestID
 }
 
