@@ -198,7 +198,7 @@ func (a *Adapter) PrefillSubjectFields(_ context.Context, _ vctypes.Schema) (map
 // walt.id ignores unknown fields.
 type issuanceRequest struct {
 	IssuerKey                 json.RawMessage `json:"issuerKey"`
-	CredentialConfigurationId string          `json:"credentialConfigurationEntryId"`
+	CredentialConfigurationId string          `json:"credentialConfigurationId"`
 	CredentialData            json.RawMessage `json:"credentialData,omitempty"`
 	Vct                       string          `json:"vct,omitempty"`
 	MdocData                  json.RawMessage `json:"mdocData,omitempty"`
