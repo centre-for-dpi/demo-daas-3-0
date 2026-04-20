@@ -155,26 +155,26 @@
   function initWalletSearch() {
     const input = document.querySelector('[data-wallet-search]');
     if (!input) return;
-    const typeFilter = document.querySelector('[data-wallet-type-filter]');
+    const formatFilter = document.querySelector('[data-wallet-format-filter]');
     const cards = document.querySelectorAll('[data-wallet-card]');
     const empty = document.getElementById('wallet-search-empty');
     const counter = document.getElementById('wallet-search-count');
     function apply() {
       const q = input.value.trim().toLowerCase();
-      const t = typeFilter ? typeFilter.value : 'all';
+      const f = formatFilter ? formatFilter.value : 'all';
       let visible = 0;
       cards.forEach((c) => {
         const corpus = c.getAttribute('data-search') || '';
-        const title = c.getAttribute('data-title') || '';
+        const fmt = c.getAttribute('data-format') || '';
         const matchesQ = !q || corpus.indexOf(q) !== -1;
-        const matchesT = t === 'all' || title === t;
-        const show = matchesQ && matchesT;
+        const matchesF = f === 'all' || fmt === f;
+        const show = matchesQ && matchesF;
         c.style.display = show ? '' : 'none';
         if (show) visible++;
       });
       if (empty) empty.style.display = visible === 0 ? 'block' : 'none';
       if (counter) {
-        const filtered = (q || (typeFilter && typeFilter.value !== 'all'));
+        const filtered = (q || (formatFilter && formatFilter.value !== 'all'));
         if (filtered && visible !== cards.length) {
           counter.textContent = visible + ' of ' + cards.length;
           counter.style.display = '';
@@ -184,7 +184,7 @@
       }
     }
     input.addEventListener('input', apply);
-    if (typeFilter) typeFilter.addEventListener('change', apply);
+    if (formatFilter) formatFilter.addEventListener('change', apply);
     apply();
   }
   initWalletSearch();

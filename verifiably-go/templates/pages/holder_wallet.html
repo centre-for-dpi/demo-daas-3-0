@@ -105,10 +105,10 @@
                placeholder="Search name, issuer, format, claim value…"
                autocomplete="off"
                style="flex:1;min-width:200px;padding:0.55rem 0.75rem;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:2px;font-size:0.85rem">
-        <select id="wallet-type-filter" data-wallet-type-filter
-                style="padding:0.55rem 0.75rem;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:2px;font-size:0.85rem;min-width:160px">
-          <option value="all">all types</option>
-          {{range uniqueTitles .WalletCreds}}
+        <select id="wallet-format-filter" data-wallet-format-filter
+                style="padding:0.55rem 0.75rem;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:2px;font-size:0.85rem;min-width:180px">
+          <option value="all">all formats</option>
+          {{range uniqueFormats .WalletCreds}}
             <option value="{{.}}">{{.}}</option>
           {{end}}
         </select>
@@ -169,6 +169,7 @@
      the wallet search JS greps; data-title feeds the type filter. */}}
 <div class="wallet-card" data-wallet-card
      data-title="{{.Title}}"
+     data-format="{{.Format}}"
      data-search="{{.Title | lowerStr}} {{.Issuer | lowerStr}} {{.Type | lowerStr}} {{.Format | lowerStr}}{{range $k, $v := .Fields}} {{$k | lowerStr}} {{$v | lowerStr}}{{end}}">
   <div class="wallet-card-top">
     <h4 title="{{.Title}}">{{.Title}}</h4>

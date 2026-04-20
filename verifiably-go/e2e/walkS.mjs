@@ -40,13 +40,13 @@ try {
       grid_template_columns: cs?.gridTemplateColumns,
       cards_total: cards,
       first_card_has_delete: !!grid?.querySelector('[data-wallet-card] button[hx-post*="/holder/wallet/delete"]'),
-      type_filter_options: [...document.querySelectorAll('[data-wallet-type-filter] option')].map(o => o.value),
+      format_filter_options: [...document.querySelectorAll('[data-wallet-format-filter] option')].map(o => o.value),
     };
   });
   console.log('layout:', JSON.stringify(layout, null, 2));
 
-  // Type filter narrows
-  await p.select('[data-wallet-type-filter]', 'Bank Id');
+  // Format filter narrows
+  await p.select('[data-wallet-format-filter]', 'vc+sd-jwt');
   await new Promise(r => setTimeout(r, 200));
   const afterFilter = await p.evaluate(() => {
     const cards = [...document.querySelectorAll('[data-wallet-card]')];
@@ -56,10 +56,10 @@ try {
       counter: document.getElementById('wallet-search-count')?.textContent?.trim(),
     };
   });
-  console.log('after "Bank Id" filter:', afterFilter);
+  console.log('after "vc+sd-jwt" filter:', afterFilter);
 
   // Reset + delete the first visible card
-  await p.select('[data-wallet-type-filter]', 'all');
+  await p.select('[data-wallet-format-filter]', 'all');
   await new Promise(r => setTimeout(r, 150));
   // Dump the button's attributes to verify HTMX wiring
   const btnAttrs = await p.evaluate(() => {

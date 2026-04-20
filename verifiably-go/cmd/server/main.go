@@ -294,8 +294,7 @@ func funcMap() template.FuncMap {
 		"lowerStr": strings.ToLower,
 
 		// uniqueTitles returns the distinct Title values across a credential
-		// list, sorted alphabetically — used to populate the wallet's
-		// type-filter dropdown.
+		// list, sorted alphabetically.
 		"uniqueTitles": func(creds []vctypes.Credential) []string {
 			seen := map[string]bool{}
 			out := []string{}
@@ -303,6 +302,24 @@ func funcMap() template.FuncMap {
 				if c.Title != "" && !seen[c.Title] {
 					seen[c.Title] = true
 					out = append(out, c.Title)
+				}
+			}
+			sort.Strings(out)
+			return out
+		},
+
+		// uniqueFormats returns the distinct wire-format values (e.g.
+		// "jwt_vc_json", "vc+sd-jwt", "ldp_vc") across a credential list,
+		// sorted. Used by the wallet's format-filter dropdown — more
+		// actionable than filtering by type because the verifier's
+		// limit_disclosure match is format-specific.
+		"uniqueFormats": func(creds []vctypes.Credential) []string {
+			seen := map[string]bool{}
+			out := []string{}
+			for _, c := range creds {
+				if c.Format != "" && !seen[c.Format] {
+					seen[c.Format] = true
+					out = append(out, c.Format)
 				}
 			}
 			sort.Strings(out)
