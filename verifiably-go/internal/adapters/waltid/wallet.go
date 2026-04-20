@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -400,8 +399,11 @@ func (a *Adapter) PresentCredential(ctx context.Context, req backend.PresentCred
 func (a *Adapter) resolveMatchedCredentialID(ctx context.Context, walletID string, req backend.PresentCredentialRequest) string {
 	fallback := req.CredentialID
 
-	// Pull the PD out of the request URI so we can submit the inline shape.
-	pd := fetchPresentationDefinition(ctx, req.RequestURI)
+	// Pull the PD out of the request URI. a.fetchPresentationDefinition
+	// uses the adapter's verifier httpx.Client, which is bound to the
+	// docker-internal verifier URL so the fetch works from inside the
+	// verifiably-go container (where `localhost:7003` doesn't resolve).
+	pd := a.fetchPresentationDefinition(ctx, req.RequestURI)
 	if pd == nil {
 		return fallback
 	}
@@ -454,10 +456,14 @@ func vpFormatRank(f string) int {
 }
 
 // fetchPresentationDefinition extracts presentation_definition_uri from an
-// openid4vp:// request URI, GETs the PD, and returns the decoded JSON
-// object. Returns nil on any error — caller falls back.
-func fetchPresentationDefinition(ctx context.Context, requestURI string) map[string]any {
-	// Parse the openid4vp URL to pull presentation_definition_uri out of the query.
+// openid4vp:// request URI, GETs the PD from walt.id's verifier, and
+// returns the decoded JSON object. The GET goes through a.verifier
+// (the httpx.Client bound to the docker-internal verifier URL) so the
+// fetch works from inside the verifiably-go container — `localhost:7003`
+// in the request URI doesn't resolve inside the container, but the
+// path after it is the same on both host and container views of the
+// verifier.
+func (a *Adapter) fetchPresentationDefinition(ctx context.Context, requestURI string) map[string]any {
 	idx := strings.Index(requestURI, "presentation_definition_uri=")
 	if idx < 0 {
 		return nil
@@ -470,30 +476,20 @@ func fetchPresentationDefinition(ctx context.Context, requestURI string) map[str
 	if err != nil {
 		return nil
 	}
-	resp, err := http.DefaultClient.Do(mustRequest(ctx, http.MethodGet, pdURL, nil))
-	if err != nil {
-		return nil
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil
+	// Strip the scheme+host so the path lands on whatever URL a.verifier
+	// was configured with (docker-internal name when containerized, host
+	// URL otherwise). Path shape is the same on both forms.
+	if u, err := url.Parse(pdURL); err == nil {
+		pdURL = u.Path
+		if u.RawQuery != "" {
+			pdURL += "?" + u.RawQuery
+		}
 	}
 	var out map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := a.verifier.DoJSON(ctx, http.MethodGet, pdURL, nil, &out, nil); err != nil {
 		return nil
 	}
 	return out
-}
-
-// mustRequest builds an http.Request; on error returns a request that
-// will fail at Do-time, so caller error handling stays on a single path.
-func mustRequest(ctx context.Context, method, url string, body io.Reader) *http.Request {
-	req, err := http.NewRequestWithContext(ctx, method, url, body)
-	if err != nil {
-		// Return an intentionally-broken request whose Do fails cleanly.
-		req, _ = http.NewRequestWithContext(ctx, method, "http://invalid.local", body)
-	}
-	return req
 }
 
 // jsonReaderBytes adapts a precomputed []byte for DoRaw's io.Reader argument.
