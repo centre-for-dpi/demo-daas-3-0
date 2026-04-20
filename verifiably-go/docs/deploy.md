@@ -108,48 +108,58 @@ After `docker compose up` completes, `cmd_up` runs:
 
 ## Environment variables
 
-Set before invoking `deploy.sh` or export in your shell:
+Every knob lives in a single file — `verifiably-go/.env` — which
+`deploy.sh` sources at startup and passes to `docker compose` via
+`--env-file`. Copy the template on first use:
 
-| Variable                          | Default                   | Purpose                                                  |
-|-----------------------------------|---------------------------|----------------------------------------------------------|
-| `VERIFIABLY_ADDR`                 | `:8080`                   | Go server bind address inside the container              |
-| `VERIFIABLY_HOST_PORT`            | `8080`                    | Host port mapped to the verifiably-go container          |
-| `VERIFIABLY_PUBLIC_URL`           | `http://localhost:8080`   | Shown to the user after `deploy.sh run`                  |
-| `VERIFIABLY_IMAGE`                | `verifiably-go:local`     | Image tag for the build                                  |
-| `VERIFIABLY_CONTAINER`            | `verifiably-go`           | docker container name                                    |
-| `VERIFIABLY_COMPOSE_FILE`         | `deploy/compose/stack/docker-compose.yml` | Primary compose file                |
-| `VERIFIABLY_COMPOSE_OVERRIDE`     | `deploy/docker-compose.injiweb-fix.yml`      | Override file                    |
-| `VERIFIABLY_INJI_EXTRA_KIDS`      | _(empty)_                 | Pre-seed kids for the inji-proxy did.json handler — comma-separated list to use when restarting without re-issuance |
-| `VERIFIABLY_DEBUG_MOCK_MARKERS`   | `0`                       | Show `[mock]` pills on any UI surface still mock-backed   |
+```bash
+cp verifiably-go/.env.example verifiably-go/.env
+```
 
-The compose file also reads its own `.env` next to it
-(`deploy/compose/stack/.env`) which sets `PUBLIC_HOST=172.24.0.1` and
-`ESIGNET_PUBLIC_PORT=3005` / `INJIWEB_UI_PUBLIC_PORT=3004`. Those drive
-the URLs injected into the Inji Web SPA's `env.config.js` and the
-eSignet client's redirect URIs.
+The template has every variable documented with sensible laptop defaults.
+The key ones:
 
-## Migrating to EC2 / non-localhost
+| Variable                       | Default       | Purpose                                                                   |
+|--------------------------------|---------------|----------------------------------------------------------------------------|
+| `VERIFIABLY_PUBLIC_HOST`       | `172.24.0.1`  | **The one knob to flip for EC2.** Host the browser uses for every service |
+| `PUBLIC_HOST`                  | `${VERIFIABLY_PUBLIC_HOST}` | Alias read by the compose file + seed scripts           |
+| `VERIFIABLY_HOST_PORT`         | `8080`        | Host port mapped to the verifiably-go container                            |
+| `VERIFIABLY_PUBLIC_URL`        | `http://${VERIFIABLY_PUBLIC_HOST}:${VERIFIABLY_HOST_PORT}` | Shown on `deploy.sh run` |
+| `VERIFIABLY_IMAGE`             | `verifiably-go:local` | Image tag for the build                                          |
+| `VERIFIABLY_CONTAINER`         | `verifiably-go` | docker container name                                                  |
+| `WALTID_{ISSUER,WALLET,VERIFIER}_PORT` | `7001/7002/7003` | Host ports for walt.id                                       |
+| `CERTIFY_NGINX_PORT`           | `8091`        | Inji Certify nginx (auth-code flow)                                        |
+| `CERTIFY_PREAUTH_PORT`         | `8094`        | Inji Certify pre-auth stanza                                               |
+| `INJI_VERIFY_{UI,SERVICE}_PORT`| `3001/8082`   | Inji Verify                                                                |
+| `INJIWEB_UI_PUBLIC_PORT`       | `3004`        | Inji Web SPA                                                               |
+| `ESIGNET_PUBLIC_PORT`          | `3005`        | eSignet oidc-ui                                                            |
+| `MIMOTO_PORT`                  | `8099`        | Mimoto BFF                                                                 |
+| `KEYCLOAK_{PORT,REALM,CLIENT_ID}` | `8180/vcplatform/vcplatform` | Keycloak OIDC wiring                            |
+| `WSO2_{PORT,CLIENT_ID,CLIENT_SECRET}` | `9443/verifiably_go_client/<generated>` | WSO2IS OIDC. `CLIENT_SECRET` populated by `scripts/bootstrap-wso2is.sh` on first up |
+| `INJIWEB_P12_PASSWORD`         | `xy4gh6swa2i` | Matches the p12 in `deploy/compose/injiweb/config/certs/`                  |
+| `VERIFIABLY_INJI_EXTRA_KIDS`   | _(empty)_     | Pre-seed kids for the inji-proxy did.json handler                          |
+| `VERIFIABLY_DEBUG_MOCK_MARKERS`| `0`           | Show `[mock]` pills on surfaces still mock-backed                          |
 
-Today the server-side URLs hardcoded in `deploy.sh` stanzas assume
-`localhost`. Migrating to EC2 (or any public host) touches three files
-and one env var:
+Command-line override: set `VERIFIABLY_ENV_FILE=/path/to/other.env
+./deploy.sh ...` to swap the entire file for one invocation (e.g. keep
+`.env` pinned to laptop, ship `.env.ec2` for a staging run).
 
-1. `deploy/compose/stack/.env` — set `PUBLIC_HOST=ec2-…`. This
-   immediately flows into Mimoto's `MIMOTO_URL`, eSignet's configured
-   redirect, and the patched `mimoto-issuers-config.json`.
+## Migrating to a remote host (EC2, dev VM, LAN)
 
-2. `deploy.sh` — replace the `localhost` occurrences in the backend and
-   auth-provider stanzas with `$VERIFIABLY_PUBLIC_HOST`, source a local
-   `.env` at the top. This is a straightforward sed job.
+One-variable flip:
 
-3. `repair_injiweb_client_redirect_uri` uses `$PUBLIC_HOST` already —
-   needs no change.
+```bash
+# edit verifiably-go/.env
+VERIFIABLY_PUBLIC_HOST=ec2-1-2-3-4.compute-1.amazonaws.com
+```
 
-4. TLS: browsers reaching WSO2IS on `:9443` with a self-signed cert will
-   need cert trust (or swap WSO2 for a dev cert). Keycloak on `:8180`
-   runs HTTP so is unaffected.
+That's it. The same `.env` drives every service — backends.json / auth-providers.json stanzas, the compose file's `${PUBLIC_HOST}` references (eSignet redirect, Mimoto's MIMOTO_URL injection, the patched Inji Web issuer catalog), and the eSignet client-redirect-URI repair helper.
 
-A `.env`-driven config is on the backlog — see the issue list.
+Caveats:
+
+- **TLS**: browsers reaching WSO2IS on `:9443` self-signed will need cert trust. Keycloak on `:8180` is HTTP so unaffected. For a public-facing EC2 you'd typically drop a Caddy / ALB in front and re-point `VERIFIABLY_PUBLIC_HOST` plus the port vars at your TLS terminator.
+- **Firewall**: open `VERIFIABLY_HOST_PORT`, `KEYCLOAK_PORT`, `WSO2_PORT`, `CERTIFY_NGINX_PORT`, `INJIWEB_UI_PUBLIC_PORT`, `ESIGNET_PUBLIC_PORT`, `INJI_VERIFY_UI_PORT` on the instance — every one is visited from the browser.
+- **Re-run `./deploy.sh up <scenario>`** after flipping PUBLIC_HOST so the `repair_injiweb_client_redirect_uri` helper re-registers the eSignet client's redirect URI on the new host. The helper is idempotent and only writes when the list diverges.
 
 ## Full reset
 

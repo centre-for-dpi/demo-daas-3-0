@@ -28,14 +28,53 @@ set -euo pipefail
 # ------------------------------------------------------------------ config
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source the .env if present. Honors an operator-provided
+# VERIFIABLY_ENV_FILE so a single invocation can target a different file
+# (e.g. .env.ec2). Otherwise falls back to ./.env, then to ./.env.example
+# so a fresh checkout boots on the example defaults.
+if [[ -z "${VERIFIABLY_ENV_FILE:-}" ]]; then
+    if [[ -f "$SCRIPT_DIR/.env" ]]; then
+        VERIFIABLY_ENV_FILE="$SCRIPT_DIR/.env"
+    elif [[ -f "$SCRIPT_DIR/.env.example" ]]; then
+        VERIFIABLY_ENV_FILE="$SCRIPT_DIR/.env.example"
+    fi
+fi
+if [[ -n "${VERIFIABLY_ENV_FILE:-}" && -f "$VERIFIABLY_ENV_FILE" ]]; then
+    set -o allexport
+    # shellcheck disable=SC1090
+    source "$VERIFIABLY_ENV_FILE"
+    set +o allexport
+fi
+export VERIFIABLY_ENV_FILE
+
 : "${VERIFIABLY_COMPOSE_FILE:=$SCRIPT_DIR/deploy/compose/stack/docker-compose.yml}"
 : "${VERIFIABLY_COMPOSE_OVERRIDE:=$SCRIPT_DIR/deploy/docker-compose.injiweb-fix.yml}"
+: "${VERIFIABLY_PUBLIC_HOST:=172.24.0.1}"
+: "${PUBLIC_HOST:=$VERIFIABLY_PUBLIC_HOST}"
 : "${VERIFIABLY_ADDR:=:8080}"
 : "${VERIFIABLY_HOST_PORT:=8080}"
-: "${VERIFIABLY_PUBLIC_URL:=http://localhost:$VERIFIABLY_HOST_PORT}"
-: "${LIBRETRANSLATE_URL:=http://localhost:5000}"
+: "${VERIFIABLY_PUBLIC_URL:=http://${VERIFIABLY_PUBLIC_HOST}:$VERIFIABLY_HOST_PORT}"
+: "${LIBRETRANSLATE_PORT:=5000}"
 : "${VERIFIABLY_IMAGE:=verifiably-go:local}"
 : "${VERIFIABLY_CONTAINER:=verifiably-go}"
+
+# Per-service ports used in the stanzas + URL rewrite map.
+: "${WALTID_ISSUER_PORT:=7002}"
+: "${WALTID_WALLET_PORT:=7001}"
+: "${WALTID_VERIFIER_PORT:=7003}"
+: "${CERTIFY_NGINX_PORT:=8091}"
+: "${CERTIFY_PREAUTH_PORT:=8094}"
+: "${INJI_VERIFY_UI_PORT:=3001}"
+: "${INJI_VERIFY_SERVICE_PORT:=8082}"
+: "${INJIWEB_UI_PUBLIC_PORT:=3004}"
+: "${ESIGNET_PUBLIC_PORT:=3005}"
+: "${MIMOTO_PORT:=8099}"
+: "${KEYCLOAK_PORT:=8180}"
+: "${KEYCLOAK_REALM:=vcplatform}"
+: "${KEYCLOAK_CLIENT_ID:=vcplatform}"
+: "${WSO2_PORT:=9443}"
+: "${WSO2_CLIENT_ID:=verifiably_go_client}"
 # The `waltid_` prefix on volumes + network is load-bearing in the shared
 # compose (pinned via `name: waltid`). Every compose subcommand we issue
 # must point at the same project name so we line up with the existing state.
@@ -77,6 +116,13 @@ require() {
 
 compose() {
   local extra=()
+  # --env-file points compose at verifiably-go/.env (one source of truth).
+  # Without this, compose falls back to deploy/compose/stack/.env next to
+  # the compose file — which would drift from the top-level .env. Only
+  # attach if the file actually exists; compose errors out on missing.
+  if [[ -n "${VERIFIABLY_ENV_FILE:-}" && -f "$VERIFIABLY_ENV_FILE" ]]; then
+    extra+=( --env-file "$VERIFIABLY_ENV_FILE" )
+  fi
   if [[ -f "$VERIFIABLY_COMPOSE_OVERRIDE" ]]; then
     # When docker compose layers multiple files, relative paths inside
     # each file are resolved relative to the FIRST -f argument, not the
@@ -141,7 +187,7 @@ backends_for() {
   # Individual DPG stanzas — kept inline as HEREDOCs so the script is
   # self-contained (no per-scenario template files to manage).
   local waltid_stanza
-  waltid_stanza=$(cat <<'JSON'
+  waltid_stanza=$(cat <<JSON
     {
       "vendor": "Walt Community Stack",
       "type": "walt_community",
@@ -167,9 +213,9 @@ backends_for() {
         ]
       },
       "config": {
-        "issuerBaseUrl": "http://localhost:7002",
-        "verifierBaseUrl": "http://localhost:7003",
-        "walletBaseUrl": "http://localhost:7001",
+        "issuerBaseUrl": "http://${VERIFIABLY_PUBLIC_HOST}:${WALTID_ISSUER_PORT}",
+        "verifierBaseUrl": "http://${VERIFIABLY_PUBLIC_HOST}:${WALTID_VERIFIER_PORT}",
+        "walletBaseUrl": "http://${VERIFIABLY_PUBLIC_HOST}:${WALTID_WALLET_PORT}",
         "standardVersion": "draft13",
         "demoAccount": {
           "name": "Verifiably Demo",
@@ -181,7 +227,7 @@ backends_for() {
 JSON
 )
   local inji_authcode_stanza
-  inji_authcode_stanza=$(cat <<'JSON'
+  inji_authcode_stanza=$(cat <<JSON
     {
       "vendor": "Inji Certify · Auth-Code",
       "type": "inji_certify_authcode",
@@ -198,7 +244,7 @@ JSON
         "DirectPDF": false,
         "Caveats": "Holder wallet must be reachable by eSignet's redirect.",
         "Redirect": true,
-        "UIURL": "http://172.24.0.1:3004",
+        "UIURL": "http://${VERIFIABLY_PUBLIC_HOST}:${INJIWEB_UI_PUBLIC_PORT}",
         "Capabilities": [
           {"Kind": "flow",       "Key": "auth_code",       "Title": "Authorization Code flow",          "Body": "Wallet redirects holder to eSignet for login."},
           {"Kind": "data",       "Key": "identity_lookup", "Title": "Claims from MOSIP Identity Plugin", "Body": "Fills claims via UIN lookup against mock-identity."},
@@ -209,17 +255,17 @@ JSON
       },
       "config": {
         "mode": "auth_code",
-        "baseUrl": "http://localhost:8091",
+        "baseUrl": "http://${VERIFIABLY_PUBLIC_HOST}:${CERTIFY_NGINX_PORT}",
         "internalBaseUrl": "http://certify-nginx:80",
-        "publicBaseUrl": "http://localhost:8091",
+        "publicBaseUrl": "http://${VERIFIABLY_PUBLIC_HOST}:${CERTIFY_NGINX_PORT}",
         "offerIssuerUrl": "http://certify-nginx:80",
-        "authorizationServer": "http://172.24.0.1:3005"
+        "authorizationServer": "http://${VERIFIABLY_PUBLIC_HOST}:${ESIGNET_PUBLIC_PORT}"
       }
     }
 JSON
 )
   local inji_preauth_stanza
-  inji_preauth_stanza=$(cat <<'JSON'
+  inji_preauth_stanza=$(cat <<JSON
     {
       "vendor": "Inji Certify · Pre-Auth",
       "type": "inji_certify_preauth",
@@ -244,16 +290,16 @@ JSON
       },
       "config": {
         "mode": "pre_auth",
-        "baseUrl": "http://localhost:8094",
+        "baseUrl": "http://${VERIFIABLY_PUBLIC_HOST}:${CERTIFY_PREAUTH_PORT}",
         "internalBaseUrl": "http://inji-certify-preauth:8090",
-        "publicBaseUrl": "http://localhost:8094",
+        "publicBaseUrl": "http://${VERIFIABLY_PUBLIC_HOST}:${CERTIFY_PREAUTH_PORT}",
         "offerIssuerUrl": "http://inji-certify-preauth:8090"
       }
     }
 JSON
 )
   local inji_verify_stanza
-  inji_verify_stanza=$(cat <<'JSON'
+  inji_verify_stanza=$(cat <<JSON
     {
       "vendor": "Inji Verify",
       "type": "inji_verify",
@@ -267,7 +313,7 @@ JSON
         "Formats": ["w3c_vcdm_1", "w3c_vcdm_2", "sd_jwt_vc (IETF)"],
         "Caveats": "INJIVER-1131: v0.16.0 cross-device flow can accept a wrong VC as valid — adapter applies a field-match guard.",
         "Redirect": true,
-        "UIURL": "http://localhost:3001",
+        "UIURL": "http://${VERIFIABLY_PUBLIC_HOST}:${INJI_VERIFY_UI_PORT}",
         "Capabilities": [
           {"Kind": "flow",       "Key": "direct_paste",  "Title": "Paste JSON-LD VC",         "Body": "POST /v1/verify/vc-verification returns SUCCESS/INVALID synchronously."},
           {"Kind": "flow",       "Key": "direct_upload", "Title": "Upload a QR image",        "Body": "Server decodes the QR with gozxing, then verifies the payload."},
@@ -276,14 +322,14 @@ JSON
         ]
       },
       "config": {
-        "baseUrl": "http://localhost:8082",
+        "baseUrl": "http://${VERIFIABLY_PUBLIC_HOST}:${INJI_VERIFY_SERVICE_PORT}",
         "clientId": "verifiably-demo"
       }
     }
 JSON
 )
   local injiweb_stanza
-  injiweb_stanza=$(cat <<'JSON'
+  injiweb_stanza=$(cat <<JSON
     {
       "vendor": "Inji Web Wallet",
       "type": "inji_web",
@@ -297,7 +343,7 @@ JSON
         "Formats": ["w3c_vcdm_1", "w3c_vcdm_2"],
         "Caveats": "Tested-compatible with Inji Certify v0.13.1 and Inji Verify v0.17.0 per the v0.16.0 matrix.",
         "Redirect": true,
-        "UIURL": "http://172.24.0.1:3004",
+        "UIURL": "http://${VERIFIABLY_PUBLIC_HOST}:${INJIWEB_UI_PUBLIC_PORT}",
         "Capabilities": [
           {"Kind": "flow",       "Key": "browser_hosted", "Title": "Browser-hosted wallet",        "Body": "Credentials live inside the Inji Web SPA."},
           {"Kind": "wallet",     "Key": "opens_tab",      "Title": "Opens in a new tab",            "Body": "Selecting this DPG hands off to the Inji Web app."},
@@ -305,8 +351,8 @@ JSON
         ]
       },
       "config": {
-        "uiUrl": "http://172.24.0.1:3004",
-        "mimotoUrl": "http://localhost:8099"
+        "uiUrl": "http://${VERIFIABLY_PUBLIC_HOST}:${INJIWEB_UI_PUBLIC_PORT}",
+        "mimotoUrl": "http://${VERIFIABLY_PUBLIC_HOST}:${MIMOTO_PORT}"
       }
     }
 JSON
@@ -354,7 +400,7 @@ auth_providers_for() {
   # clientId "vcplatform" matches the public client seeded by the shared
   # compose's keycloak-realm.json (realm: vcplatform, client: vcplatform,
   # redirectUris: http://localhost:8080/*). Keep these two in sync.
-  local keycloak='{"id":"keycloak","type":"oidc","displayName":"Keycloak","kind":"OIDC","issuerUrl":"http://localhost:8180/realms/vcplatform","clientId":"vcplatform","scopes":["openid","profile","email"]}'
+  local keycloak='{"id":"keycloak","type":"oidc","displayName":"Keycloak","kind":"OIDC","issuerUrl":"http://'"${VERIFIABLY_PUBLIC_HOST}"':'"${KEYCLOAK_PORT}"'/realms/'"${KEYCLOAK_REALM}"'","clientId":"'"${KEYCLOAK_CLIENT_ID}"'","scopes":["openid","profile","email"]}'
 
   # WSO2IS client_id + client_secret come from config/wso2is.env, written by
   # scripts/bootstrap-wso2is.sh (run automatically by `deploy.sh up` below).
@@ -368,7 +414,7 @@ auth_providers_for() {
     wso2_id="${WSO2_CLIENT_ID:-$wso2_id}"
     wso2_secret="${WSO2_CLIENT_SECRET:-}"
   fi
-  local wso2is='{"id":"wso2is","type":"oidc","displayName":"WSO2 Identity Server","kind":"OIDC","issuerUrl":"https://localhost:9443/oauth2/token","clientId":"'"$wso2_id"'","clientSecret":"'"$wso2_secret"'","scopes":["openid","profile","email"],"insecureSkipVerify":true}'
+  local wso2is='{"id":"wso2is","type":"oidc","displayName":"WSO2 Identity Server","kind":"OIDC","issuerUrl":"https://'"${VERIFIABLY_PUBLIC_HOST}"':'"${WSO2_PORT}"'/oauth2/token","clientId":"'"$wso2_id"'","clientSecret":"'"$wso2_secret"'","scopes":["openid","profile","email"],"insecureSkipVerify":true}'
   local items=( "$keycloak" "$wso2is" )
   mkdir -p "$(dirname "$out")"
   {
@@ -688,9 +734,15 @@ backends_for_docker() {
   local auth_src="$SCRIPT_DIR/config/auth-providers.json"
   local auth_dst="$SCRIPT_DIR/config/auth-providers.docker.json"
 
-  python3 - "$src" "$dst" "$auth_src" "$auth_dst" <<'PY'
-import json, sys
+  PUBLIC_HOST_FOR_REWRITE="${VERIFIABLY_PUBLIC_HOST}" \
+    KEYCLOAK_PORT_FOR_REWRITE="${KEYCLOAK_PORT}" \
+    WSO2_PORT_FOR_REWRITE="${WSO2_PORT}" \
+    python3 - "$src" "$dst" "$auth_src" "$auth_dst" <<'PY'
+import json, os, sys
 src, dst, auth_src, auth_dst = sys.argv[1:5]
+public_host = os.environ.get("PUBLIC_HOST_FOR_REWRITE", "localhost")
+keycloak_port = os.environ.get("KEYCLOAK_PORT_FOR_REWRITE", "8180")
+wso2_port = os.environ.get("WSO2_PORT_FOR_REWRITE", "9443")
 
 # Fields in backends.json that hold a URL the CONTAINER needs to reach.
 # UIURL and publicBaseUrl are intentionally excluded — they are shown to
@@ -702,39 +754,47 @@ internal_fields = {
                         # URL rewrite; it stays on the docker-internal host.
 }
 
-# localhost:PORT → docker-internal hostname:PORT
-host_to_internal = {
-    "http://localhost:7001": "http://wallet-api:7001",
-    "http://localhost:7002": "http://issuer-api:7002",
-    "http://localhost:7003": "http://verifier-api:7003",
-    "http://localhost:8091": "http://certify-nginx:80",
-    "http://localhost:8094": "http://inji-certify-preauth:8090",
-    "http://localhost:8082": "http://inji-verify-service:8080",
-    "http://localhost:3001": "http://inji-verify-ui:8000",
-    "http://localhost:3004": "http://injiweb-ui:3004",
-    "http://localhost:8099": "http://injiweb-mimoto:8099",
-    "http://localhost:3005": "http://injiweb-oidc-ui:3000",
-    "http://172.24.0.1:3005": "http://injiweb-oidc-ui:3000",
+# port → docker-internal hostname:container-port. Matched against any host
+# prefix (localhost, 172.24.0.1, EC2 hostname) so the rewrite works for
+# whatever VERIFIABLY_PUBLIC_HOST the operator picked.
+port_to_internal = {
+    "7001": "wallet-api:7001",
+    "7002": "issuer-api:7002",
+    "7003": "verifier-api:7003",
+    "8091": "certify-nginx:80",
+    "8094": "inji-certify-preauth:8090",
+    "8082": "inji-verify-service:8080",
+    "3001": "inji-verify-ui:8000",
+    "3004": "injiweb-ui:3004",
+    "8099": "injiweb-mimoto:8099",
+    "3005": "injiweb-oidc-ui:3000",
 }
+
+import re
+URL_RE = re.compile(r"^(https?)://([^:/]+):(\d+)(.*)$")
 
 def rewrite_url(url):
     if not isinstance(url, str):
         return url
-    for host, internal in host_to_internal.items():
-        if url.startswith(host):
-            return internal + url[len(host):]
-    return url
+    m = URL_RE.match(url)
+    if not m:
+        return url
+    scheme, host, port, rest = m.groups()
+    internal = port_to_internal.get(port)
+    if not internal:
+        return url
+    return f"http://{internal}{rest}"
 
-def walk(obj, inside_internal_scope=False):
+def walk(obj):
     if isinstance(obj, dict):
         for k, v in list(obj.items()):
             if k in internal_fields and isinstance(v, str):
                 obj[k] = rewrite_url(v)
             elif isinstance(v, (dict, list)):
-                walk(v, inside_internal_scope)
+                walk(v)
     elif isinstance(obj, list):
         for it in obj:
-            walk(it, inside_internal_scope)
+            walk(it)
 
 with open(src) as f:
     data = json.load(f)
@@ -743,17 +803,20 @@ with open(dst, "w") as f:
     json.dump(data, f, indent=2)
 
 # Auth providers: the container-side issuerUrl is the docker-internal
-# hostname (used for discovery + token exchange). The ORIGINAL localhost URL
-# is preserved as publicIssuerUrl so the browser's authorize redirect points
-# somewhere it can actually reach.
+# hostname (used for discovery + token exchange). The original
+# browser-facing URL is preserved as publicIssuerUrl so the browser's
+# authorize redirect points somewhere it can actually reach.
 with open(auth_src) as f:
     auth = json.load(f)
 for entry in auth:
     iu = entry.get("issuerUrl", "")
     entry["publicIssuerUrl"] = iu  # what the browser sees
-    entry["issuerUrl"] = (iu
-        .replace("http://localhost:8180", "http://keycloak:8180")
-        .replace("https://localhost:9443", "https://wso2is:9443"))
+    # Match either localhost or $VERIFIABLY_PUBLIC_HOST on the expected port,
+    # swap in the docker-internal DNS name.
+    for host in {public_host, "localhost", "172.24.0.1"}:
+        iu = iu.replace(f"http://{host}:{keycloak_port}", "http://keycloak:8180")
+        iu = iu.replace(f"https://{host}:{wso2_port}", "https://wso2is:9443")
+    entry["issuerUrl"] = iu
 with open(auth_dst, "w") as f:
     json.dump(auth, f, indent=2)
 

@@ -34,5 +34,7 @@ verifiably-go/locales/
 verifiably-go/walletbag.json
 verifiably-go/cookies.txt
 verifiably-go/node_modules/
-# Guard: never commit node_modules anywhere
+verifiably-go/.env
+# Guard: never commit node_modules anywhere (directory or symlink)
+node_modules
 node_modules/
