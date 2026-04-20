@@ -4,7 +4,10 @@
 // your own adapter code.
 package vctypes
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // DPG describes a Digital Public Good's capabilities.
 // The same shape serves issuer, holder, and verifier DPGs; role-specific
@@ -61,6 +64,102 @@ type Schema struct {
 	// Custom-schema extras (empty for pre-configured schemas)
 	AdditionalTypes []string
 	FieldsSpec      []FieldSpec
+
+	// Variants lists every wire-format this credential type is available in.
+	// For walt.id, one credential name (e.g. "IdentityCredential") is served
+	// under several configuration ids (one per format). The schema picker
+	// collapses them into a single card and uses Variants to render the
+	// format chip-row — so users switch format without navigating away.
+	// ID on the Schema itself points to the currently-selected variant;
+	// Variants[i].ID is the configuration id to submit if the user picks
+	// that format. Empty for custom schemas (format is fixed by Std).
+	Variants []SchemaVariant
+}
+
+// SchemaVariant is one available wire-format for a credential type. Label
+// is the human-readable name shown in the UI (e.g. "SD-JWT + IETF"); Format
+// is the raw walt.id format key (e.g. "vc+sd-jwt"); Std is the verifiably-go
+// taxonomy category the format belongs to (e.g. "sd_jwt_vc (IETF)").
+type SchemaVariant struct {
+	ID     string
+	Format string
+	Std    string
+	Label  string
+	// Vct is the SD-JWT VC's `vct` claim — the issuer-advertised
+	// credential type URL. Walt.id's verifier/wallet PD matcher keys off
+	// this exact string for SD-JWT presentations, so the verifier's
+	// request must carry the full URL (not just the short type name).
+	// Empty for non-SD-JWT variants.
+	Vct string
+	// CanPresent is false for formats that the backend issuer can emit but
+	// the verifier can't filter for (so the credential can't be presented
+	// end-to-end). Walt.id Community Stack v0.18.2 has two such gaps —
+	// `jwt_vc_json-ld` (missing from its VCFormat enum) and `dc+sd-jwt`
+	// (rejected by VerifierService.getPresentationFormat). The verifier UI
+	// hides these; the issuer UI shows them with a warning so the operator
+	// chooses knowingly.
+	CanPresent bool
+}
+
+// HasVariantID returns true if id equals the Schema's own ID or any variant's
+// ID. Handlers use this for schema lookup after a user switches format — the
+// selected id may be a non-default variant that wouldn't match s.ID.
+func (s Schema) HasVariantID(id string) bool {
+	if s.ID == id {
+		return true
+	}
+	for _, v := range s.Variants {
+		if v.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// ApplyVariant returns a copy of s with ID + Std replaced by the matching
+// variant's values. Returns s unchanged when id already equals s.ID or no
+// matching variant exists. This lets downstream code (IssueToWallet,
+// buildCredentialData) see the user's chosen format on the Schema itself.
+func (s Schema) ApplyVariant(id string) Schema {
+	if s.ID == id {
+		return s
+	}
+	for _, v := range s.Variants {
+		if v.ID == id {
+			s.ID = v.ID
+			s.Std = v.Std
+			return s
+		}
+	}
+	return s
+}
+
+// BaseType returns the canonical credential type name by stripping known
+// wire-format suffixes from s.ID. Walt.id's config ids follow the pattern
+// "<TypeName>_<format>" (e.g. "BankId_vc+sd-jwt") where TypeName is the
+// credential type as used in the VP's `type` or `vct` claim. Other
+// adapters that use this helper get a no-op when none of the known
+// suffixes match — they can store BaseType on Schema.ID directly.
+func (s Schema) BaseType() string {
+	suffixes := []string{
+		"_jwt_vc_json-ld",
+		"_jwt_vp_json-ld",
+		"_jwt_vc_json",
+		"_jwt_vp_json",
+		"_vc+sd-jwt",
+		"_dc+sd-jwt",
+		"_mso_mdoc",
+		"_ldp_vc",
+		"_ldp_vp",
+		"_jwt_vc",
+		"_jwt_vp",
+	}
+	for _, suf := range suffixes {
+		if strings.HasSuffix(s.ID, suf) {
+			return strings.TrimSuffix(s.ID, suf)
+		}
+	}
+	return s.ID
 }
 
 // FieldSpec describes one claim in a credential schema.
@@ -89,6 +188,16 @@ type OID4VPTemplate struct {
 	Fields     []string
 	Format     string
 	Disclosure string // plain-language disclosure summary shown to the verifier operator
+	// CredentialType is the canonical walt.id credential type (e.g.
+	// "BankId", "OpenBadgeCredential") — used as the `type` filter when
+	// building JWT VC presentation requests. Falls back to Title when
+	// empty, but that guess appends "Credential" and is often wrong.
+	CredentialType string
+	// Vct is the full `vct` URL for SD-JWT VC credentials (e.g.
+	// "http://issuer.example/draft13/BankId"). Walt.id's PD matcher
+	// demands the exact issuer-advertised URL, not a short type name.
+	// Empty for non-SD-JWT templates.
+	Vct string
 }
 
 // IssuerIdentity is the operator's own display identity (the "who's issuing this").

@@ -242,12 +242,15 @@ func funcMap() template.FuncMap {
 			return *p
 		},
 
-		// indexSchemas looks up a schema by ID in a []vctypes.Schema slice.
-		// Returns the zero Schema if no match.
+		// indexSchemas looks up a schema by ID (or variant id) in a slice.
+		// After the grouped-by-name refactor, the primary Schema.ID only
+		// matches the default variant; non-default variant ids live on the
+		// Variants slice, so match against either and return the schema
+		// with ID+Std swapped to the picked variant.
 		"indexSchemas": func(schemas []vctypes.Schema, id string) vctypes.Schema {
 			for _, s := range schemas {
-				if s.ID == id {
-					return s
+				if s.HasVariantID(id) {
+					return s.ApplyVariant(id)
 				}
 			}
 			return vctypes.Schema{}

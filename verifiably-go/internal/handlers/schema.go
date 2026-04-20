@@ -11,6 +11,68 @@ import (
 	"github.com/verifiably/verifiably-go/vctypes"
 )
 
+// findSchemaByID scans schemas for one whose ID or any variant ID matches id,
+// returning the Schema with the chosen variant applied. The grouped-by-name
+// refactor means handlers get one Schema per credential type; looking up by
+// variant id therefore has to scan each Schema's Variants list, not just ID.
+func findSchemaByID(schemas []vctypes.Schema, id string) (vctypes.Schema, bool) {
+	for _, s := range schemas {
+		if s.HasVariantID(id) {
+			return s.ApplyVariant(id), true
+		}
+	}
+	return vctypes.Schema{}, false
+}
+
+// schemaFieldResolver is the optional capability an adapter declares when
+// it can enrich a schema's FieldsSpec lazily. ListSchemas deliberately
+// returns cheap placeholders so the DPG/schema grid renders fast;
+// handlers that need full fields (issue form, verifier field picker)
+// call this once for the specific picked schema.
+type schemaFieldResolver interface {
+	ResolveSchemaFields(schema vctypes.Schema) vctypes.Schema
+}
+
+// resolveFields runs the adapter's lazy field resolver if it implements
+// schemaFieldResolver, otherwise returns the schema unchanged.
+func (h *H) resolveFields(s vctypes.Schema) vctypes.Schema {
+	if r, ok := h.Adapter.(schemaFieldResolver); ok {
+		return r.ResolveSchemaFields(s)
+	}
+	return s
+}
+
+// schemaHasStd reports whether the schema or any of its variants surface under
+// the given Std. Used so the Std filter chip doesn't exclude a card whose
+// default variant differs from what the user selected.
+func schemaHasStd(s vctypes.Schema, std string) bool {
+	if s.Std == std {
+		return true
+	}
+	for _, v := range s.Variants {
+		if v.Std == std {
+			return true
+		}
+	}
+	return false
+}
+
+// promoteVariantOfStd returns a copy of s whose ID + Std have been swapped to
+// the first variant matching the given Std. Used when the user filters by a
+// specific Std — the card should surface the variant in that format so the
+// Select button selects a matching configuration id.
+func promoteVariantOfStd(s vctypes.Schema, std string) vctypes.Schema {
+	if s.Std == std {
+		return s
+	}
+	for _, v := range s.Variants {
+		if v.Std == std {
+			return s.ApplyVariant(v.ID)
+		}
+	}
+	return s
+}
+
 // ShowSchemaBrowser renders the schema-browse page.
 func (h *H) ShowSchemaBrowser(w http.ResponseWriter, r *http.Request) {
 	sess := h.Sessions.MustGet(w, r)
@@ -39,14 +101,21 @@ func (h *H) schemaBrowserData(w http.ResponseWriter, r *http.Request, sess *Sess
 		h.errorToast(w, r, err.Error())
 		return schemaBrowserData{}
 	}
-	// Build the std-chip list from the UNFILTERED schemas so the chips don't
-	// vanish when a filter selection would empty the list.
+	// Build the std-chip list from EVERY variant's Std — after grouping a
+	// card may carry several variants, so filtering by Std needs to consider
+	// all of them.
 	stds := []string{"all"}
 	seen := map[string]bool{"all": true}
 	for _, s := range schemas {
 		if !seen[s.Std] {
 			seen[s.Std] = true
 			stds = append(stds, s.Std)
+		}
+		for _, v := range s.Variants {
+			if !seen[v.Std] {
+				seen[v.Std] = true
+				stds = append(stds, v.Std)
+			}
 		}
 	}
 
@@ -56,8 +125,14 @@ func (h *H) schemaBrowserData(w http.ResponseWriter, r *http.Request, sess *Sess
 	q := strings.ToLower(sess.SchemaQuery)
 	filtered := []vctypes.Schema{}
 	for _, s := range schemas {
-		if sess.SchemaFilter != "all" && s.Std != sess.SchemaFilter {
+		if sess.SchemaFilter != "all" && !schemaHasStd(s, sess.SchemaFilter) {
 			continue
+		}
+		// When filtering by a specific Std, surface the matching variant as
+		// the card's default so the user clicking Select picks a sensible
+		// configuration id.
+		if sess.SchemaFilter != "all" {
+			s = promoteVariantOfStd(s, sess.SchemaFilter)
 		}
 		if q != "" {
 			hay := strings.ToLower(s.Name + " " + s.Desc + " " + s.Std)

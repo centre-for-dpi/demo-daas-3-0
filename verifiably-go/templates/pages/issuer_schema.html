@@ -4,6 +4,16 @@
   <h1 class="page-title">Pick a schema, or<br><em>build one</em>.</h1>
   <p class="subtitle">These are the credential types available from <span class="mono">{{.Session.IssuerDpg}}</span>. Click a card to preview its JSON Schema. Click <em>Use this schema</em> to select it for issuance.</p>
 
+  {{/* Legend — explains the ⚠ badge that tags formats whose credentials
+       the backend's verifier can't filter for. Needed because the card
+       grid happily surfaces those formats (they issue + claim end-to-end
+       with walt.id); the warning is specifically about the round-trip
+       into /verifier/verify. */}}
+  <div class="format-legend">
+    <span class="chip small format-issue-only">⚠</span>
+    <span>Issue-only — walt.id's verifier can't filter for this format, so credentials issued here can't be presented end-to-end. Pick a non-⚠ format to keep the full issue → hold → present flow working.</span>
+  </div>
+
   <div id="schema-browser">
     {{template "fragment_schema_browser_body" .Body}}
   </div>
@@ -70,8 +80,16 @@
   {{end}}
 
   {{range .Schemas}}
+    {{/* A card is "selected" if sess.SchemaID matches the schema's own id
+         OR any of its variant ids — the grouped-by-name refactor means one
+         credential type is one card regardless of which format the user
+         picked from its chip row. */}}
+    {{$cardSelected := false}}
+    {{range .Variants}}{{if eq .ID $.SelectedID}}{{$cardSelected = true}}{{end}}{{end}}
+    {{if eq .ID $.SelectedID}}{{$cardSelected = true}}{{end}}
+
     <div class="schema-card
-                {{if eq .ID $.SelectedID}}selected{{end}}
+                {{if $cardSelected}}selected{{end}}
                 {{if eq .ID $.ExpandedID}}expanded{{end}}"
          data-id="{{.ID}}"
          data-name="{{.Name}}"
@@ -81,8 +99,30 @@
         <h4 style="flex:1">{{.Name}}</h4>
         {{if .Custom}}<span class="pill ok" style="font-size:0.65rem">custom</span>{{end}}
       </div>
-      <div class="std">{{.Std}}</div>
       <div class="desc">{{.Desc}}</div>
+
+      {{if .Variants}}
+        {{/* Format chip-row — one chip per variant. Clicking a chip selects
+             the schema AT that variant's configuration id, so downstream
+             handlers route to the right walt.id endpoint (jwt/sdjwt/mdoc).
+             Variants whose CanPresent flag is false get a "issue-only"
+             marker so the operator knows walt.id's verifier can't filter
+             for this format — the credential can be issued but never
+             presented end-to-end. */}}
+        <div class="chip-row" style="margin-top:0.6rem;flex-wrap:wrap;gap:0.35rem">
+          {{range .Variants}}
+            <button type="button"
+                    class="chip small {{if eq .ID $.SelectedID}}active{{end}}{{if not .CanPresent}} format-issue-only{{end}}"
+                    title="{{.Format}}{{if not .CanPresent}} — issue-only (walt.id verifier rejects this format; see legend above){{end}}"
+                    hx-post="/issuer/schema/select"
+                    hx-vals='{"id": "{{.ID}}"}'
+                    hx-target="#schema-browser"
+                    hx-swap="innerHTML">{{.Label}}{{if not .CanPresent}} <span class="warn-glyph">⚠</span>{{end}}</button>
+          {{end}}
+        </div>
+      {{else}}
+        <div class="std">{{.Std}}</div>
+      {{end}}
 
       <div class="btn-row" style="margin-top:0.75rem">
         <button class="btn small ghost"
@@ -92,12 +132,12 @@
                 hx-swap="outerHTML">
           {{if eq .ID $.ExpandedID}}Hide JSON{{else}}Show JSON{{end}}
         </button>
-        <button class="btn small {{if eq .ID $.SelectedID}}ghost{{end}}"
+        <button class="btn small {{if $cardSelected}}ghost{{end}}"
                 hx-post="/issuer/schema/select"
                 hx-vals='{"id": "{{.ID}}"}'
                 hx-target="#schema-browser"
                 hx-swap="innerHTML">
-          {{if eq .ID $.SelectedID}}✓ Selected{{else}}Use this schema →{{end}}
+          {{if $cardSelected}}✓ Selected{{else}}Use this schema →{{end}}
         </button>
         {{if .Custom}}
           <button class="btn small ghost"

@@ -261,6 +261,43 @@ h1.page-title em { font-style: italic; color: var(--accent); font-weight: 300; }
 }
 .chip:hover { border-color: var(--ink); color: var(--ink); }
 .chip.active { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.chip.small { padding: 0.25rem 0.55rem; font-size: 0.68rem; }
+
+/* Issue-only badge on format chips whose credentials the backend verifier
+   can't filter for. The chip stays clickable (the user may deliberately
+   want an issue-only flow) but its warn glyph is tinted with --warn so
+   it's legible against both light and dark themes. Active-state override
+   flips the glyph back to contrast against the filled chip body. */
+.chip.format-issue-only .warn-glyph {
+  color: var(--warn);
+  font-weight: 700;
+  margin-left: 0.15rem;
+}
+.chip.format-issue-only.active .warn-glyph { color: inherit; }
+
+/* Legend block sitting between the subtitle and the card grid. Mirrors
+   the chip's visual vocabulary so users make the connection on the
+   card below. */
+.format-legend {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin: -1.5rem 0 1.75rem;
+  padding: 0.75rem 1rem;
+  background: color-mix(in srgb, var(--warn) 10%, var(--bg-elev));
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--line));
+  border-left: 3px solid var(--warn);
+  border-radius: 2px;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+.format-legend .chip.small.format-issue-only {
+  /* Visual reference in the legend shows the badge in isolation. */
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 60%, var(--line));
+  font-weight: 700;
+  cursor: default;
+}
 
 /* Grid rows auto-size independently, and `grid-auto-rows: min-content` keeps
    unexpanded cards at their natural height so an expanded card only stretches

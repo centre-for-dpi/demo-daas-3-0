@@ -80,17 +80,12 @@ func (h *H) ShowIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	schemas, _ := h.Adapter.ListAllSchemas(r.Context())
-	var schema vctypes.Schema
-	for _, s := range schemas {
-		if s.ID == sess.SchemaID {
-			schema = s
-			break
-		}
-	}
-	if schema.ID == "" {
+	schema, ok := findSchemaByID(schemas, sess.SchemaID)
+	if !ok {
 		h.errorToast(w, r, "selected schema missing")
 		return
 	}
+	schema = h.resolveFields(schema)
 	vals, _ := h.Adapter.PrefillSubjectFields(r.Context(), schema)
 	dpgs, _ := h.Adapter.ListIssuerDpgs(r.Context())
 	dpg := dpgs[sess.IssuerDpg]
@@ -156,13 +151,8 @@ func (h *H) SubmitIssue(w http.ResponseWriter, r *http.Request) {
 	sess.SchemaID = schemaID
 
 	schemas, _ := h.Adapter.ListAllSchemas(r.Context())
-	var schema vctypes.Schema
-	for _, s := range schemas {
-		if s.ID == schemaID {
-			schema = s
-			break
-		}
-	}
+	schema, _ := findSchemaByID(schemas, schemaID)
+	schema = h.resolveFields(schema)
 	// Gather subject data from form (falls back to prefill)
 	subject := map[string]string{}
 	for _, f := range schemaFieldsOfH(schema) {
@@ -213,13 +203,8 @@ func (h *H) SetSingleSource(w http.ResponseWriter, r *http.Request) {
 		source = "manual"
 	}
 	schemas, _ := h.Adapter.ListAllSchemas(r.Context())
-	var schema vctypes.Schema
-	for _, s := range schemas {
-		if s.ID == sess.SchemaID {
-			schema = s
-			break
-		}
-	}
+	schema, _ := findSchemaByID(schemas, sess.SchemaID)
+	schema = h.resolveFields(schema)
 	vals, _ := h.Adapter.PrefillSubjectFields(r.Context(), schema)
 	dpgs, _ := h.Adapter.ListIssuerDpgs(r.Context())
 	dpg := dpgs[sess.IssuerDpg]
@@ -246,13 +231,7 @@ func (h *H) SimulateCSV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	schemas, _ := h.Adapter.ListAllSchemas(r.Context())
-	var schema vctypes.Schema
-	for _, s := range schemas {
-		if s.ID == sess.SchemaID {
-			schema = s
-			break
-		}
-	}
+	schema, _ := findSchemaByID(schemas, sess.SchemaID)
 	file, _, err := r.FormFile("csv_file")
 	if err != nil {
 		h.errorToast(w, r, "Upload a CSV file")
@@ -291,13 +270,7 @@ func (h *H) SimulateCSV(w http.ResponseWriter, r *http.Request) {
 func (h *H) PreviewPDF(w http.ResponseWriter, r *http.Request) {
 	sess := h.Sessions.MustGet(w, r)
 	schemas, _ := h.Adapter.ListAllSchemas(r.Context())
-	var schema vctypes.Schema
-	for _, s := range schemas {
-		if s.ID == sess.SchemaID {
-			schema = s
-			break
-		}
-	}
+	schema, _ := findSchemaByID(schemas, sess.SchemaID)
 	vals, _ := h.Adapter.PrefillSubjectFields(r.Context(), schema)
 	res, err := h.Adapter.IssueAsPDF(r.Context(), backend.IssueRequest{
 		IssuerDpg: sess.IssuerDpg, Schema: schema, SubjectData: vals,
