@@ -269,3 +269,36 @@ func (h *H) SubmitPresent(w http.ResponseWriter, r *http.Request) {
 func (h *H) DeclinePresent(w http.ResponseWriter, r *http.Request) {
 	h.renderFragment(w, r, "fragment_present_declined", nil)
 }
+
+// DeleteCredential removes a held credential from the holder's wallet.
+// Returns a toast on success/failure and triggers a wallet-list refresh
+// via HX-Trigger so the card grid re-renders without a full page reload.
+func (h *H) DeleteCredential(w http.ResponseWriter, r *http.Request) {
+	sess := h.Sessions.MustGet(w, r)
+	if sess.HolderDpg == "" {
+		h.redirect(w, r, "/holder/dpg")
+		return
+	}
+	credID := r.FormValue("credential_id")
+	if credID == "" {
+		h.errorToast(w, r, "Missing credential id")
+		return
+	}
+	if err := h.Adapter.DeleteWalletCredential(holderCtx(r, sess), credID); err != nil {
+		h.errorToast(w, r, "Delete failed: "+err.Error())
+		return
+	}
+	// Drop it from the session cache too so the next ShowWallet render
+	// doesn't resurrect the card.
+	filtered := sess.WalletCreds[:0]
+	for _, c := range sess.WalletCreds {
+		if c.ID != credID {
+			filtered = append(filtered, c)
+		}
+	}
+	sess.WalletCreds = filtered
+	// Re-list to get the fresh picture + swap the whole body fragment.
+	creds, _ := h.Adapter.ListWalletCredentials(holderCtx(r, sess))
+	sess.WalletCreds = creds
+	h.renderFragment(w, r, "fragment_wallet_body", sess)
+}

@@ -291,6 +291,14 @@ func (r *Registry) ListWalletCredentials(ctx context.Context) ([]vctypes.Credent
 	return ad.ListWalletCredentials(ctx)
 }
 
+func (r *Registry) DeleteWalletCredential(ctx context.Context, credentialID string) error {
+	ad, err := r.currentHolder(ctx)
+	if err != nil {
+		return err
+	}
+	return ad.DeleteWalletCredential(ctx, credentialID)
+}
+
 func (r *Registry) ListExampleOffers(ctx context.Context) ([]string, error) {
 	// Aggregate live bootstrap offers across all registered issuer adapters.
 	r.mu.RLock()

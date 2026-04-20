@@ -101,6 +101,9 @@ func (a *Adapter) BootstrapOffers(_ context.Context) ([]string, error) { return 
 func (a *Adapter) ListWalletCredentials(_ context.Context) ([]vctypes.Credential, error) {
 	return nil, backend.ErrNotLinked
 }
+func (a *Adapter) DeleteWalletCredential(_ context.Context, _ string) error {
+	return backend.ErrNotLinked
+}
 func (a *Adapter) ListExampleOffers(_ context.Context) ([]string, error) {
 	return nil, nil
 }

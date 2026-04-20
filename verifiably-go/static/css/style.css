@@ -383,7 +383,13 @@ pre.json-preview.large { max-height: 640px; font-size: 0.78rem; padding: 1.25rem
 .cred-head h3 { font-family: 'Josefin Sans', sans-serif; font-weight: 500; font-size: 1.4rem; }
 .cred-rows { display: grid; grid-template-columns: 120px 1fr; gap: 0.5rem 1rem; font-size: 0.9rem; margin-bottom: 1rem; }
 .cred-rows dt { color: var(--ink-mute); font-size: 0.82rem; }
-.cred-rows dd { color: var(--ink); }
+.cred-rows dd { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Compact variant for wallet cards — tighter spacing + ellipsised values
+   so a 3-wide grid of credentials stays legible without horizontal
+   scrolling, even on long claim values (e.g. JSON-encoded blobs). */
+.cred-rows.compact { grid-template-columns: 85px 1fr; gap: 0.2rem 0.5rem; font-size: 0.75rem; margin-bottom: 0; }
+.cred-rows.compact dt { font-size: 0.68rem; }
+.cred-rows.compact dd { font-size: 0.75rem; }
 
 /* QR pseudo-illustration */
 .qr-box {
@@ -423,16 +429,29 @@ tr:hover td { background: var(--bg-elev); }
    WALLET CREDENTIAL STACK
    ============================================================ */
 .wallet-stack { display: flex; flex-direction: column; gap: 1rem; margin-top: 1.5rem; }
+/* 3-wide grid for held credentials; collapses to 2 columns below 1000px
+   and 1 column below 640px so cards stay readable on narrower panes. */
+.wallet-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 0;
+}
+@media (max-width: 1000px) { .wallet-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px)  { .wallet-grid { grid-template-columns: 1fr; } }
 .wallet-cred {
   background: var(--bg-elev); border: 1px solid var(--line); border-radius: 2px;
-  padding: 1.5rem; position: relative; overflow: hidden;
+  padding: 0.85rem 1rem; position: relative; overflow: hidden;
   transition: all 0.25s ease;
+  min-width: 0;
 }
+.wallet-grid .wallet-cred { padding: 0.75rem 0.85rem; }
+.wallet-grid .wallet-cred h4 { font-size: 0.95rem; }
 .wallet-cred:hover { border-color: var(--ink-soft); }
 .wallet-cred.pending  { border-left: 3px solid var(--warn); }
 .wallet-cred.accepted { border-left: 3px solid var(--ok); }
-.wallet-cred .cred-meta { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
-.wallet-cred h4 { font-family: 'Josefin Sans', sans-serif; font-weight: 500; font-size: 1.2rem; margin-bottom: 0.25rem; }
+.wallet-cred .cred-meta { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; }
+.wallet-cred h4 { font-family: 'Josefin Sans', sans-serif; font-weight: 500; font-size: 1.2rem; margin-bottom: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ============================================================
    VERIFIER RESULT

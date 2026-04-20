@@ -105,6 +105,26 @@ func (a *Adapter) ensureWalletSession(ctx context.Context) (*walletSession, erro
 	return a.session, nil
 }
 
+// DeleteWalletCredential removes a held credential from the walt.id wallet.
+// Walt.id's DELETE defaults to a SOFT delete (returns 202 but the credential
+// still shows up in subsequent list calls, just flagged); passing
+// ?permanent=true is what actually removes it. This adapter always does
+// permanent deletes — from the operator's perspective "delete" means gone.
+func (a *Adapter) DeleteWalletCredential(ctx context.Context, credentialID string) error {
+	if credentialID == "" {
+		return fmt.Errorf("empty credential id")
+	}
+	sess, err := a.ensureWalletSession(ctx)
+	if err != nil {
+		return err
+	}
+	authCtx := httpx.WithToken(ctx, sess.Token)
+	_, err = a.wallet.DoRaw(authCtx, http.MethodDelete,
+		fmt.Sprintf("/wallet-api/wallet/%s/credentials/%s?permanent=true", sess.WalletID, url.PathEscape(credentialID)),
+		nil, "", nil)
+	return err
+}
+
 // ListWalletCredentials returns held credentials for the demo wallet.
 func (a *Adapter) ListWalletCredentials(ctx context.Context) ([]vctypes.Credential, error) {
 	sess, err := a.ensureWalletSession(ctx)

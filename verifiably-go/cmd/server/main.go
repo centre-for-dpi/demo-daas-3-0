@@ -133,6 +133,7 @@ func main() {
 	mux.HandleFunc("POST /holder/present/confirm", h.ConfirmPresent)
 	mux.HandleFunc("POST /holder/present/submit", h.SubmitPresent)
 	mux.HandleFunc("POST /holder/present/decline", h.DeclinePresent)
+	mux.HandleFunc("POST /holder/wallet/delete", h.DeleteCredential)
 
 	// Verifier
 	mux.HandleFunc("GET /verifier/dpg", h.ShowVerifierDpgs)
@@ -291,5 +292,21 @@ func funcMap() template.FuncMap {
 		// pre-normalised search corpus — the client-side filter does a
 		// case-insensitive substring match without per-option work.
 		"lowerStr": strings.ToLower,
+
+		// uniqueTitles returns the distinct Title values across a credential
+		// list, sorted alphabetically — used to populate the wallet's
+		// type-filter dropdown.
+		"uniqueTitles": func(creds []vctypes.Credential) []string {
+			seen := map[string]bool{}
+			out := []string{}
+			for _, c := range creds {
+				if c.Title != "" && !seen[c.Title] {
+					seen[c.Title] = true
+					out = append(out, c.Title)
+				}
+			}
+			sort.Strings(out)
+			return out
+		},
 	}
 }

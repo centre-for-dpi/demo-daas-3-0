@@ -291,6 +291,9 @@ func (a *Adapter) BootstrapOffers(_ context.Context) ([]string, error) { return 
 func (a *Adapter) ListWalletCredentials(_ context.Context) ([]vctypes.Credential, error) {
 	return nil, backend.ErrNotApplicable
 }
+func (a *Adapter) DeleteWalletCredential(_ context.Context, _ string) error {
+	return backend.ErrNotApplicable
+}
 func (a *Adapter) ListExampleOffers(_ context.Context) ([]string, error) { return nil, nil }
 func (a *Adapter) ParseOffer(_ context.Context, _ string) (vctypes.Credential, error) {
 	return vctypes.Credential{}, backend.ErrNotApplicable

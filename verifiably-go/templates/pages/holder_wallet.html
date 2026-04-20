@@ -104,22 +104,30 @@
         Receive a credential from the left to see it here.
       </div>
     {{else}}
-      {{/* Client-side search — filters cards by title, issuer, type,
-           format, claim names, and claim values. No server round-trip
-           since the wallet list is already on the page. */}}
-      <input type="search" id="wallet-search" data-wallet-search
-             placeholder="Search held credentials (name, issuer, format, claim value)…"
-             autocomplete="off"
-             style="width:100%;padding:0.55rem 0.75rem;margin-bottom:0.75rem;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:2px;font-size:0.85rem">
+      {{/* Toolbar: search + type filter. Client-side — the whole wallet
+           list is already on the page, so typing is instant. */}}
+      <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem;flex-wrap:wrap;align-items:center">
+        <input type="search" id="wallet-search" data-wallet-search
+               placeholder="Search name, issuer, format, claim value…"
+               autocomplete="off"
+               style="flex:1;min-width:200px;padding:0.55rem 0.75rem;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:2px;font-size:0.85rem">
+        <select id="wallet-type-filter" data-wallet-type-filter
+                style="padding:0.55rem 0.75rem;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:2px;font-size:0.85rem;min-width:160px">
+          <option value="all">all types</option>
+          {{range uniqueTitles .WalletCreds}}
+            <option value="{{.}}">{{.}}</option>
+          {{end}}
+        </select>
+      </div>
 
-      <div class="wallet-stack" style="margin-top:0">
+      <div class="wallet-grid">
         {{range .WalletCreds}}
           {{template "_wallet_held_card" .}}
         {{end}}
       </div>
       <div id="wallet-search-empty"
-           style="display:none;padding:1.5rem;background:var(--bg-elev);border:1px dashed var(--line);border-radius:2px;text-align:center;color:var(--ink-mute);font-size:0.85rem;font-style:italic">
-        No held credentials match that search.
+           style="display:none;padding:1.5rem;background:var(--bg-elev);border:1px dashed var(--line);border-radius:2px;text-align:center;color:var(--ink-mute);font-size:0.85rem;font-style:italic;margin-top:0.75rem">
+        No held credentials match the current filters.
       </div>
       <div class="btn-row" style="margin-top:1.25rem">
         <a href="/holder/present" class="btn ghost">Present to a verifier →</a>
@@ -162,28 +170,40 @@
 
 {{define "_wallet_held_card"}}
 {{/* data-search is a pre-lowered corpus the wallet search JS greps —
-     includes the title, issuer, type, format, and every claim name/value
-     so a search for "jo" or "bank id" or "sd_jwt" or a date all land
-     on the right card. */}}
+     includes title, issuer, type, format, and every claim name/value.
+     data-title carries the raw title for the type-filter dropdown. */}}
 <div class="wallet-cred accepted" data-wallet-card
+     data-title="{{.Title}}"
      data-search="{{.Title | lowerStr}} {{.Issuer | lowerStr}} {{.Type | lowerStr}} {{.Format | lowerStr}}{{range $k, $v := .Fields}} {{$k | lowerStr}} {{$v | lowerStr}}{{end}}">
   <div class="cred-meta">
-    <div>
-      <h4>{{.Title}}</h4>
-      <div style="font-size:0.82rem;color:var(--ink-mute)">from {{.Issuer}} · <span class="mono">{{if .Format}}{{.Format}}{{else}}{{.Type}}{{end}}</span></div>
+    <div style="min-width:0">
+      <h4 title="{{.Title}}">{{.Title}}</h4>
+      <div style="font-size:0.72rem;color:var(--ink-mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="from {{.Issuer}}">{{.Issuer}}</div>
+      <div style="font-size:0.68rem;color:var(--ink-mute);margin-top:0.15rem"><span class="mono">{{if .Format}}{{.Format}}{{else}}{{.Type}}{{end}}</span></div>
     </div>
-    <span class="pill ok">held</span>
+    <span class="pill ok" style="font-size:0.6rem">held</span>
   </div>
 
-  <dl class="cred-rows" style="margin-top:1rem">
-    {{range $k, $v := .Fields}}
-      <dt>{{replaceUnderscore $k}}</dt>
-      <dd>{{$v}}</dd>
-    {{end}}
-  </dl>
+  {{if .Fields}}
+    <dl class="cred-rows compact" style="margin-top:0.6rem">
+      {{range $k, $v := .Fields}}
+        {{if and (ne $k "vct") (ne $k "offer_uri") (ne $k "config_id")}}
+          <dt>{{replaceUnderscore $k}}</dt>
+          <dd title="{{$v}}">{{$v}}</dd>
+        {{end}}
+      {{end}}
+    </dl>
+  {{end}}
 
-  <div class="btn-row" style="margin-top:0.75rem;justify-content:flex-end">
-    <a class="btn small" href="/holder/present?credential={{.ID}}">Present this →</a>
+  <div class="btn-row" style="margin-top:0.65rem;justify-content:space-between;gap:0.35rem">
+    <button class="btn small ghost"
+            style="color:var(--err);border-color:var(--err)"
+            hx-post="/holder/wallet/delete"
+            hx-vals='{"credential_id": "{{.ID}}"}'
+            hx-target="#wallet-body"
+            hx-swap="innerHTML"
+            hx-confirm="Delete {{.Title}} from your wallet? This can't be undone.">Delete</button>
+    <a class="btn small" href="/holder/present?credential={{.ID}}">Present →</a>
   </div>
 </div>
 {{end}}

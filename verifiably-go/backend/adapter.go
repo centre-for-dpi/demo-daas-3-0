@@ -90,6 +90,11 @@ type Adapter interface {
 	// In the demo this includes a seed credential; in production, query your wallet store.
 	ListWalletCredentials(ctx context.Context) ([]vctypes.Credential, error)
 
+	// DeleteWalletCredential removes a held credential from the wallet by id.
+	// Implementations that don't support deletion (e.g. read-only wallets)
+	// return backend.ErrNotSupported; the handler surfaces that as a toast.
+	DeleteWalletCredential(ctx context.Context, credentialID string) error
+
 	// ListExampleOffers returns demo offer URIs that the wallet's "paste example"
 	// helper cycles through. For production, return an empty slice (the feature
 	// is a demo-only affordance) or a small list of test-environment URIs.

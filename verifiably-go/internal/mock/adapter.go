@@ -172,6 +172,12 @@ func (a *MockAdapter) ListWalletCredentials(_ context.Context) ([]vctypes.Creden
 	return SeedWalletCreds(), nil
 }
 
+func (a *MockAdapter) DeleteWalletCredential(_ context.Context, _ string) error {
+	// Mock adapter has no persistent state — treat delete as a no-op
+	// so UI flows that exercise it don't fail.
+	return nil
+}
+
 func (a *MockAdapter) ListExampleOffers(_ context.Context) ([]string, error) {
 	uris := make([]string, 0, len(a.exampleOffers))
 	for _, ex := range a.exampleOffers {
