@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -384,30 +385,115 @@ func (a *Adapter) PresentCredential(ctx context.Context, req backend.PresentCred
 	}, nil
 }
 
-// resolveMatchedCredentialID asks walt.id which held credential matches the
-// verifier's presentation definition, so we submit the id walt.id itself
-// emitted (some builds mint fresh ids per-presentation). Falls back to the
-// caller-provided id if the match endpoint is missing or returns empty.
+// resolveMatchedCredentialID asks walt.id which held credentials satisfy
+// the verifier's PD and picks the one whose format walt.id's VP submit
+// pipeline actually handles. Walt.id only round-trips `jwt_vc_json` and
+// `vc+sd-jwt` end-to-end; returning any other format (ldp_vc,
+// jwt_vc_json-ld, jwt_vc) causes the wallet to build an array-form
+// vp_token and trip an internal .jsonPrimitive assertion.
+//
+// The match endpoint fetches + parses the PD itself — we POST the PD
+// inline (NOT the presentationRequest URI; that shape errors with
+// "Field 'input_descriptors' is required"). On wallet-api builds without
+// the match endpoint, or when no matches come back, fall through to the
+// caller-provided id.
 func (a *Adapter) resolveMatchedCredentialID(ctx context.Context, walletID string, req backend.PresentCredentialRequest) string {
 	fallback := req.CredentialID
 
-	// The match endpoint takes the presentationRequest URI as body and
-	// returns an array of credentials that satisfy it. Only useful on
-	// wallet-api builds that expose it; we swallow errors and fall through.
-	var matched []map[string]json.RawMessage
-	body := map[string]any{"presentationRequest": req.RequestURI}
-	if err := a.wallet.DoJSON(ctx, "POST",
-		fmt.Sprintf("/wallet-api/wallet/%s/exchange/matchCredentialsForPresentationDefinition", walletID),
-		body, &matched, nil); err != nil {
+	// Pull the PD out of the request URI so we can submit the inline shape.
+	pd := fetchPresentationDefinition(ctx, req.RequestURI)
+	if pd == nil {
 		return fallback
 	}
+	var matched []map[string]json.RawMessage
+	if err := a.wallet.DoJSON(ctx, "POST",
+		fmt.Sprintf("/wallet-api/wallet/%s/exchange/matchCredentialsForPresentationDefinition", walletID),
+		pd, &matched, nil); err != nil || len(matched) == 0 {
+		return fallback
+	}
+
+	// Pick the highest-ranked format. See waltid/issuer.go formatRank —
+	// only jwt_vc_json and vc+sd-jwt are walt.id's tested VP paths, so
+	// anything else scores low and we only fall through to it if no
+	// format-aligned match exists.
+	best := -1
+	bestID := fallback
 	for _, row := range matched {
-		var id string
-		if err := json.Unmarshal(row["id"], &id); err == nil && id != "" {
-			return id
+		var id, fmtVal string
+		_ = json.Unmarshal(row["id"], &id)
+		_ = json.Unmarshal(row["format"], &fmtVal)
+		if id == "" {
+			continue
+		}
+		rank := vpFormatRank(fmtVal)
+		if rank > best {
+			best = rank
+			bestID = id
 		}
 	}
-	return fallback
+	return bestID
+}
+
+// vpFormatRank returns a score for a credential format based on whether
+// walt.id's wallet-api has a tested VP submit path for it. Formats
+// outside the canonical two (jwt_vc_json, vc+sd-jwt) crash the wallet's
+// internal SD-JWT-suffix assertion when built into a vp_token.
+func vpFormatRank(f string) int {
+	switch f {
+	case "jwt_vc_json":
+		return 100
+	case "vc+sd-jwt":
+		return 90
+	case "dc+sd-jwt":
+		return 85
+	case "mso_mdoc":
+		return 70
+	default:
+		return 0
+	}
+}
+
+// fetchPresentationDefinition extracts presentation_definition_uri from an
+// openid4vp:// request URI, GETs the PD, and returns the decoded JSON
+// object. Returns nil on any error — caller falls back.
+func fetchPresentationDefinition(ctx context.Context, requestURI string) map[string]any {
+	// Parse the openid4vp URL to pull presentation_definition_uri out of the query.
+	idx := strings.Index(requestURI, "presentation_definition_uri=")
+	if idx < 0 {
+		return nil
+	}
+	encoded := requestURI[idx+len("presentation_definition_uri="):]
+	if amp := strings.IndexByte(encoded, '&'); amp >= 0 {
+		encoded = encoded[:amp]
+	}
+	pdURL, err := url.QueryUnescape(encoded)
+	if err != nil {
+		return nil
+	}
+	resp, err := http.DefaultClient.Do(mustRequest(ctx, http.MethodGet, pdURL, nil))
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil
+	}
+	return out
+}
+
+// mustRequest builds an http.Request; on error returns a request that
+// will fail at Do-time, so caller error handling stays on a single path.
+func mustRequest(ctx context.Context, method, url string, body io.Reader) *http.Request {
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	if err != nil {
+		// Return an intentionally-broken request whose Do fails cleanly.
+		req, _ = http.NewRequestWithContext(ctx, method, "http://invalid.local", body)
+	}
+	return req
 }
 
 // jsonReaderBytes adapts a precomputed []byte for DoRaw's io.Reader argument.
