@@ -65,6 +65,13 @@ type credentialConfigurationEntry struct {
 	CredentialDefinition *credentialDefinitionEntry   `json:"credential_definition,omitempty"`
 	Vct                  string                       `json:"vct,omitempty"`
 	DocType              string                       `json:"doctype,omitempty"`
+	// Display is the per-configuration human-readable label walt.id
+	// advertises (one entry per locale). displayNameFor prefers display[0].name
+	// when present because it's the cleanest label.
+	Display []struct {
+		Name   string `json:"name"`
+		Locale string `json:"locale,omitempty"`
+	} `json:"display,omitempty"`
 }
 
 type credentialDefinitionEntry struct {
@@ -312,12 +319,11 @@ func (a *Adapter) BootstrapOffers(ctx context.Context) ([]string, error) {
 // Returns "" for VP-only entries (which aren't issuance schemas).
 func formatToStd(format string) string {
 	switch format {
-	case "jwt_vc_json", "jwt_vc_json-ld":
+	// All W3C VC encodings (JSON, JSON-LD, LDP, and the legacy opaque
+	// JWT wrap) surface under a single Std so the dedup collapses them
+	// down to one card per credential type.
+	case "jwt_vc_json", "jwt_vc_json-ld", "ldp_vc", "jwt_vc":
 		return "w3c_vcdm_2"
-	case "ldp_vc":
-		return "w3c_vcdm_2"
-	case "jwt_vc":
-		return "jwt_vc"
 	case "vc+sd-jwt", "dc+sd-jwt":
 		return "sd_jwt_vc (IETF)"
 	case "mso_mdoc":
@@ -430,19 +436,68 @@ func fieldsForCredentialType(id string) []vctypes.FieldSpec {
 
 // displayNameFor converts an id like "UniversityDegree_jwt_vc_json" into a
 // human-readable schema name ("University Degree"). Falls back to the raw id.
-func displayNameFor(id string, _ credentialConfigurationEntry) string {
-	base := strings.SplitN(id, "_", 2)[0]
+// knownWaltidFormatSuffixes are the `_<format>` trailers walt.id appends to
+// every credential configuration id. Stripping them reveals the base type
+// name, which can itself contain underscores (e.g. "identity_credential").
+// Order matters — longer suffixes first so we don't prematurely match a
+// prefix of a longer one ("_jwt_vc" would chop "_jwt_vc_json" otherwise).
+var knownWaltidFormatSuffixes = []string{
+	"_jwt_vc_json-ld",
+	"_jwt_vp_json-ld",
+	"_jwt_vc_json",
+	"_jwt_vp_json",
+	"_vc+sd-jwt",
+	"_dc+sd-jwt",
+	"_mso_mdoc",
+	"_ldp_vc",
+	"_ldp_vp",
+	"_jwt_vc",
+	"_jwt_vp",
+}
+
+func displayNameFor(id string, cfg credentialConfigurationEntry) string {
+	// 1. Prefer the configuration's declared display name if walt.id
+	//    provides one — that's the cleanest possible label.
+	if len(cfg.Display) > 0 && strings.TrimSpace(cfg.Display[0].Name) != "" {
+		return strings.TrimSpace(cfg.Display[0].Name)
+	}
+	// 2. Strip the known format suffix from the id. walt.id's config ids
+	//    all end with `_<format>`, but the type itself can contain
+	//    underscores (see `identity_credential_vc+sd-jwt`), so splitting
+	//    on the first underscore is wrong — suffix stripping preserves
+	//    the full type name.
+	base := id
+	for _, suf := range knownWaltidFormatSuffixes {
+		if strings.HasSuffix(base, suf) {
+			base = strings.TrimSuffix(base, suf)
+			break
+		}
+	}
 	if base == "" {
 		return id
 	}
-	var out []rune
-	for i, r := range base {
-		if i > 0 && r >= 'A' && r <= 'Z' {
-			out = append(out, ' ')
+	// 3. Humanise: split snake_case on `_` and insert spaces before
+	//    inner capitals on CamelCase. "identity_credential" →
+	//    "Identity Credential"; "IdentityCredential" → "Identity
+	//    Credential"; "KycDataCredential" → "Kyc Data Credential".
+	var parts []string
+	for _, word := range strings.Split(base, "_") {
+		if word == "" {
+			continue
 		}
-		out = append(out, r)
+		var out []rune
+		for i, r := range word {
+			if i > 0 && r >= 'A' && r <= 'Z' {
+				out = append(out, ' ')
+			}
+			if i == 0 && r >= 'a' && r <= 'z' {
+				r -= 32 // title-case first letter
+			}
+			out = append(out, r)
+		}
+		parts = append(parts, string(out))
 	}
-	return string(out)
+	return strings.Join(parts, " ")
 }
 
 func truncate(s string, n int) string {
