@@ -922,15 +922,22 @@ func describePD(pd map[string]any) (typeName, format string) {
 	return
 }
 
-// friendlyClaimError surfaces the wallet's error verbatim; empirically
-// walt.id v0.18.2 claims every advertised format (jwt_vc_json, jwt_vc_json-ld,
-// ldp_vc, jwt_vc, vc+sd-jwt) cleanly when the issuer-side body is correct.
-// dc+sd-jwt is the one exception — issuance there requires the issuer DID
-// for the VC-subject id and walt.id's wallet-api 400s with
-// "Issuer DID was not given in issuance request" when it isn't. That's an
-// issuer-API quirk, not a format deficiency.
+// friendlyClaimError translates the most common cross-issuer interop
+// failures walt.id's wallet surfaces on /exchange/useOfferRequest. Raw
+// wallet errors read as opaque 400s; the operator needs to know whether
+// the issue is their offer, the issuer's metadata, or a known quirk.
 func friendlyClaimError(err error, _ string) error {
-	return fmt.Errorf("wallet claim failed: %s", truncateClaim(err.Error(), 200))
+	msg := err.Error()
+	// Inji Certify ↔ walt.id interop: Inji Certify's offer advertises
+	// credential_issuer="http://inji-certify-preauth:8090" but only serves
+	// /.well-known/openid-credential-issuer at /v1/certify/issuance/
+	// .well-known/openid-credential-issuer. Walt.id fetches the standard
+	// "{issuer}/.well-known/openid-credential-issuer" path, gets 404,
+	// returns no offered credentials, and 400s on our claim call.
+	if strings.Contains(msg, "Resolved an empty list of offered credentials") {
+		return fmt.Errorf("walt.id's wallet couldn't resolve this offer: it fetched the issuer's .well-known metadata but got no matching credential configurations. This usually means the offer's `credential_issuer` URL doesn't point at the directory that serves the metadata (a known Inji Certify quirk — Inji Certify advertises http://…:8090 as the issuer but its well-known lives under /v1/certify/issuance/). Use Inji Web Wallet for Inji Certify offers, or ask the issuer admin to fix the credential_issuer URL.")
+	}
+	return fmt.Errorf("wallet claim failed: %s", truncateClaim(msg, 200))
 }
 
 // formatFromConfigID extracts the walt.id format key from a configuration

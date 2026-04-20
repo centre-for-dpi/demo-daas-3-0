@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"html/template"
 	"net/http"
 	"strings"
@@ -63,6 +65,20 @@ func (h *H) ScanOffer(w http.ResponseWriter, r *http.Request) {
 	h.renderFragment(w, r, "fragment_wallet_body", sess)
 }
 
+// explainPasteError rewrites the raw adapter error into an actionable
+// message for the wallet paste flow. ErrNotLinked is the common case — the
+// holder DPG is a redirect-style wallet (e.g. Inji Web) that requires an
+// eSignet login before it can claim anything. Point the user at
+// /holder/dpg so they can switch to a DPG that accepts raw offer URIs.
+func explainPasteError(err error, currentDpg string) string {
+	if errors.Is(err, backend.ErrNotLinked) {
+		return fmt.Sprintf(
+			"%q requires an eSignet login before it can receive offers — redirect-style wallets (like Inji Web) need an account link first. Two ways forward: (1) switch your holder DPG to Walt Community Stack on the DPG picker (it accepts raw openid-credential-offer:// URIs without linking), or (2) link the wallet's operator account first. Click “← Back” on the subtitle (or go to /holder/dpg) to switch.",
+			currentDpg)
+	}
+	return err.Error()
+}
+
 // PasteOffer processes a pasted offer URI. Renders the wallet body on both
 // success and failure so the user gets a visible result either way — toasts
 // can be missed (browser focus, quick fade) but an inline error banner
@@ -82,7 +98,7 @@ func (h *H) PasteOffer(w http.ResponseWriter, r *http.Request) {
 	}
 	cred, err := h.Adapter.ParseOffer(holderCtx(r, sess), raw)
 	if err != nil {
-		sess.LastWalletError = err.Error()
+		sess.LastWalletError = explainPasteError(err, sess.HolderDpg)
 		h.renderFragment(w, r, "fragment_wallet_body", sess)
 		return
 	}
