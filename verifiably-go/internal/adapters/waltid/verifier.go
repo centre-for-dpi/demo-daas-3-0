@@ -737,11 +737,18 @@ func extractVerifierState(authorizeURL string) string {
 	return ""
 }
 
+// isTerminalSession returns true when walt.id's verifier has a verdict —
+// and ONLY when a verdict exists. Previously we also treated "TokenResponse
+// set" as terminal, which caused a race: auto-polling lands between the
+// holder's submission arriving and walt.id finishing policy evaluation,
+// the session has TokenResponse but no verification flag yet, overallResult
+// returns false, the OOB swap stops polling, and the user sees a permanent
+// "Credential invalid" even though the eventual verdict was true. The
+// token-response fallback can't distinguish "policies still running" from
+// "policies finished with no result", so drop it — if walt.id hasn't set
+// a flag, we keep polling.
 func isTerminalSession(r sessionResult) bool {
-	if r.VerificationResult != nil || r.OverallVerificationResult != nil || r.Success != nil {
-		return true
-	}
-	return len(r.TokenResponse) > 0 && string(r.TokenResponse) != "null"
+	return r.VerificationResult != nil || r.OverallVerificationResult != nil || r.Success != nil
 }
 
 func overallResult(r sessionResult) bool {
