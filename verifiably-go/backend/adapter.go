@@ -257,6 +257,19 @@ type PresentationPreview struct {
 	// honors per-field filtering), "preferred" (JWT VC sends the whole
 	// credential anyway), or "none" (no explicit limit_disclosure).
 	Disclosure string
+	// Compatible is false when the backend's matcher would reject the
+	// picked credential (wrong format, missing claims, etc.). The consent
+	// UI uses this to block the Disclose button and surface a specific
+	// reason — better than letting the user click through and hit an
+	// opaque "no credential matches" error on the submit.
+	Compatible bool
+	// IncompatibleReason names the specific mismatch when Compatible is
+	// false. Rendered verbatim on the consent card.
+	IncompatibleReason string
+	// RequestedFormat is the credential format the verifier is asking
+	// for (e.g. "vc+sd-jwt"). Surfaced so the incompatibility banner can
+	// point at the exact format the operator would need to re-issue in.
+	RequestedFormat string
 }
 
 // PresentationField is one claim row on the consent page.

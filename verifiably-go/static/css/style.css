@@ -509,6 +509,18 @@ tr:hover td { background: var(--bg-elev); }
   padding-bottom: 0.75rem;
   border-bottom: 1px solid var(--line-soft);
 }
+/* Incompatible variant: border + header rail flip to error color so it's
+   obvious the credential can't be presented before the user scans claims. */
+.present-consent.incompatible { border-left-color: var(--err); }
+.present-consent-block {
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
+  background: color-mix(in srgb, var(--err) 10%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--err) 40%, var(--line));
+  border-left: 3px solid var(--err);
+  border-radius: 2px;
+  color: var(--ink);
+}
 
 /* ============================================================
    MODAL

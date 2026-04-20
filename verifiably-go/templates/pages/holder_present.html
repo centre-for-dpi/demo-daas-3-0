@@ -67,7 +67,7 @@
      credential is going (preferred/none). */}}
 {{define "fragment_present_consent"}}
 {{$pv := .Preview}}
-<div class="present-consent">
+<div class="present-consent {{if not $pv.Compatible}}incompatible{{end}}">
   <div class="caps" style="margin-bottom:0.5rem">Review what's being shared</div>
   <div class="present-consent-head">
     <div>
@@ -82,6 +82,19 @@
     </span>
   </div>
 
+  {{if not $pv.Compatible}}
+    {{/* Walt.id's matcher rejected this combination — block the submit
+         and show the specific reason. Renders before the claim list so
+         the operator reads "nope" first, not after scanning the rows. */}}
+    <div class="present-consent-block">
+      <div style="display:flex;align-items:center;gap:0.5rem">
+        <span style="font-size:1.2rem">✕</span>
+        <strong>Can't present this credential</strong>
+      </div>
+      <p style="margin:0.5rem 0 0;font-size:0.85rem">{{$pv.IncompatibleReason}}</p>
+    </div>
+  {{end}}
+
   {{if $pv.Fields}}
     <div class="caps" style="font-size:0.65rem;margin:1rem 0 0.5rem">Claims the verifier is asking for</div>
     <dl class="cred-rows">
@@ -90,40 +103,44 @@
         <dd>{{if .Value}}{{.Value}}{{else}}<em style="color:var(--ink-mute)">(not in this credential)</em>{{end}}</dd>
       {{end}}
     </dl>
-  {{else}}
+  {{else if $pv.Compatible}}
     <p style="font-size:0.85rem;color:var(--ink-soft);margin:1rem 0 0">
       The verifier didn't itemise individual claims — the whole credential would be shared if you disclose.
     </p>
   {{end}}
 
-  <p style="font-size:0.78rem;color:var(--ink-mute);margin-top:1rem;font-style:italic">
-    {{if eq $pv.Disclosure "required"}}
-      Only the claims above will leave your wallet. Other values stay hidden even though the full credential is in your wallet.
-    {{else if eq $pv.Disclosure "preferred"}}
-      The verifier prefers per-claim disclosure but this credential format can't actually restrict what's shared — the whole credential will be sent.
-    {{else}}
-      This verifier didn't set disclosure limits, so the whole credential will be sent.
-    {{end}}
-  </p>
+  {{if $pv.Compatible}}
+    <p style="font-size:0.78rem;color:var(--ink-mute);margin-top:1rem;font-style:italic">
+      {{if eq $pv.Disclosure "required"}}
+        Only the claims above will leave your wallet. Other values stay hidden even though the full credential is in your wallet.
+      {{else if eq $pv.Disclosure "preferred"}}
+        The verifier prefers per-claim disclosure but this credential format can't actually restrict what's shared — the whole credential will be sent.
+      {{else}}
+        This verifier didn't set disclosure limits, so the whole credential will be sent.
+      {{end}}
+    </p>
+  {{end}}
 
   <div class="btn-row" style="margin-top:1.5rem">
     <form style="display:inline"
           hx-post="/holder/present/decline"
           hx-target="#present-result"
           hx-swap="innerHTML">
-      <button class="btn ghost" type="submit">Decline</button>
+      <button class="btn ghost" type="submit">{{if $pv.Compatible}}Decline{{else}}Go back{{end}}</button>
     </form>
-    <form style="display:inline"
-          hx-post="/holder/present/submit"
-          hx-target="#present-result"
-          hx-swap="innerHTML"
-          hx-indicator="#consent-busy"
-          hx-disabled-elt="find button[type='submit']">
-      <input type="hidden" name="credential_id" value="{{$pv.CredentialID}}">
-      <input type="hidden" name="request_uri" value="{{.RequestURI}}">
-      <button class="btn" type="submit">Disclose →</button>
-    </form>
-    <span id="consent-busy" class="htmx-indicator" style="font-size:0.82rem;color:var(--ink-mute)">sending…</span>
+    {{if $pv.Compatible}}
+      <form style="display:inline"
+            hx-post="/holder/present/submit"
+            hx-target="#present-result"
+            hx-swap="innerHTML"
+            hx-indicator="#consent-busy"
+            hx-disabled-elt="find button[type='submit']">
+        <input type="hidden" name="credential_id" value="{{$pv.CredentialID}}">
+        <input type="hidden" name="request_uri" value="{{.RequestURI}}">
+        <button class="btn" type="submit">Disclose →</button>
+      </form>
+      <span id="consent-busy" class="htmx-indicator" style="font-size:0.82rem;color:var(--ink-mute)">sending…</span>
+    {{end}}
   </div>
 </div>
 {{end}}

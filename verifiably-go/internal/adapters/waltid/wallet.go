@@ -464,6 +464,13 @@ func (a *Adapter) fetchPresentationDefinition(ctx context.Context, requestURI st
 // requested fields against the holder's picked credential so the consent
 // page can show "what's about to be shared" before the actual submit.
 // Implements backend.PresentationPreviewer.
+//
+// Critically it also calls walt.id's match endpoint with the same PD the
+// SUBMIT will use, so we catch format mismatches up-front. Previously the
+// preview would happily render values from the held credential's cached
+// Fields map — even when the credential was in a format walt.id wouldn't
+// accept for this PD — and the submit then failed with "no credential
+// matching" after the user had already clicked Disclose.
 func (a *Adapter) PreviewPresentation(ctx context.Context, req backend.PresentCredentialRequest) (backend.PresentationPreview, error) {
 	sess, err := a.ensureWalletSession(ctx)
 	if err != nil {
@@ -473,6 +480,7 @@ func (a *Adapter) PreviewPresentation(ctx context.Context, req backend.PresentCr
 	preview := backend.PresentationPreview{
 		CredentialID:     req.CredentialID,
 		VerifierClientID: extractClientID(req.RequestURI),
+		Compatible:       true, // optimistic; downgraded below on match failure
 	}
 	// Locate the held credential so we can surface its field values.
 	creds, _ := a.ListWalletCredentials(ctx)
@@ -490,7 +498,8 @@ func (a *Adapter) PreviewPresentation(ctx context.Context, req backend.PresentCr
 	pd := a.fetchPresentationDefinition(authCtx, req.RequestURI)
 	if pd == nil {
 		// No PD we can parse — fall back to the whole credential's field
-		// set so the operator still sees what would be shared.
+		// set so the operator still sees what would be shared. Can't make
+		// a compatibility claim either way.
 		if held != nil {
 			for k, v := range held.Fields {
 				if k == "offer_uri" || k == "config_id" {
@@ -505,7 +514,90 @@ func (a *Adapter) PreviewPresentation(ctx context.Context, req backend.PresentCr
 		return preview, nil
 	}
 	preview.Disclosure, preview.Fields = describePDFields(pd, held)
+	preview.RequestedFormat = extractPDFormat(pd)
+
+	// Walt.id's wallet-api is the authority on whether a credential
+	// satisfies a PD. Ask it directly so the consent page reflects what
+	// the submit will actually do.
+	matches, ok := a.matchPD(authCtx, sess.WalletID, pd)
+	if !ok {
+		// Match endpoint unavailable (older wallet-api build). Leave
+		// Compatible=true; the pre-flight in PresentCredential handles
+		// the edge case at submit time. We'd rather show a misleading-
+		// but-useful consent than block the user on an infrastructure
+		// quirk.
+		return preview, nil
+	}
+	if len(matches) == 0 {
+		preview.Compatible = false
+		preview.IncompatibleReason = incompatibilityMessage(pd, creds, preview.RequestedFormat)
+		return preview, nil
+	}
+	// Match endpoint found SOMETHING — is the user's pick among them?
+	// Walt.id may re-emit credential ids per-call, so also accept any
+	// match whose JWT/SD-JWT body equals the held credential's.
+	for _, row := range matches {
+		var id string
+		_ = json.Unmarshal(row["id"], &id)
+		if id == req.CredentialID {
+			return preview, nil
+		}
+	}
+	preview.Compatible = false
+	preview.IncompatibleReason = fmt.Sprintf(
+		"the credential you picked isn't one of the %d credential(s) walt.id matched against this request — typically the picked credential is in a different format than the verifier asked for (%s). Go back and pick a credential that matches, or re-issue in the requested format.",
+		len(matches), preview.RequestedFormat)
 	return preview, nil
+}
+
+// extractPDFormat reads the first input_descriptor's format map and returns
+// the single key (walt.id always emits exactly one per descriptor).
+// Returns "" if the shape isn't what we expect.
+func extractPDFormat(pd map[string]any) string {
+	ds, _ := pd["input_descriptors"].([]any)
+	if len(ds) == 0 {
+		return ""
+	}
+	d, _ := ds[0].(map[string]any)
+	if d == nil {
+		return ""
+	}
+	fm, _ := d["format"].(map[string]any)
+	for k := range fm {
+		return k
+	}
+	return ""
+}
+
+// incompatibilityMessage produces the "why no match" sentence. If ANY held
+// credential's title matches what the verifier is asking for, name the
+// format mismatch specifically — that's the common "you have it, but in
+// the wrong format" case the operator actually needs to act on.
+func incompatibilityMessage(pd map[string]any, held []vctypes.Credential, wantFormat string) string {
+	wantType, _ := describePD(pd)
+	// Is there a held credential with the same title-ish type but wrong format?
+	for _, c := range held {
+		if strings.EqualFold(sanitizeIncompatibleName(c.Title), sanitizeIncompatibleName(wantType)) {
+			return fmt.Sprintf(
+				"your wallet has a %q but not in %s format (walt.id rejects format mismatches even when the type matches). Re-issue the credential in the requested format or pick a different credential type.",
+				c.Title, wantFormat)
+		}
+	}
+	return fmt.Sprintf(
+		"your wallet has no credential matching this request (verifier asked for %s in %s format). Accept a matching offer first, then try again.",
+		wantType, wantFormat)
+}
+
+// sanitizeIncompatibleName strips spaces + punctuation so "Open Badge
+// Credential" compares equal to "OpenBadgeCredential".
+func sanitizeIncompatibleName(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	return strings.ToLower(b.String())
 }
 
 // describePDFields extracts the requested field list from a PD and pairs

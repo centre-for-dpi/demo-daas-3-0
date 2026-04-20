@@ -115,6 +115,8 @@ try {
       title: card.querySelector('h3')?.textContent?.trim(),
       requested_by: card.querySelector('.mono')?.textContent?.trim(),
       disclosure_pill: card.querySelector('.pill')?.textContent?.trim(),
+      incompatible_class: card.classList.contains('incompatible'),
+      incompatible_banner: card.querySelector('.present-consent-block')?.innerText?.trim().slice(0, 400),
       claim_rows: [...card.querySelectorAll('dl.cred-rows dt')].map((dt, i) => ({
         claim: dt.textContent.trim(),
         value: dt.nextElementSibling?.textContent?.trim(),
