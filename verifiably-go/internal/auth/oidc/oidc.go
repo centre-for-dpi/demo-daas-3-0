@@ -114,19 +114,25 @@ func (p *Provider) discover(ctx context.Context) (*discoveryMeta, error) {
 		return nil, fmt.Errorf("discover: missing endpoints in %s", u)
 	}
 	// Most IdPs return endpoint URLs built from their OWN advertised base
-	// (e.g. https://localhost:9443). When the server talks to them via a
-	// different base (https://wso2is:9443), those advertised URLs are
-	// unreachable from our process. Rewrite every endpoint to the
-	// server-reachable form; AuthorizeURL() flips back to the public form
-	// when sending the URL to the browser.
-	if p.cfg.PublicIssuerURL != "" && p.cfg.IssuerURL != "" && p.cfg.PublicIssuerURL != p.cfg.IssuerURL {
-		swap := func(s string) string {
-			return strings.Replace(s, p.cfg.PublicIssuerURL, p.cfg.IssuerURL, 1)
-		}
-		m.AuthorizationEndpoint = swap(m.AuthorizationEndpoint)
-		m.TokenEndpoint = swap(m.TokenEndpoint)
-		m.UserinfoEndpoint = swap(m.UserinfoEndpoint)
-		m.JWKSURI = swap(m.JWKSURI)
+	// (e.g. WSO2IS hard-codes https://localhost:9443). When the server
+	// talks to them via a different hostname (https://wso2is:9443), those
+	// advertised URLs are unreachable from our process. Rewrite every
+	// endpoint's authority (scheme://host:port) to match IssuerURL so
+	// server-side calls hit the right container. AuthorizeURL() flips
+	// back to PublicIssuerURL's authority when sending the URL to the
+	// browser.
+	//
+	// The old code tried a string-replace against PublicIssuerURL, which
+	// failed whenever the IdP advertised a THIRD variant (localhost) that
+	// matched neither Public nor Internal. Authority-level rewriting
+	// catches that case since it doesn't depend on the discovered URL
+	// sharing any prefix with what we configured.
+	internalAuthority := urlAuthority(p.cfg.IssuerURL)
+	if internalAuthority != "" {
+		m.AuthorizationEndpoint = swapAuthority(m.AuthorizationEndpoint, internalAuthority)
+		m.TokenEndpoint = swapAuthority(m.TokenEndpoint, internalAuthority)
+		m.UserinfoEndpoint = swapAuthority(m.UserinfoEndpoint, internalAuthority)
+		m.JWKSURI = swapAuthority(m.JWKSURI, internalAuthority)
 	}
 	p.meta = &m
 	return p.meta, nil
@@ -136,20 +142,17 @@ func (p *Provider) discover(ctx context.Context) (*discoveryMeta, error) {
 // pkceVerifier is the random high-entropy string the caller must store on the
 // session and replay into Exchange — it's used to compute the S256 challenge.
 //
-// When the provider is configured with PublicIssuerURL, we rewrite the
-// discovered authorize endpoint so the browser-visible redirect uses the
-// public hostname even though server-side discovery went through the
-// docker-internal one.
+// When the provider is configured with PublicIssuerURL, we flip the
+// authorize endpoint's authority (scheme://host:port) to the browser-reachable
+// form even though server-side discovery went through the docker-internal one.
 func (p *Provider) AuthorizeURL(ctx context.Context, state, pkceVerifier, redirectURI string) (string, error) {
 	m, err := p.discover(ctx)
 	if err != nil {
 		return "", err
 	}
 	authorize := m.AuthorizationEndpoint
-	if p.cfg.PublicIssuerURL != "" && p.cfg.IssuerURL != "" {
-		// Replace the internal base with the public one. Only the host:port
-		// component needs to change; the realm path stays intact.
-		authorize = strings.Replace(authorize, p.cfg.IssuerURL, p.cfg.PublicIssuerURL, 1)
+	if publicAuthority := urlAuthority(p.cfg.PublicIssuerURL); publicAuthority != "" {
+		authorize = swapAuthority(authorize, publicAuthority)
 	}
 	q := url.Values{
 		"response_type":         {"code"},
@@ -286,6 +289,45 @@ func NewState() string {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
 	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+// urlAuthority extracts "scheme://host:port" from a URL, discarding the path
+// and query. Returns "" on parse failure. Used for the discovery-rewrite
+// dance where we only want to change which host serves an endpoint, not
+// which realm path the endpoint sits under.
+func urlAuthority(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
+}
+
+// swapAuthority replaces the scheme+host+port of endpoint with the given
+// authority, preserving the path and query. Returns endpoint unchanged on
+// parse failure or when authority is empty. This lets us rebase a
+// discovered URL (https://localhost:9443/oauth2/token?a=b) onto a different
+// host (https://wso2is:9443/oauth2/token?a=b) without caring what the
+// original authority was — works against localhost, 127.0.0.1, or any
+// other host the IdP might advertise.
+func swapAuthority(endpoint, authority string) string {
+	if endpoint == "" || authority == "" {
+		return endpoint
+	}
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return endpoint
+	}
+	a, err := url.Parse(authority)
+	if err != nil || a.Scheme == "" || a.Host == "" {
+		return endpoint
+	}
+	u.Scheme = a.Scheme
+	u.Host = a.Host
+	return u.String()
 }
 
 func decodeString(m map[string]json.RawMessage, key string) (string, bool) {
