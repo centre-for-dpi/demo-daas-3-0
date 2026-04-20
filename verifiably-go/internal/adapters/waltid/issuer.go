@@ -373,6 +373,13 @@ type issuanceRequest struct {
 	AuthenticationMethod      string          `json:"authenticationMethod,omitempty"`
 	IssuerDid                 string          `json:"issuerDid,omitempty"`
 	StandardVersion           string          `json:"standardVersion,omitempty"`
+	// SelectiveDisclosure is walt.id's SDMap JSON — for each top-level
+	// claim, {sd: true} makes it a selectively-disclosable disclosure in
+	// the issued SD-JWT; omitted means the claim stays in the JWT in the
+	// clear. Without this, walt.id bakes every claim into the JWT and the
+	// issued SD-JWT has zero disclosures — so selective presentation can't
+	// actually hide anything. Only set on SD-JWT issuance paths.
+	SelectiveDisclosure json.RawMessage `json:"selectiveDisclosure,omitempty"`
 }
 
 // IssueToWallet issues a credential to the holder via OID4VCI. Walt.id returns
@@ -424,12 +431,23 @@ func (a *Adapter) IssueToWallet(ctx context.Context, req backend.IssueRequest) (
 		}
 		ir.MdocData = mdocData
 	case "sd_jwt_vc (IETF)":
-		cd, err := buildCredentialData(req.Schema, req.SubjectData)
+		// SD-JWT VC issuance expects credentialData with TOP-LEVEL claim
+		// keys (no VCDM @context / type / credentialSubject wrapping).
+		// Walt.id's SDMap matches these same top-level keys to decide
+		// which become disclosures; a VCDM-wrapped body only makes
+		// "credentialSubject" itself disclosable, leaving the individual
+		// claims baked into the JWT.
+		cd, err := buildSDJWTCredentialData(req.SubjectData)
 		if err != nil {
 			return backend.IssueToWalletResult{}, err
 		}
-		ir.Vct = req.Schema.ID
+		if req.Schema.Vct != "" {
+			ir.Vct = req.Schema.Vct
+		} else {
+			ir.Vct = req.Schema.ID
+		}
 		ir.CredentialData = cd
+		ir.SelectiveDisclosure = buildSelectiveDisclosureMap(req.SubjectData)
 	default:
 		cd, err := buildCredentialData(req.Schema, req.SubjectData)
 		if err != nil {
@@ -557,6 +575,46 @@ func authenticationMethod(flow string) string {
 	default:
 		return strings.ToUpper(flow)
 	}
+}
+
+// buildSDJWTCredentialData builds the top-level-claims credentialData that
+// walt.id's /openid4vc/sdjwt/issue expects. Unlike the VCDM JWT flow (which
+// nests under credentialSubject), SD-JWT VC puts each claim at the payload
+// root so walt.id's SDMap can mark individual claims as selectively
+// disclosable.
+func buildSDJWTCredentialData(subject map[string]string) (json.RawMessage, error) {
+	out := make(map[string]any, len(subject))
+	for k, v := range subject {
+		out[k] = v
+	}
+	return json.Marshal(out)
+}
+
+// buildSelectiveDisclosureMap emits walt.id's SDMap JSON for SD-JWT issuance.
+// Every top-level claim from the subject data becomes a selectively-
+// disclosable disclosure ({sd: true}), so the holder can later reveal
+// them one-by-one during a VP. decoyMode is NONE (no decoy digests) to
+// keep the output deterministic; walt.id accepts decoys>0 for privacy-
+// hardening production flows but it complicates the test matrix.
+//
+// Without this, walt.id bakes every claim into the signed JWT in the
+// clear and the resulting "SD-JWT" has zero disclosures — making
+// selective disclosure at presentation time physically impossible.
+func buildSelectiveDisclosureMap(subject map[string]string) json.RawMessage {
+	fields := make(map[string]any, len(subject))
+	for k := range subject {
+		fields[k] = map[string]any{"sd": true}
+	}
+	m := map[string]any{
+		"fields":    fields,
+		"decoyMode": "NONE",
+		"decoys":    0,
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return nil
+	}
+	return b
 }
 
 // buildMdocData constructs the namespace-keyed body walt.id's mdoc issuer

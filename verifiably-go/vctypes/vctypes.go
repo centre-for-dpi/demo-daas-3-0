@@ -74,6 +74,15 @@ type Schema struct {
 	// Variants[i].ID is the configuration id to submit if the user picks
 	// that format. Empty for custom schemas (format is fixed by Std).
 	Variants []SchemaVariant
+
+	// Vct mirrors the selected variant's Vct (the SD-JWT VC issuer-
+	// advertised credential type URL, e.g.
+	// "http://localhost:7002/draft13/OpenBadgeCredential"). ApplyVariant
+	// copies it onto the Schema so downstream code (walt.id's SD-JWT
+	// issuance body) can set the credential's vct claim correctly —
+	// using Schema.ID instead produces a vct that doesn't match the PD
+	// filter walt.id's verifier advertises for the same credential.
+	Vct string
 }
 
 // SchemaVariant is one available wire-format for a credential type. Label
@@ -122,12 +131,21 @@ func (s Schema) HasVariantID(id string) bool {
 // buildCredentialData) see the user's chosen format on the Schema itself.
 func (s Schema) ApplyVariant(id string) Schema {
 	if s.ID == id {
+		// Populate Vct even for the default variant so SD-JWT issuance
+		// doesn't fall back to Schema.ID.
+		for _, v := range s.Variants {
+			if v.ID == id {
+				s.Vct = v.Vct
+				return s
+			}
+		}
 		return s
 	}
 	for _, v := range s.Variants {
 		if v.ID == id {
 			s.ID = v.ID
 			s.Std = v.Std
+			s.Vct = v.Vct
 			return s
 		}
 	}
@@ -177,6 +195,12 @@ type Credential struct {
 	Title  string
 	Issuer string
 	Type   string
+	// Format is the wire format the backend stored this credential in,
+	// e.g. "jwt_vc_json" or "vc+sd-jwt". Used in UI pickers so the user
+	// can distinguish multiple credentials of the same name that differ
+	// only by format — otherwise a picker showing "Open Badge Credential"
+	// twice is impossible to choose from correctly.
+	Format string
 	Status string // "pending" | "accepted"
 	Source string // "scan" | "paste" | "inbox" — how the holder received it
 	Fields map[string]string

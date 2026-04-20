@@ -379,7 +379,16 @@ func (a *Adapter) PresentCredential(ctx context.Context, req backend.PresentCred
 		"presentationRequest": req.RequestURI,
 		"selectedCredentials": []string{credID},
 	}
-	if len(req.DisclosedClaim) > 0 {
+	// Selective-disclosure filtering: walt.id's VP builder otherwise
+	// returns ALL disclosures in the SD-JWT, which fails the verifier's
+	// limit_disclosure=required constraint. Read the held credential's
+	// raw disclosures + the PD's requested field paths and only pass
+	// through the ones that match.
+	if pd != nil {
+		if disc := a.selectRequestedDisclosures(authCtx, sess.WalletID, credID, pd); len(disc) > 0 {
+			body["disclosures"] = map[string][]string{credID: disc}
+		}
+	} else if len(req.DisclosedClaim) > 0 {
 		body["disclosures"] = map[string][]string{credID: req.DisclosedClaim}
 	}
 	respRaw, err := a.wallet.DoRaw(authCtx, "POST",
@@ -521,11 +530,6 @@ func (a *Adapter) PreviewPresentation(ctx context.Context, req backend.PresentCr
 	// the submit will actually do.
 	matches, ok := a.matchPD(authCtx, sess.WalletID, pd)
 	if !ok {
-		// Match endpoint unavailable (older wallet-api build). Leave
-		// Compatible=true; the pre-flight in PresentCredential handles
-		// the edge case at submit time. We'd rather show a misleading-
-		// but-useful consent than block the user on an infrastructure
-		// quirk.
 		return preview, nil
 	}
 	if len(matches) == 0 {
@@ -533,9 +537,6 @@ func (a *Adapter) PreviewPresentation(ctx context.Context, req backend.PresentCr
 		preview.IncompatibleReason = incompatibilityMessage(pd, creds, preview.RequestedFormat)
 		return preview, nil
 	}
-	// Match endpoint found SOMETHING — is the user's pick among them?
-	// Walt.id may re-emit credential ids per-call, so also accept any
-	// match whose JWT/SD-JWT body equals the held credential's.
 	for _, row := range matches {
 		var id string
 		_ = json.Unmarshal(row["id"], &id)
@@ -543,11 +544,125 @@ func (a *Adapter) PreviewPresentation(ctx context.Context, req backend.PresentCr
 			return preview, nil
 		}
 	}
+	// The user picked something walt.id wouldn't accept, but walt.id DID
+	// find a compatible credential in this same wallet. Auto-swap to it —
+	// the user's wallet has multiple credentials of the same title and
+	// they can't tell from the UI which one is the compatible one.
+	// Refreshing the values from the match's parsedDocument keeps the
+	// consent card honest about what's in the picked credential.
+	var autoID string
+	_ = json.Unmarshal(matches[0]["id"], &autoID)
+	if autoID != "" {
+		preview.CredentialID = autoID
+		// Re-pair field values against the auto-selected credential.
+		for i := range creds {
+			if creds[i].ID == autoID {
+				_, preview.Fields = describePDFields(pd, &creds[i])
+				preview.CredentialTitle = creds[i].Title
+				break
+			}
+		}
+		return preview, nil
+	}
+	// No usable id in the match rows — fall back to incompatibility.
 	preview.Compatible = false
 	preview.IncompatibleReason = fmt.Sprintf(
-		"the credential you picked isn't one of the %d credential(s) walt.id matched against this request — typically the picked credential is in a different format than the verifier asked for (%s). Go back and pick a credential that matches, or re-issue in the requested format.",
+		"walt.id found %d compatible credential(s) but couldn't surface an id to auto-select. Go back and pick a %s credential manually.",
 		len(matches), preview.RequestedFormat)
 	return preview, nil
+}
+
+// selectRequestedDisclosures returns the subset of SD-JWT disclosures for
+// credID that the verifier's PD requests. Walt.id's wallet-api stores the
+// raw disclosure strings separately from the JWS; we fetch the credential,
+// decode each base64url(JSON([salt, claim, value])) disclosure, and keep
+// only those whose claim name maps to a path in the PD's
+// constraints.fields. An empty return means either no match (the PD's
+// paths don't correspond to any disclosure) or the credential isn't an
+// SD-JWT (disclosures field empty) — both cases are caller-safe; walt.id
+// falls back to "include everything" which fails the verifier's
+// limit_disclosure policy, so the caller should interpret "" as "can't
+// selectively disclose for this combo".
+func (a *Adapter) selectRequestedDisclosures(ctx context.Context, walletID, credID string, pd map[string]any) []string {
+	// Pull the single credential to access its raw disclosures.
+	var cred map[string]json.RawMessage
+	if err := a.wallet.DoJSON(ctx, http.MethodGet,
+		fmt.Sprintf("/wallet-api/wallet/%s/credentials/%s", walletID, url.PathEscape(credID)),
+		nil, &cred, nil); err != nil {
+		log.Printf("waltid: fetch credential for disclosures: %v", err)
+		return nil
+	}
+	var discStr string
+	if err := json.Unmarshal(cred["disclosures"], &discStr); err != nil || discStr == "" {
+		return nil
+	}
+	// Disclosures come as `~`-separated base64url strings.
+	items := []string{}
+	for _, p := range strings.Split(discStr, "~") {
+		if p = strings.TrimSpace(p); p != "" {
+			items = append(items, p)
+		}
+	}
+	// Requested claim names from the PD (strip the JSONPath prefixes).
+	wanted := map[string]bool{}
+	ds, _ := pd["input_descriptors"].([]any)
+	for _, d := range ds {
+		dm, _ := d.(map[string]any)
+		if dm == nil {
+			continue
+		}
+		cons, _ := dm["constraints"].(map[string]any)
+		if cons == nil {
+			continue
+		}
+		fields, _ := cons["fields"].([]any)
+		for _, f := range fields {
+			fm, _ := f.(map[string]any)
+			if fm == nil {
+				continue
+			}
+			paths, _ := fm["path"].([]any)
+			for _, p := range paths {
+				s, _ := p.(string)
+				name := claimNameFromPath(s)
+				if name != "" {
+					wanted[name] = true
+				}
+			}
+		}
+	}
+	// Filter disclosures: each is base64url([salt, claim, value]).
+	out := []string{}
+	for _, d := range items {
+		claim := claimNameOfDisclosure(d)
+		if claim != "" && wanted[claim] {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// claimNameOfDisclosure base64url-decodes an SD-JWT disclosure and returns
+// its claim name. Returns "" on any decode / shape failure.
+func claimNameOfDisclosure(d string) string {
+	raw, err := base64.RawURLEncoding.DecodeString(d)
+	if err != nil {
+		// try standard + padding
+		raw, err = base64.URLEncoding.DecodeString(d + strings.Repeat("=", (4-len(d)%4)%4))
+		if err != nil {
+			return ""
+		}
+	}
+	var arr []any
+	if err := json.Unmarshal(raw, &arr); err != nil {
+		return ""
+	}
+	if len(arr) >= 3 {
+		if s, ok := arr[1].(string); ok {
+			return s
+		}
+	}
+	return ""
 }
 
 // extractPDFormat reads the first input_descriptor's format map and returns
@@ -861,6 +976,7 @@ func walletCredentialToVctype(raw map[string]json.RawMessage) vctypes.Credential
 		ID:     id,
 		Status: "accepted",
 		Type:   stdFromFormat(format),
+		Format: format,
 		Fields: map[string]string{},
 	}
 
@@ -876,12 +992,43 @@ func walletCredentialToVctype(raw map[string]json.RawMessage) vctypes.Credential
 		if err := json.Unmarshal(parsed["type"], &types); err == nil && len(types) > 1 {
 			cred.Title = humanise(types[len(types)-1])
 		}
+		// SD-JWT VC's `vct` sits at the root of the payload (not in
+		// credentialSubject). Surface it for verifier-side debugging +
+		// for the Title fallback on SD-JWT creds that don't carry a
+		// `type` array.
+		if vctRaw := parsed["vct"]; vctRaw != nil {
+			var vct string
+			if err := json.Unmarshal(vctRaw, &vct); err == nil && vct != "" {
+				cred.Fields["vct"] = vct
+				if cred.Title == "" {
+					if i := strings.LastIndex(vct, "/"); i >= 0 {
+						cred.Title = humanise(vct[i+1:])
+					} else {
+						cred.Title = humanise(vct)
+					}
+				}
+			}
+		}
 		var subject map[string]any
 		if err := json.Unmarshal(parsed["credentialSubject"], &subject); err == nil {
 			for k, v := range subject {
 				if k == "id" {
 					continue
 				}
+				cred.Fields[k] = stringifyClaim(v)
+			}
+		}
+		// For SD-JWT, top-level claims ARE the credential subject.
+		// Walk root-level primitive keys (excluding SD control fields).
+		for k, raw := range parsed {
+			if k == "_sd" || k == "_sd_alg" || k == "cnf" || k == "iss" ||
+				k == "iat" || k == "exp" || k == "nbf" || k == "sub" ||
+				k == "vct" || k == "status" || k == "type" || k == "@context" ||
+				k == "credentialSubject" || k == "issuer" || k == "id" {
+				continue
+			}
+			var v any
+			if err := json.Unmarshal(raw, &v); err == nil {
 				cred.Fields[k] = stringifyClaim(v)
 			}
 		}

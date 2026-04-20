@@ -28,9 +28,12 @@
       {{if .Body.Credentials}}
         <select name="credential_id" required style="width:100%;padding:0.6rem;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:2px">
           {{range .Body.Credentials}}
-            <option value="{{.ID}}" {{if eq $.Body.PreselectCredentialID .ID}}selected{{end}}>{{.Title}} — {{.Issuer}}</option>
+            <option value="{{.ID}}" data-format="{{.Format}}" {{if eq $.Body.PreselectCredentialID .ID}}selected{{end}}>{{.Title}}{{if .Format}} · {{.Format}}{{end}} — {{.Issuer}}</option>
           {{end}}
         </select>
+        <p style="font-size:0.75rem;color:var(--ink-mute);margin:0.35rem 0 0;font-style:italic">
+          Pick the credential whose format matches what the verifier asked for — "vc+sd-jwt" for SD-JWT requests, "jwt_vc_json" for W3C JWT, etc.
+        </p>
       {{else}}
         <div style="padding:0.75rem;background:var(--bg-elev);border:1px dashed var(--line);border-radius:2px;font-size:0.85rem;color:var(--ink-mute)">
           No credentials in your wallet yet. <a href="/holder/wallet" style="color:var(--accent)">Accept an offer first →</a>
