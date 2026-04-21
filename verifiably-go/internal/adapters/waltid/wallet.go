@@ -3,6 +3,7 @@ package waltid
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -55,25 +56,24 @@ type walletRef struct {
 	Permission  string `json:"permission"`
 }
 
-// ensureWalletSession registers-or-logs-in the configured demo account and
-// caches a session token + wallet id. All wallet calls funnel through this.
+// ensureWalletSession registers-or-logs-in a walt.id account for the
+// calling user and caches a session token + wallet id. Each unique user
+// identity (read from ctx via backend.HolderIdentityFromContext) gets
+// its own walt.id account and its own wallet — so switching users
+// switches credentials, not just OIDC sessions. Empty identity falls
+// back to the configured demo account for pre-auth / single-user mode.
 func (a *Adapter) ensureWalletSession(ctx context.Context) (*walletSession, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.session != nil {
-		return a.session, nil
-	}
+	userKey := backend.HolderIdentityFromContext(ctx)
+	acc := a.accountForUser(userKey)
+	cacheKey := acc.Email
 
-	acc := a.cfg.DemoAccount
-	if acc.Email == "" {
-		acc.Email = "verifiably-demo@example.org"
+	a.mu.Lock()
+	if s, ok := a.sessions[cacheKey]; ok {
+		a.mu.Unlock()
+		return s, nil
 	}
-	if acc.Password == "" {
-		acc.Password = generatePassword()
-	}
-	if acc.Name == "" {
-		acc.Name = "Verifiably Demo"
-	}
+	a.mu.Unlock()
+
 	body := accountRequest{
 		Type:     "email",
 		Name:     acc.Name,
@@ -101,8 +101,70 @@ func (a *Adapter) ensureWalletSession(ctx context.Context) (*walletSession, erro
 	if len(wl.Wallets) == 0 {
 		return nil, fmt.Errorf("wallet login: no wallets for account")
 	}
-	a.session = &walletSession{Token: tok.Token, WalletID: wl.Wallets[0].ID}
-	return a.session, nil
+
+	sess := &walletSession{Token: tok.Token, WalletID: wl.Wallets[0].ID}
+	a.mu.Lock()
+	a.sessions[cacheKey] = sess
+	a.mu.Unlock()
+	return sess, nil
+}
+
+// accountForUser derives the walt.id account credentials for a given
+// verifiably-go identity. When userKey is empty we use the configured
+// demo account (legacy single-user mode). Otherwise every distinct key
+// maps to a unique email / deterministic password — deterministic so a
+// user who logs in again after a restart recovers their same walt.id
+// wallet (and its stored credentials) rather than landing in a fresh
+// empty one.
+func (a *Adapter) accountForUser(userKey string) Account {
+	if userKey == "" {
+		acc := a.cfg.DemoAccount
+		if acc.Email == "" {
+			acc.Email = "verifiably-demo@example.org"
+		}
+		if acc.Password == "" {
+			acc.Password = generatePassword()
+		}
+		if acc.Name == "" {
+			acc.Name = "Verifiably Demo"
+		}
+		return acc
+	}
+	// Deterministic slug for use in an email local-part. The
+	// verifiably-demo.local hostname is a placeholder — walt.id's
+	// accounts DB doesn't send anything to it.
+	slug := emailSlug(userKey)
+	return Account{
+		Name:     userKey,
+		Email:    slug + "@verifiably-demo.local",
+		Password: deterministicPassword(userKey),
+	}
+}
+
+// emailSlug normalises a user key (usually an email) into a short,
+// deterministic, email-local-part-safe identifier. Callers only need
+// uniqueness + consistency across logins; walt.id doesn't parse it.
+func emailSlug(key string) string {
+	sum := sha256Hex(key)
+	if len(sum) > 16 {
+		sum = sum[:16]
+	}
+	return "u-" + sum
+}
+
+// deterministicPassword produces a stable password from the user key so
+// re-logging in after a walt.id restart finds the same account. Using
+// the sha256 of key+a static salt so the password isn't literally the
+// key echoed back.
+func deterministicPassword(key string) string {
+	return "pw-" + sha256Hex("verifiably|"+key)
+}
+
+// sha256Hex returns the hex-encoded sha256 of s — tiny helper for the
+// email-slug / password derivation above.
+func sha256Hex(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
 }
 
 // DeleteWalletCredential removes a held credential from the walt.id wallet.

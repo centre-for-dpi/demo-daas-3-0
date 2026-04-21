@@ -35,7 +35,12 @@ type Adapter struct {
 	mu        sync.Mutex
 	issuerKey json.RawMessage // JWK wrapper from /onboard/issuer
 	issuerDID string
-	session   *walletSession
+	// sessions partitions walt.id wallet state by the per-user identity
+	// key the handler injects via backend.WithHolderIdentity. Each caller
+	// gets their own walt.id account + walletId so one user's credentials
+	// never leak into another's inbox. Empty key hits the legacy shared
+	// demo account — covers the pre-OIDC single-user demo mode.
+	sessions map[string]*walletSession
 }
 
 // walletSession is the bootstrapped wallet-api state: a session JWT + a
@@ -61,6 +66,7 @@ func New(cfg Config, vendor string) (*Adapter, error) {
 		wallet:    httpx.New(cfg.WalletBaseURL),
 		issuerKey: cfg.IssuerKey,
 		issuerDID: cfg.IssuerDID,
+		sessions:  map[string]*walletSession{},
 	}, nil
 }
 

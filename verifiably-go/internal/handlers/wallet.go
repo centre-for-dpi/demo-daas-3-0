@@ -18,7 +18,16 @@ import (
 // Used by every wallet.go handler that touches the Adapter; safe to call even
 // when sess.HolderDpg is "" (WithHolderDpg is a no-op).
 func holderCtx(r *http.Request, sess *Session) context.Context {
-	return backend.WithHolderDpg(r.Context(), sess.HolderDpg)
+	ctx := backend.WithHolderDpg(r.Context(), sess.HolderDpg)
+	// Partition upstream wallet state per authenticated user. Prefer the
+	// OIDC email (stable across restarts as long as the wallet backend
+	// persists its accounts DB); fall back to the verifiably-go session
+	// id so unauthenticated demo users still get isolated wallets.
+	userKey := sess.UserEmail
+	if userKey == "" {
+		userKey = "session-" + sess.ID
+	}
+	return backend.WithHolderIdentity(ctx, userKey)
 }
 
 // ShowWallet renders the wallet home (receive + inbox + held credentials).
