@@ -24,8 +24,13 @@
                  {{if eq .Body.SelectedScale "bulk"}}checked{{end}}>
           <span>
             <div class="caps">Many credentials</div>
-            <h3>Bulk from CSV</h3>
-            <p>Upload a CSV, preview matching/mismatching rows, then issue in batch.</p>
+            <h3>Bulk issuance</h3>
+            <p>Pick a source on the next screen — upload a CSV, pull rows from a secured API (e.g. X-Road), or run a SELECT against a country-provided database. Preview per-row results, then issue in batch.</p>
+            <div class="req" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-top:0.5rem">
+              <span class="pill ok">CSV</span>
+              <span class="pill ok">Secured API</span>
+              <span class="pill ok">Database</span>
+            </div>
           </span>
         </label>
 
