@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/verifiably/verifiably-go/backend"
@@ -31,6 +32,35 @@ type H struct {
 }
 
 // isHTMX returns true if the request came from HTMX.
+// externalScheme returns "http" or "https" honoring X-Forwarded-Proto when
+// the request came through a reverse proxy (Caddy, nginx). Falls back to
+// inspecting r.TLS for direct connections.
+func externalScheme(r *http.Request) string {
+	if xfp := r.Header.Get("X-Forwarded-Proto"); xfp != "" {
+		// Take the first value if the header is comma-separated (chained proxies).
+		if i := strings.IndexByte(xfp, ','); i >= 0 {
+			xfp = xfp[:i]
+		}
+		return strings.TrimSpace(xfp)
+	}
+	if r.TLS != nil {
+		return "https"
+	}
+	return "http"
+}
+
+// externalHost returns the hostname the client used, preferring X-Forwarded-Host
+// from a reverse proxy over r.Host (which is the internal upstream's view).
+func externalHost(r *http.Request) string {
+	if xfh := r.Header.Get("X-Forwarded-Host"); xfh != "" {
+		if i := strings.IndexByte(xfh, ','); i >= 0 {
+			xfh = xfh[:i]
+		}
+		return strings.TrimSpace(xfh)
+	}
+	return r.Host
+}
+
 func isHTMX(r *http.Request) bool {
 	return r.Header.Get("HX-Request") == "true"
 }
@@ -337,6 +367,10 @@ func (h *H) Auth(w http.ResponseWriter, r *http.Request) {
 		h.redirect(w, r, "/")
 		return
 	}
+	// Clear any prior auth state so revisiting /auth behaves like a fresh
+	// login — the user always sees the provider picker as a choice, never
+	// as a confirmation of an already-authenticated session.
+	sess.AuthOK = false
 	var providers []auth.Descriptor
 	if h.AuthReg != nil {
 		providers = h.AuthReg.Descriptors()
@@ -398,11 +432,7 @@ func (h *H) StartAuth(w http.ResponseWriter, r *http.Request) {
 	sess.PendingProvider = p.ID()
 	sess.PendingState = state
 	sess.PendingPKCE = verifier
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	redirect := scheme + "://" + r.Host + "/auth/callback"
+	redirect := externalScheme(r) + "://" + externalHost(r) + "/auth/callback"
 	url, err := p.AuthorizeURL(r.Context(), state, verifier, redirect)
 	if err != nil {
 		h.errorToast(w, r, err.Error())
@@ -430,11 +460,7 @@ func (h *H) AuthCallback(w http.ResponseWriter, r *http.Request) {
 		h.errorToast(w, r, "Auth provider no longer configured")
 		return
 	}
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	redirect := scheme + "://" + r.Host + "/auth/callback"
+	redirect := externalScheme(r) + "://" + externalHost(r) + "/auth/callback"
 	tok, err := p.Exchange(r.Context(), q.Get("code"), sess.PendingPKCE, redirect)
 	if err != nil {
 		h.errorToast(w, r, "Token exchange: "+err.Error())
