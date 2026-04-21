@@ -2,6 +2,7 @@ package injicertify
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -23,8 +24,15 @@ type Adapter struct {
 	Vendor string
 	client *httpx.Client
 
-	mu           sync.Mutex
+	mu             sync.Mutex
 	authCodeOffers map[string]json.RawMessage
+	// pdfBlobs: id → rendered PDF bytes. Populated by pre-auth direct-to-PDF
+	// issuance; served by /issuer/issue/pdf/{id}.
+	pdfBlobs map[string][]byte
+	// pdfKey signs proof-of-possession JWTs for the pre-auth direct-to-PDF
+	// flow. Adapter-held because no holder wallet participates. Lazily
+	// generated on first use; rotated whenever the container restarts.
+	pdfKey *ecdsa.PrivateKey
 }
 
 // New constructs an Adapter.
@@ -37,12 +45,13 @@ func New(cfg Config, vendor string) (*Adapter, error) {
 		Vendor:         vendor,
 		client:         httpx.New(cfg.BaseURL),
 		authCodeOffers: map[string]json.RawMessage{},
+		pdfBlobs:       map[string][]byte{},
 	}, nil
 }
 
 // OfferJSON returns the raw credential_offer JSON for a stored Auth-Code offer.
-// Verifiably-go's /offers/{slug}/{id} route uses this to serve the
-// offer to wallets that dereference by-reference URIs.
+// Verifiably-go's /offers/{slug}/{id} route uses this to serve the offer to
+// wallets that dereference by-reference URIs.
 func (a *Adapter) OfferJSON(id string) (json.RawMessage, bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()

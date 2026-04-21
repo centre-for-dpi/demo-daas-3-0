@@ -184,11 +184,19 @@
     A4, single page, human-readable fields + embedded credential QR (~{{.PDFResult.PayloadSizeKB}} KB).
   </div>
   <div class="btn-row">
-    <button class="btn"
-            hx-post="/issuer/issue/preview-pdf"
-            hx-target="#modal-root"
-            hx-swap="innerHTML">Preview PDF</button>
-    <button class="btn ghost" onclick="toast('Download started (simulated)')">Download .pdf</button>
+    {{if .PDFResult.DownloadID}}
+      <a class="btn" href="/issuer/issue/pdf/{{.PDFResult.DownloadID}}" download>Download your credential</a>
+      <button class="btn ghost"
+              hx-post="/issuer/issue/preview-pdf"
+              hx-target="#modal-root"
+              hx-swap="innerHTML">Preview</button>
+    {{else}}
+      <button class="btn"
+              hx-post="/issuer/issue/preview-pdf"
+              hx-target="#modal-root"
+              hx-swap="innerHTML">Preview PDF</button>
+      <button class="btn ghost" onclick="toast('This DPG reports PDF as metadata only — no blob to download')">Download .pdf</button>
+    {{end}}
   </div>
 </div>
 {{end}}

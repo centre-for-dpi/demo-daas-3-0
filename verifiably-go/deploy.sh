@@ -92,7 +92,7 @@ IDP_WSO2IS=( wso2is )
 TRANSLATOR_SERVICES=( libretranslate )
 INJI_CORE_SERVICES=(
   certify-postgres inji-certify
-  certify-preauth-postgres inji-certify-preauth
+  certify-preauth-postgres inji-certify-preauth-backend inji-preauth-proxy
   certify-nginx
   inji-verify-postgres inji-verify-service inji-verify-ui
   citizens-postgres vc-adapter
@@ -278,6 +278,8 @@ JSON
         "FlowPreAuth": true,
         "FlowPlain": "Self-contained — no external identity provider.",
         "Formats": ["w3c_vcdm_2", "sd_jwt_vc (IETF)"],
+        "DirectPDF": true,
+        "DirectPDFPlain": "Server-side dance mints a signed VC and embeds it as a QR on a printable PDF — the subject walks away with paper instead of a wallet credential.",
         "Caveats": "Not compatible with Inji Web Wallet. Demo-only — no user consent.",
         "Capabilities": [
           {"Kind": "flow",       "Key": "pre_auth",         "Title": "Pre-Authorized Code flow",           "Body": "POST /v1/certify/pre-authorized-data; wallet redeems code directly."},

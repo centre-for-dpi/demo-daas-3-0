@@ -170,6 +170,10 @@ type IssueAsPDFResult struct {
 	IssuerDID     string            // issuer DID (for the PDF header / QR payload)
 	PayloadSizeKB int               // approximate QR payload size in kilobytes
 	Fields        map[string]string // the subject fields as issued (echo of input)
+	// DownloadID is the adapter-assigned key the UI uses to fetch the PDF
+	// bytes via /issuer/issue/pdf/{id}. Empty string when the adapter does
+	// not actually host a PDF blob (some DPGs only report metadata).
+	DownloadID string
 }
 
 // IssueBulkRequest is the input to IssueBulk.

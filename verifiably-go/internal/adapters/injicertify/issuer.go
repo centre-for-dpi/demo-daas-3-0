@@ -120,6 +120,12 @@ func (a *Adapter) IssueToWallet(ctx context.Context, req backend.IssueRequest) (
 		if err := a.client.DoJSON(ctx, http.MethodPost, "/v1/certify/pre-authorized-data", body, &resp, nil); err != nil {
 			return backend.IssueToWalletResult{}, fmt.Errorf("pre-authorized-data: %w", err)
 		}
+		// The inji-preauth-proxy sidecar (docker compose service
+		// inji-preauth-proxy, taking over the inji-certify-preauth network
+		// identity) intercepts /.well-known/openid-credential-issuer and
+		// /v1/certify/issuance/credential transparently, so Inji's raw
+		// offer URI resolves through the proxy without any adapter-side
+		// rewrite. No /offers/ re-hosting needed.
 		offerURI := a.rewritePublic(resp.CredentialOfferURI)
 		return backend.IssueToWalletResult{
 			OfferURI: offerURI,
@@ -166,11 +172,15 @@ func (a *Adapter) IssueToWallet(ctx context.Context, req backend.IssueRequest) (
 	return backend.IssueToWalletResult{}, backend.ErrNotSupported
 }
 
-// IssueAsPDF — v0.14.0 supports QR-embedded credentials via Claim-169 /
-// pixelpass + MOSIP Identity Plugin. For this milestone we expose it only for
-// ModeAuthCode (where the Identity Plugin sits behind eSignet's flow); the
-// Pre-Auth card returns ErrNotSupported so the UI hides the PDF destination.
-func (a *Adapter) IssueAsPDF(_ context.Context, _ backend.IssueRequest) (backend.IssueAsPDFResult, error) {
+// IssueAsPDF dispatches to the pre-auth-specific implementation in pdf.go
+// when the configured mode is Pre-Auth — that flow can run end-to-end
+// server-side (no holder wallet, no eSignet), drive the OID4VCI dance,
+// and render a paper-deliverable credential. Auth-Code mode still returns
+// ErrNotSupported: it requires a live eSignet session we can't fabricate.
+func (a *Adapter) IssueAsPDF(ctx context.Context, req backend.IssueRequest) (backend.IssueAsPDFResult, error) {
+	if a.cfg.Mode == ModePreAuth {
+		return a.issueAsPDFPreAuth(ctx, req)
+	}
 	return backend.IssueAsPDFResult{}, backend.ErrNotSupported
 }
 
