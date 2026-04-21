@@ -196,34 +196,43 @@ func fetchDidJSON(ctx context.Context, url string) (map[string]any, int, error) 
 }
 
 // mergeVerificationMethods appends every verificationMethod entry from
-// src into dst that dst doesn't already have. Dedup is by the entry's
-// `id` field (the full did:...#fragment). Keeps each method's own key
-// material — unlike patchedDidDoc's aliasing, which reuses a single
-// publicKey for every new id.
+// src into dst that dst doesn't already have. Dedup key is
+// id+publicKeyMultibase, not id alone — Inji Certify's v0.14.0 kid is
+// supposed to be derived from the public key but the primary and
+// pre-auth instances can end up with identical kids despite having
+// different keypairs (observed on EC2: kid ZFBjSBkXgs9A8…, different
+// publicKeyMultibase per instance). Dropping the duplicate by id alone
+// would throw away the pre-auth key the VC actually needs to verify
+// against. Keeping both entries is legal JSON-LD; verifiers that walk
+// the array find the matching key material.
 func mergeVerificationMethods(dst, src map[string]any) {
 	dstMethods, _ := dst["verificationMethod"].([]any)
 	srcMethods, _ := src["verificationMethod"].([]any)
 	if len(srcMethods) == 0 {
 		return
 	}
+	key := func(m map[string]any) string {
+		id, _ := m["id"].(string)
+		mb, _ := m["publicKeyMultibase"].(string)
+		return id + "|" + mb
+	}
 	seen := map[string]struct{}{}
 	for _, m := range dstMethods {
-		mm, _ := m.(map[string]any)
-		if id, _ := mm["id"].(string); id != "" {
-			seen[id] = struct{}{}
+		if mm, ok := m.(map[string]any); ok {
+			seen[key(mm)] = struct{}{}
 		}
 	}
 	for _, m := range srcMethods {
 		mm, _ := m.(map[string]any)
-		id, _ := mm["id"].(string)
-		if id == "" {
+		if mm == nil {
 			continue
 		}
-		if _, dup := seen[id]; dup {
+		k := key(mm)
+		if _, dup := seen[k]; dup {
 			continue
 		}
 		dstMethods = append(dstMethods, mm)
-		seen[id] = struct{}{}
+		seen[k] = struct{}{}
 	}
 	dst["verificationMethod"] = dstMethods
 }
