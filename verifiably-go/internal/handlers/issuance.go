@@ -58,6 +58,7 @@ type issueData struct {
 	IssuerDpg    string
 	Dpg          vctypes.DPG
 	SingleSource string // "manual" | "api" | "uin_lookup" | "csv_lookup" | "presentation"
+	BulkSource   string // "csv" | "api" | "db" — active chip on the bulk form
 	FieldValues  map[string]string
 	Fields       []string
 	Sources      []sourceOption
@@ -89,6 +90,10 @@ func (h *H) ShowIssue(w http.ResponseWriter, r *http.Request) {
 	vals, _ := h.Adapter.PrefillSubjectFields(r.Context(), schema)
 	dpgs, _ := h.Adapter.ListIssuerDpgs(r.Context())
 	dpg := dpgs[sess.IssuerDpg]
+	bulkSource := sess.BulkSource
+	if bulkSource == "" {
+		bulkSource = "csv"
+	}
 	data := issueData{
 		Schema:       schema,
 		Scale:        sess.Scale,
@@ -96,6 +101,7 @@ func (h *H) ShowIssue(w http.ResponseWriter, r *http.Request) {
 		IssuerDpg:    sess.IssuerDpg,
 		Dpg:          dpg,
 		SingleSource: "manual",
+		BulkSource:   bulkSource,
 		FieldValues:  vals,
 		Fields:       schemaFieldsOfH(schema),
 		Sources:      sourcesFromCapabilities(dpg),

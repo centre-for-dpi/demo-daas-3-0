@@ -96,6 +96,17 @@ func main() {
 	// kid and our did.json advertises it before Inji Verify tries to resolve.
 	mux.HandleFunc("GET /inji-proxy/credentials/status-list/{id}", h.InjiProxyStatusList)
 
+	// Inji Certify pre-auth bridge: makes Inji's non-conformant OID4VCI
+	// endpoint layout (metadata under /v1/certify/issuance/...) look like a
+	// standards-compliant issuer at the bridge root so strict wallets
+	// (walt.id's, etc.) can claim pre-auth credentials without choking on
+	// the metadata-URL mismatch.
+	mux.HandleFunc("GET /inji-preauth-bridge/.well-known/openid-credential-issuer", h.InjiPreauthBridgeIssuerMetadata)
+	mux.HandleFunc("GET /inji-preauth-bridge/.well-known/oauth-authorization-server", h.InjiPreauthBridgeAuthServerMetadata)
+	mux.HandleFunc("POST /inji-preauth-bridge/token", h.InjiPreauthBridgeToken)
+	mux.HandleFunc("POST /inji-preauth-bridge/credential", h.InjiPreauthBridgeCredential)
+	mux.HandleFunc("POST /inji-preauth-bridge/nonce", h.InjiPreauthBridgeNonce)
+
 	// Issuer
 	mux.HandleFunc("GET /issuer/dpg", h.ShowIssuerDpgs)
 	mux.HandleFunc("POST /issuer/dpg", h.PickIssuerDpg)
@@ -117,6 +128,9 @@ func main() {
 	mux.HandleFunc("POST /issuer/issue", h.SubmitIssue)
 	mux.HandleFunc("POST /issuer/issue/source", h.SetSingleSource)
 	mux.HandleFunc("POST /issuer/issue/csv", h.SimulateCSV)
+	mux.HandleFunc("POST /issuer/issue/bulk/source", h.BulkSource)
+	mux.HandleFunc("POST /issuer/issue/bulk/api", h.BulkFromAPI)
+	mux.HandleFunc("POST /issuer/issue/bulk/db", h.BulkFromDB)
 	mux.HandleFunc("POST /issuer/issue/preview-pdf", h.PreviewPDF)
 
 	// Holder / Wallet

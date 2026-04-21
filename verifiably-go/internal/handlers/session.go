@@ -42,6 +42,7 @@ type Session struct {
 	SchemaID         string          // selected schema id
 	Scale            string          // "single" | "bulk"
 	Dest             string          // "wallet" | "pdf"
+	BulkSource       string          // "csv" | "api" | "db" — active bulk source
 	ExpandedSchemaID string          // currently expanded card
 	SchemaFilter     string          // "all" or one of the stds
 	SchemaQuery      string          // current search text
@@ -116,6 +117,7 @@ func (s *Store) getOrCreate(r *http.Request, w http.ResponseWriter) *Session {
 			CustomSchemas: []vctypes.Schema{},
 			Scale:         "single",
 			Dest:          "wallet",
+			BulkSource:    "csv",
 			SchemaFilter:  "all",
 		}
 		s.sessions[id] = sess

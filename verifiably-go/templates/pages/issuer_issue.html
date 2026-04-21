@@ -49,25 +49,35 @@
     <div id="issue-result"></div>
 
   {{else}}
-    {{/* ----- BULK CSV — real upload, parsed per row, issued per row ----- */}}
-    <form id="bulk-form"
-          hx-post="/issuer/issue/csv"
-          hx-target="#csv-preview"
-          hx-swap="innerHTML"
-          hx-encoding="multipart/form-data"
-          style="margin-top:2rem">
-      <div class="caps" style="margin-bottom:0.75rem">CSV upload</div>
-      <div style="background:var(--bg-elev);border:2px dashed var(--line);padding:2.5rem 2rem;border-radius:2px">
-        <input type="file" name="csv_file" accept=".csv,text/csv" required
-               style="display:block;margin:0 auto 1rem;max-width:320px">
-        <div style="text-align:center;margin-bottom:1rem">
-          <button class="btn" type="submit">Upload & issue →</button>
-        </div>
-        <div style="font-size:0.75rem;color:var(--ink-mute);text-align:center">
-          Header row required. Expected columns: <span class="mono">{{range $i, $f := .Body.Fields}}{{if $i}}, {{end}}{{$f}}{{end}}</span>
-        </div>
+    {{/* ----- BULK — select a source, populate its mini-form, issue per row ----- */}}
+    <div style="margin-top:2rem">
+      <div class="caps" style="margin-bottom:0.75rem">Bulk data source</div>
+      <div class="chip-row">
+        <button type="button"
+                class="chip {{if eq .Body.BulkSource "csv"}}active{{end}}"
+                hx-post="/issuer/issue/bulk/source"
+                hx-vals='{"source": "csv"}'
+                hx-target="#bulk-form-wrap"
+                hx-swap="outerHTML"
+                title="Operator uploads a CSV file from the browser.">CSV upload</button>
+        <button type="button"
+                class="chip {{if eq .Body.BulkSource "api"}}active{{end}}"
+                hx-post="/issuer/issue/bulk/source"
+                hx-vals='{"source": "api"}'
+                hx-target="#bulk-form-wrap"
+                hx-swap="outerHTML"
+                title="Pull rows over HTTPS from a secured API (X-Road, REST, etc.).">Secured API</button>
+        <button type="button"
+                class="chip {{if eq .Body.BulkSource "db"}}active{{end}}"
+                hx-post="/issuer/issue/bulk/source"
+                hx-vals='{"source": "db"}'
+                hx-target="#bulk-form-wrap"
+                hx-swap="outerHTML"
+                title="Run a SELECT against a country-provided postgres database.">Database</button>
       </div>
-    </form>
+    </div>
+
+    {{template "fragment_issue_bulk_form" (dict "Source" .Body.BulkSource "Fields" .Body.Fields)}}
 
     <div id="csv-preview"></div>
 
@@ -183,39 +193,112 @@
 </div>
 {{end}}
 
+{{define "fragment_issue_bulk_form"}}
+<div id="bulk-form-wrap" style="margin-top:1rem">
+  {{if eq .Source "api"}}
+    {{/* Secured-API pull: operator gives us a URL and optional auth header.
+         We GET as application/json and expect a bare array or an object with
+         one of {rows, data, items, results} holding the array. */}}
+    <form id="bulk-form"
+          hx-post="/issuer/issue/bulk/api"
+          hx-target="#csv-preview"
+          hx-swap="innerHTML"
+          style="display:flex;flex-direction:column;gap:0.75rem">
+      <label style="display:flex;flex-direction:column;gap:0.25rem">
+        <span class="caps">API URL</span>
+        <input type="url" name="api_url" required
+               placeholder="https://xroad.example/r1/EE/COM/12345/registry-service/v1/citizens"
+               style="font-family:'JetBrains Mono',monospace;font-size:0.8rem;padding:0.5rem;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:2px">
+      </label>
+      <label style="display:flex;flex-direction:column;gap:0.25rem">
+        <span class="caps">Authorization header (optional)</span>
+        <input type="text" name="api_auth"
+               placeholder="Bearer eyJhbGc… · or · X-Road-User country/…"
+               style="font-family:'JetBrains Mono',monospace;font-size:0.8rem;padding:0.5rem;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:2px">
+      </label>
+      <label style="display:flex;flex-direction:column;gap:0.25rem">
+        <span class="caps">Row limit (optional; 0 = all)</span>
+        <input type="number" name="api_limit" min="0" value="0"
+               style="font-family:'JetBrains Mono',monospace;font-size:0.8rem;padding:0.5rem;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:2px;max-width:8rem">
+      </label>
+      <div style="font-size:0.75rem;color:var(--ink-mute)">
+        Each JSON object becomes one credential. Keys map to schema columns:
+        <span class="mono">{{range $i, $f := .Fields}}{{if $i}}, {{end}}{{$f}}{{end}}</span>.
+      </div>
+      <button class="btn" type="submit" style="align-self:flex-start">Fetch & issue →</button>
+    </form>
+  {{else if eq .Source "db"}}
+    {{/* Database pull: operator provides a postgres DSN and a SELECT whose
+         column names match the schema field names. Read-only; non-SELECT
+         queries are rejected server-side. */}}
+    <form id="bulk-form"
+          hx-post="/issuer/issue/bulk/db"
+          hx-target="#csv-preview"
+          hx-swap="innerHTML"
+          style="display:flex;flex-direction:column;gap:0.75rem">
+      <label style="display:flex;flex-direction:column;gap:0.25rem">
+        <span class="caps">Postgres connection string</span>
+        <input type="text" name="db_conn" required
+               placeholder="postgres://user:pass@host:5432/db?sslmode=disable"
+               style="font-family:'JetBrains Mono',monospace;font-size:0.8rem;padding:0.5rem;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:2px">
+      </label>
+      <label style="display:flex;flex-direction:column;gap:0.25rem">
+        <span class="caps">SELECT query</span>
+        <textarea name="db_query" rows="4" required
+                  placeholder="SELECT holder, achievement, issuedOn FROM graduates WHERE cohort = '2024-Q3' LIMIT 500"
+                  style="font-family:'JetBrains Mono',monospace;font-size:0.8rem;padding:0.5rem;background:var(--bg);border:1px solid var(--line);color:var(--ink);border-radius:2px;resize:vertical"></textarea>
+      </label>
+      <div style="font-size:0.75rem;color:var(--ink-mute)">
+        Column names must match schema fields:
+        <span class="mono">{{range $i, $f := .Fields}}{{if $i}}, {{end}}{{$f}}{{end}}</span>.
+        Only SELECT statements are allowed.
+      </div>
+      <button class="btn" type="submit" style="align-self:flex-start">Run & issue →</button>
+    </form>
+  {{else}}
+    {{/* Default / csv: unchanged upload widget. */}}
+    <form id="bulk-form"
+          hx-post="/issuer/issue/csv"
+          hx-target="#csv-preview"
+          hx-swap="innerHTML"
+          hx-encoding="multipart/form-data">
+      <div class="caps" style="margin-bottom:0.75rem">CSV upload</div>
+      <div style="background:var(--bg-elev);border:2px dashed var(--line);padding:2.5rem 2rem;border-radius:2px">
+        <input type="file" name="csv_file" accept=".csv,text/csv" required
+               style="display:block;margin:0 auto 1rem;max-width:320px">
+        <div style="text-align:center;margin-bottom:1rem">
+          <button class="btn" type="submit">Upload & issue →</button>
+        </div>
+        <div style="font-size:0.75rem;color:var(--ink-mute);text-align:center">
+          Header row required. Expected columns: <span class="mono">{{range $i, $f := .Fields}}{{if $i}}, {{end}}{{$f}}{{end}}</span>
+        </div>
+      </div>
+    </form>
+  {{end}}
+</div>
+{{end}}
+
 {{define "fragment_issue_csv_preview"}}
 <div style="margin-top:1.5rem">
-  <div class="caps" style="margin-bottom:0.5rem">graduates_2024_q3.csv — {{.Total}} rows</div>
-  <table>
-    <thead>
-      <tr>
-        {{range .Fields}}<th>{{.}}</th>{{end}}
-        <th>status</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>{{range .Fields}}<td>{{index $.Values .}}</td>{{end}}<td><span class="pill ok">ready</span></td></tr>
-      <tr>{{range .Fields}}<td>{{index $.Values .}}</td>{{end}}<td><span class="pill ok">ready</span></td></tr>
-      <tr>
-        {{range $i, $f := .Fields}}
-          {{if eq $i 0}}
-            <td><em style="color:var(--err)">—missing—</em></td>
-          {{else}}
-            <td>{{index $.Values $f}}</td>
-          {{end}}
-        {{end}}
-        <td><span class="pill err">{{.Rejected}} rows</span></td>
-      </tr>
-    </tbody>
-  </table>
-  <div style="font-size:0.82rem;color:var(--ink-mute);margin-top:0.75rem">
-    {{.Accepted}} rows ready · {{.Rejected}} rows need attention
-    {{with index .Errors 0}}(missing <span class="mono">{{replaceUnderscore (trimPrefix .Reason "missing ")}}</span>){{end}}
+  <div class="caps" style="margin-bottom:0.5rem">
+    {{if .Label}}{{.Label}} — {{end}}{{.Total}} row{{if ne .Total 1}}s{{end}}
+    · <span class="mono">{{.Accepted}}</span> accepted
+    {{if gt .Rejected 0}}· <span class="mono" style="color:var(--err)">{{.Rejected}}</span> rejected{{end}}
   </div>
-  <div class="btn-row">
-    <button class="btn" onclick="toast('Issuing {{.Accepted}} credentials…')">Issue {{.Accepted}} credentials</button>
-    <button class="btn ghost" onclick="toast('Download errors.csv (simulated)')">Download errors</button>
-  </div>
+  {{if gt .Rejected 0}}
+    <div style="background:var(--bg-elev);border-left:3px solid var(--err);padding:0.75rem 1rem;margin-top:0.75rem;font-size:0.82rem">
+      <div class="caps" style="margin-bottom:0.4rem;color:var(--err)">Per-row errors (first {{len .Errors}})</div>
+      <ul style="margin:0;padding-left:1.25rem;font-family:'JetBrains Mono',monospace;font-size:0.75rem;color:var(--ink-soft)">
+        {{range .Errors}}<li>row {{.Row}}: {{.Reason}}</li>{{end}}
+      </ul>
+    </div>
+  {{end}}
+  {{if gt .Accepted 0}}
+    <div style="background:var(--bg-elev);border-left:3px solid var(--ok);padding:0.75rem 1rem;margin-top:0.75rem;font-size:0.82rem">
+      {{.Accepted}} credential{{if ne .Accepted 1}}s{{end}} issued. Each row produced its own offer URI;
+      holders can claim them via the paste flow or with any OID4VCI wallet.
+    </div>
+  {{end}}
 </div>
 {{end}}
 
