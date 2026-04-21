@@ -147,14 +147,16 @@ func (h *H) InjiProxyDidJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Pre-auth upstream (if configured). Merge any verification methods
-	// it publishes so did:web:certify-nginx advertises BOTH instances'
-	// keys — required because Inji Certify-preauth uses a DIFFERENT
-	// Ed25519 keypair from the primary, and VCs it signs have that kid's
-	// verificationMethod in their proof.
+	// Pre-auth upstream (if configured). Order matters: Inji Verify's
+	// DID resolver returns the FIRST matching verificationMethod for a
+	// given kid. If the primary and pre-auth instances collide on kid
+	// but have different keypairs (observed on EC2), the primary's key
+	// would win and every pre-auth VC would fail verification. Prepend
+	// the pre-auth entries so they're tried first. The primary entries
+	// still survive for auth-code VCs whose kid doesn't collide.
 	preauthURL := strings.TrimRight(injiCertifyPreauthUpstream(), "/") + "/v1/certify/.well-known/did.json"
 	if preauth, status, err := fetchDidJSON(r.Context(), preauthURL); err == nil && status == http.StatusOK {
-		mergeVerificationMethods(primary, preauth)
+		prependVerificationMethods(primary, preauth)
 	}
 
 	patchedDidDoc(primary, injidid.Snapshot())
@@ -195,17 +197,18 @@ func fetchDidJSON(ctx context.Context, url string) (map[string]any, int, error) 
 	return doc, resp.StatusCode, nil
 }
 
-// mergeVerificationMethods appends every verificationMethod entry from
-// src into dst that dst doesn't already have. Dedup key is
-// id+publicKeyMultibase, not id alone — Inji Certify's v0.14.0 kid is
-// supposed to be derived from the public key but the primary and
-// pre-auth instances can end up with identical kids despite having
-// different keypairs (observed on EC2: kid ZFBjSBkXgs9A8…, different
-// publicKeyMultibase per instance). Dropping the duplicate by id alone
-// would throw away the pre-auth key the VC actually needs to verify
-// against. Keeping both entries is legal JSON-LD; verifiers that walk
-// the array find the matching key material.
-func mergeVerificationMethods(dst, src map[string]any) {
+// prependVerificationMethods puts every entry from src at the FRONT of
+// dst's verificationMethod array, then appends dst's own remaining
+// entries. Dedup by id+publicKeyMultibase so we don't emit true
+// duplicates. Ordering matters because Inji Verify's DID resolver
+// returns the first entry whose id matches the VC's verificationMethod
+// kid — when primary + pre-auth instances collide on kid but have
+// different Ed25519 keys (observed on EC2: kid ZFBjSBkXgs9A8…), the
+// first entry wins. We put pre-auth first so pre-auth-signed VCs (which
+// are what the PDF flow produces) verify; primary entries survive for
+// any kid that ISN'T colliding so auth-code VCs from the primary
+// instance still resolve.
+func prependVerificationMethods(dst, src map[string]any) {
 	dstMethods, _ := dst["verificationMethod"].([]any)
 	srcMethods, _ := src["verificationMethod"].([]any)
 	if len(srcMethods) == 0 {
@@ -217,11 +220,8 @@ func mergeVerificationMethods(dst, src map[string]any) {
 		return id + "|" + mb
 	}
 	seen := map[string]struct{}{}
-	for _, m := range dstMethods {
-		if mm, ok := m.(map[string]any); ok {
-			seen[key(mm)] = struct{}{}
-		}
-	}
+	// Start with src (pre-auth) entries at the front of the array.
+	merged := make([]any, 0, len(dstMethods)+len(srcMethods))
 	for _, m := range srcMethods {
 		mm, _ := m.(map[string]any)
 		if mm == nil {
@@ -231,10 +231,23 @@ func mergeVerificationMethods(dst, src map[string]any) {
 		if _, dup := seen[k]; dup {
 			continue
 		}
-		dstMethods = append(dstMethods, mm)
+		merged = append(merged, mm)
 		seen[k] = struct{}{}
 	}
-	dst["verificationMethod"] = dstMethods
+	// Append dst (primary) entries that aren't already represented.
+	for _, m := range dstMethods {
+		mm, _ := m.(map[string]any)
+		if mm == nil {
+			continue
+		}
+		k := key(mm)
+		if _, dup := seen[k]; dup {
+			continue
+		}
+		merged = append(merged, mm)
+		seen[k] = struct{}{}
+	}
+	dst["verificationMethod"] = merged
 }
 
 // patchedDidDoc mutates doc to add one verificationMethod per extra kid,
