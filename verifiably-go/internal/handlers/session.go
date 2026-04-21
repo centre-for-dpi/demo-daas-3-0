@@ -85,6 +85,11 @@ type Session struct {
 	RefreshToken    string
 	IDToken         string
 	UserEmail       string
+	// UserSubject is the OIDC `sub` claim — the stable per-user id the
+	// provider assigns. Used (combined with AuthProvider) as the
+	// partition key for upstream wallet accounts so two users logging
+	// into the same browser session don't collide on an email-less key.
+	UserSubject     string
 
 	// Misc
 	NextExampleIdx int

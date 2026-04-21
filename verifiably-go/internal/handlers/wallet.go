@@ -19,12 +19,20 @@ import (
 // when sess.HolderDpg is "" (WithHolderDpg is a no-op).
 func holderCtx(r *http.Request, sess *Session) context.Context {
 	ctx := backend.WithHolderDpg(r.Context(), sess.HolderDpg)
-	// Partition upstream wallet state per authenticated user. Prefer the
-	// OIDC email (stable across restarts as long as the wallet backend
-	// persists its accounts DB); fall back to the verifiably-go session
-	// id so unauthenticated demo users still get isolated wallets.
-	userKey := sess.UserEmail
-	if userKey == "" {
+	// Partition upstream wallet state per authenticated identity. Prefer
+	// AuthProvider+Subject (the OIDC `sub` claim is guaranteed non-empty
+	// for a valid session, email isn't — admins, machine accounts, and
+	// any IdP that doesn't surface email would otherwise collide on the
+	// fallback). Then try email, then the session-scoped fallback for
+	// unauthenticated demo mode. Each distinct key maps to its own
+	// wallet account upstream.
+	var userKey string
+	switch {
+	case sess.AuthProvider != "" && sess.UserSubject != "":
+		userKey = sess.AuthProvider + "|" + sess.UserSubject
+	case sess.UserEmail != "":
+		userKey = sess.UserEmail
+	default:
 		userKey = "session-" + sess.ID
 	}
 	return backend.WithHolderIdentity(ctx, userKey)
