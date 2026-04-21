@@ -477,6 +477,13 @@ func (h *H) AuthCallback(w http.ResponseWriter, r *http.Request) {
 	if ui, err := p.UserInfo(r.Context(), tok.AccessToken); err == nil {
 		sess.UserEmail = ui.Email
 	}
+	// The upstream wallet account the app talks to is partitioned per
+	// authenticated user (see waltid.ensureWalletSession + holderCtx).
+	// Any cached wallet-state on this session belongs to whoever was
+	// logged in *before* this callback — invalidate it so the next
+	// /holder/wallet fetch pulls this user's credentials instead.
+	sess.WalletCreds = nil
+	sess.WalletPending = nil
 	h.redirect(w, r, authNextFor(sess.Role))
 }
 
