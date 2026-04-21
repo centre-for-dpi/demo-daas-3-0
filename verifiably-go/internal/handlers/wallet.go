@@ -241,7 +241,7 @@ func (h *H) ConfirmPresent(w http.ResponseWriter, r *http.Request) {
 	}
 	prev := backend.PresentationPreview{CredentialID: credID}
 	if p, ok := h.Adapter.(backend.PresentationPreviewer); ok {
-		resolved, err := p.PreviewPresentation(r.Context(), backend.PresentCredentialRequest{
+		resolved, err := p.PreviewPresentation(holderCtx(r, sess), backend.PresentCredentialRequest{
 			HolderDpg:    sess.HolderDpg,
 			CredentialID: credID,
 			RequestURI:   reqURI,
@@ -284,7 +284,7 @@ func (h *H) SubmitPresent(w http.ResponseWriter, r *http.Request) {
 		h.errorToast(w, r, "Pick a credential and paste the verifier's request URI")
 		return
 	}
-	res, err := h.Adapter.PresentCredential(r.Context(), backend.PresentCredentialRequest{
+	res, err := h.Adapter.PresentCredential(holderCtx(r, sess), backend.PresentCredentialRequest{
 		HolderDpg:    sess.HolderDpg,
 		CredentialID: credID,
 		RequestURI:   reqURI,
