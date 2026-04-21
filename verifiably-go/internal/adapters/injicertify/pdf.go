@@ -42,6 +42,7 @@ import (
 	qr "github.com/skip2/go-qrcode"
 
 	"github.com/verifiably/verifiably-go/backend"
+	"github.com/verifiably/verifiably-go/internal/injidid"
 )
 
 // tokenResponse is the relevant slice of Inji's /oauth/token reply.
@@ -109,6 +110,12 @@ func (a *Adapter) issueAsPDFPreAuth(ctx context.Context, req backend.IssueReques
 	if err != nil {
 		return backend.IssueAsPDFResult{}, err
 	}
+	// Feed the VC through the observed-kids pipeline so the
+	// inji-proxy's /.well-known/did.json includes whichever kid the
+	// pre-auth instance used to sign. Without this, Inji Verify's strict
+	// kid matcher calls the VC invalid because did:web:certify-nginx
+	// doesn't advertise the preauth-instance kid.
+	injidid.Remember([]byte(vc))
 
 	// 5. Encode the VC into MOSIP PixelPass format (CBOR → zlib → base45)
 	// so Inji Verify's QR decoder accepts it. Raw JSON starting with `{`

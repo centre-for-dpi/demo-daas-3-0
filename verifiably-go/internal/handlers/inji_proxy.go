@@ -23,6 +23,7 @@ package handlers
 // aliases as needed, all mapped to the upstream publicKeyMultibase.
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -30,7 +31,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync"
+
+	"github.com/verifiably/verifiably-go/internal/injidid"
 )
 
 func injiCertifyUpstream() string {
@@ -79,7 +81,7 @@ func (h *H) InjiProxyCredential(w http.ResponseWriter, r *http.Request) {
 	if resp.StatusCode >= 400 {
 		log.Printf("inji-proxy: credential RESP %d body=%s", resp.StatusCode, truncateForLog(string(respBody), 400))
 	} else {
-		rememberSigningKids(respBody)
+		injidid.Remember(respBody)
 	}
 	if ct := resp.Header.Get("Content-Type"); ct != "" {
 		w.Header().Set("Content-Type", ct)
@@ -88,56 +90,9 @@ func (h *H) InjiProxyCredential(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(respBody)
 }
 
-// observedKids is the runtime set of kid fragments we've seen in VCs issued
-// through this proxy. Populated by rememberSigningKids; consumed by the
-// did.json handler. Keys are the fragment only (everything after '#').
-var (
-	observedKidsMu sync.RWMutex
-	observedKids   = map[string]struct{}{}
-)
-
-// rememberSigningKids scans a credential-issuance response body for any
-// proof.verificationMethod values of shape did:web:...#kid and records the
-// kid fragment. Tolerant to any JSON shape — if the body isn't JSON or has
-// no proof, this is a no-op.
-func rememberSigningKids(body []byte) {
-	var parsed any
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		return
-	}
-	var walk func(any)
-	walk = func(v any) {
-		switch vv := v.(type) {
-		case map[string]any:
-			if vm, ok := vv["verificationMethod"].(string); ok {
-				if i := strings.IndexByte(vm, '#'); i >= 0 {
-					kid := vm[i+1:]
-					observedKidsMu.Lock()
-					observedKids[kid] = struct{}{}
-					observedKidsMu.Unlock()
-				}
-			}
-			for _, c := range vv {
-				walk(c)
-			}
-		case []any:
-			for _, c := range vv {
-				walk(c)
-			}
-		}
-	}
-	walk(parsed)
-}
-
-func observedKidsSnapshot() []string {
-	observedKidsMu.RLock()
-	defer observedKidsMu.RUnlock()
-	out := make([]string, 0, len(observedKids))
-	for k := range observedKids {
-		out = append(out, k)
-	}
-	return out
-}
+// Observed-kid state moved to internal/injidid so both the in-process
+// inji-proxy and the pre-auth direct-to-PDF issuance path share one
+// source of truth for kid discovery. See injidid/observed.go.
 
 // InjiProxyStatusList forwards a GET to Inji Certify's bitstring status-list
 // credential endpoint. We tap it so rememberSigningKids() sees the kid that
@@ -165,7 +120,7 @@ func (h *H) InjiProxyStatusList(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 400 {
-		rememberSigningKids(body)
+		injidid.Remember(body)
 	}
 	if ct := resp.Header.Get("Content-Type"); ct != "" {
 		w.Header().Set("Content-Type", ct)
@@ -184,37 +139,93 @@ func (h *H) InjiProxyStatusList(w http.ResponseWriter, r *http.Request) {
 // publicKeyMultibase — we're not multiplying keys, just publishing aliases
 // for the one real key Inji Certify uses.
 func (h *H) InjiProxyDidJSON(w http.ResponseWriter, r *http.Request) {
-	upstream := injiCertifyUpstream() + "/v1/certify/.well-known/did.json"
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, upstream, nil)
-	if err != nil {
-		http.Error(w, "build upstream request: "+err.Error(), http.StatusInternalServerError)
+	// Primary upstream (auth-code Inji Certify).
+	primary, primaryStatus, err := fetchDidJSON(r.Context(), injiCertifyUpstream()+"/v1/certify/.well-known/did.json")
+	if err != nil || primaryStatus != http.StatusOK {
+		log.Printf("inji-proxy: did.json primary upstream status=%d err=%v", primaryStatus, err)
+		w.WriteHeader(http.StatusBadGateway)
 		return
+	}
+
+	// Pre-auth upstream (if configured). Merge any verification methods
+	// it publishes so did:web:certify-nginx advertises BOTH instances'
+	// keys — required because Inji Certify-preauth uses a DIFFERENT
+	// Ed25519 keypair from the primary, and VCs it signs have that kid's
+	// verificationMethod in their proof.
+	preauthURL := strings.TrimRight(injiCertifyPreauthUpstream(), "/") + "/v1/certify/.well-known/did.json"
+	if preauth, status, err := fetchDidJSON(r.Context(), preauthURL); err == nil && status == http.StatusOK {
+		mergeVerificationMethods(primary, preauth)
+	}
+
+	patchedDidDoc(primary, injidid.Snapshot())
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(primary)
+}
+
+// injiCertifyPreauthUpstream mirrors injiCertifyUpstream but for the
+// pre-auth instance. Overridable via env so a different topology can
+// point elsewhere.
+func injiCertifyPreauthUpstream() string {
+	if v := os.Getenv("INJI_CERTIFY_PREAUTH_UPSTREAM_URL"); v != "" {
+		return strings.TrimRight(v, "/")
+	}
+	return "http://inji-certify-preauth:8090"
+}
+
+// fetchDidJSON GETs the upstream did.json, returns the parsed doc + status.
+func fetchDidJSON(ctx context.Context, url string) (map[string]any, int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, 0, err
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		http.Error(w, "upstream: "+err.Error(), http.StatusBadGateway)
-		return
+		return nil, 0, err
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("inji-proxy: did.json upstream %d body=%s", resp.StatusCode, truncateForLog(string(body), 200))
-		w.WriteHeader(resp.StatusCode)
-		_, _ = w.Write(body)
-		return
+		return nil, resp.StatusCode, nil
 	}
-
 	var doc map[string]any
 	if err := json.Unmarshal(body, &doc); err != nil {
-		// Unparseable — return upstream verbatim.
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(body)
+		return nil, resp.StatusCode, err
+	}
+	return doc, resp.StatusCode, nil
+}
+
+// mergeVerificationMethods appends every verificationMethod entry from
+// src into dst that dst doesn't already have. Dedup is by the entry's
+// `id` field (the full did:...#fragment). Keeps each method's own key
+// material — unlike patchedDidDoc's aliasing, which reuses a single
+// publicKey for every new id.
+func mergeVerificationMethods(dst, src map[string]any) {
+	dstMethods, _ := dst["verificationMethod"].([]any)
+	srcMethods, _ := src["verificationMethod"].([]any)
+	if len(srcMethods) == 0 {
 		return
 	}
-	patchedDidDoc(doc, observedKidsSnapshot())
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(doc)
+	seen := map[string]struct{}{}
+	for _, m := range dstMethods {
+		mm, _ := m.(map[string]any)
+		if id, _ := mm["id"].(string); id != "" {
+			seen[id] = struct{}{}
+		}
+	}
+	for _, m := range srcMethods {
+		mm, _ := m.(map[string]any)
+		id, _ := mm["id"].(string)
+		if id == "" {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		dstMethods = append(dstMethods, mm)
+		seen[id] = struct{}{}
+	}
+	dst["verificationMethod"] = dstMethods
 }
 
 // patchedDidDoc mutates doc to add one verificationMethod per extra kid,
@@ -269,11 +280,7 @@ func patchedDidDoc(doc map[string]any, extras []string) {
 func init() {
 	if v := os.Getenv("INJI_PROXY_EXTRA_KIDS"); v != "" {
 		for _, k := range strings.Split(v, ",") {
-			k = strings.TrimSpace(k)
-			if k == "" {
-				continue
-			}
-			observedKids[k] = struct{}{}
+			injidid.Add(k)
 		}
 	}
 }
