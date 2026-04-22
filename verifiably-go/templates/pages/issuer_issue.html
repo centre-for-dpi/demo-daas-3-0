@@ -53,28 +53,21 @@
     <div style="margin-top:2rem">
       <div class="caps" style="margin-bottom:0.75rem">Bulk data source</div>
       <div class="chip-row">
+        {{range .Body.BulkSources}}
         <button type="button"
-                class="chip {{if eq .Body.BulkSource "csv"}}active{{end}}"
+                class="chip {{if eq $.Body.BulkSource .Key}}active{{end}}"
                 hx-post="/issuer/issue/bulk/source"
-                hx-vals='{"source": "csv"}'
+                hx-vals='{"source": "{{.Key}}"}'
                 hx-target="#bulk-form-wrap"
                 hx-swap="outerHTML"
-                title="Operator uploads a CSV file from the browser.">CSV upload</button>
-        <button type="button"
-                class="chip {{if eq .Body.BulkSource "api"}}active{{end}}"
-                hx-post="/issuer/issue/bulk/source"
-                hx-vals='{"source": "api"}'
-                hx-target="#bulk-form-wrap"
-                hx-swap="outerHTML"
-                title="Pull rows over HTTPS from a secured API (X-Road, REST, etc.).">Secured API</button>
-        <button type="button"
-                class="chip {{if eq .Body.BulkSource "db"}}active{{end}}"
-                hx-post="/issuer/issue/bulk/source"
-                hx-vals='{"source": "db"}'
-                hx-target="#bulk-form-wrap"
-                hx-swap="outerHTML"
-                title="Run a SELECT against a country-provided postgres database.">Database</button>
+                title="{{.Hint}}">{{.Label}}</button>
+        {{end}}
       </div>
+      {{if and .Body.Dpg (lt (len .Body.BulkSources) 3)}}
+      <div style="margin-top:0.5rem;font-size:0.72rem;color:var(--ink-mute);font-style:italic">
+        {{.Body.Dpg.Vendor}} only supports {{len .Body.BulkSources}} of the 3 bulk sources. The missing chip(s) reflect the vendor's documented data-provider capabilities, not a verifiably-go limitation.
+      </div>
+      {{end}}
     </div>
 
     {{template "fragment_issue_bulk_form" (dict "Source" .Body.BulkSource "Fields" .Body.Fields)}}

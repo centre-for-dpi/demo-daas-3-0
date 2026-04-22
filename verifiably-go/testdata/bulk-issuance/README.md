@@ -121,21 +121,29 @@ bulk form only accepts rows whose keys match the selected schema's
 
 Chip → **CSV upload** → upload the file → **Upload & issue**.
 
-| Schema pick (step 4)             | File                                | Expect          |
-|----------------------------------|-------------------------------------|------------------|
-| Mortgage Eligibility (jwt_vc_json) | `csv/mortgage-simple.csv`          | 10 rows · 10 issued |
-| Mortgage Eligibility (jwt_vc_json) | `csv/mortgage-simple-large.csv`    | 50 rows · 50 issued |
-| Mortgage Eligibility (jwt_vc_json) | `csv/mortgage-eligibility.csv`     | 10 rows · 10 issued |
-| Verifiable Id (jwt_vc_json)      | `csv/verifiable-id.csv`             | 10 rows · 10 issued |
-| Hotel Reservation (jwt_vc_json)  | `csv/hotel-reservation.csv`         | 10 rows · 10 issued |
-| Tax Receipt (jwt_vc_json)        | `csv/tax-receipt.csv`               | 10 rows · 10 issued |
-| *any*                            | `csv/malformed-bad-quoting.csv`     | ✗ red error toast (parse failure) |
-| Verifiable Id                    | `csv/malformed-wrong-columns.csv`   | Mixed — per-row rejections visible in the table |
-| Mortgage Eligibility             | `csv/header-only-no-rows.csv`       | ✗ "no rows" error |
+| DPG · Schema (step 3 + 4)                               | File                                | Expect          |
+|---------------------------------------------------------|-------------------------------------|------------------|
+| Walt · Mortgage Eligibility (jwt_vc_json)               | `csv/mortgage-simple.csv`           | 10 rows · 10 issued |
+| Walt · Mortgage Eligibility (jwt_vc_json)               | `csv/mortgage-simple-large.csv`     | 50 rows · 50 issued |
+| Walt · Mortgage Eligibility (jwt_vc_json)               | `csv/mortgage-eligibility.csv`      | 10 rows · 10 issued |
+| Walt · Verifiable Id (jwt_vc_json)                      | `csv/verifiable-id.csv`             | 10 rows · 10 issued |
+| Walt · Hotel Reservation (jwt_vc_json)                  | `csv/hotel-reservation.csv`         | 10 rows · 10 issued |
+| Walt · Tax Receipt (jwt_vc_json)                        | `csv/tax-receipt.csv`               | 10 rows · 10 issued |
+| **Inji Certify Pre-Auth · Farmer Credential (V2)**      | `csv/farmer-credential.csv`         | 10 rows · 10 issued |
+| *any*                                                   | `csv/malformed-bad-quoting.csv`     | ✗ red error toast (parse failure) |
+| Walt · Verifiable Id                                    | `csv/malformed-wrong-columns.csv`   | Mixed — per-row rejections visible in the table |
+| Walt · Mortgage Eligibility                             | `csv/header-only-no-rows.csv`       | ✗ "no rows" error |
 
 ---
 
 ## Secured API source
+
+> **Note:** The Secured API chip is **hidden** when the Issuer DPG is
+> set to **Inji Certify · Pre-Auth**. Per [docs.inji.io](https://docs.inji.io/inji-certify/overview),
+> Inji Certify's Data Provider Plugin currently supports PostgreSQL + CSV
+> only; an "API" reference implementation is listed as a 2025 roadmap
+> item. The verifiably-go UI reflects that by gating the chip via
+> the DPG's `Kind:"bulk_source"` capabilities.
 
 Chip → **Secured API** → paste the URL → leave auth header blank →
 **Fetch & issue**.
@@ -289,6 +297,32 @@ SELECT
   COALESCE(farm_size_hectares::text, '') AS hectares,
   COALESCE(primary_crops, '')            AS crops,
   farm_registration_date::text           AS "registeredOn"
+FROM citizens
+WHERE farm_id IS NOT NULL
+ORDER BY id
+LIMIT 10;
+```
+
+**Inji Certify · Farmer Credential (V2)** — 13 fields matching the live
+Inji Certify instance's `/v1/certify/.well-known/openid-credential-issuer`
+`order` array. Only includes citizens registered as farmers. Pair with
+the **Farmer Credential (V2)** schema in the Inji Certify Pre-Auth DPG:
+
+```sql
+SELECT
+  first_name || ' ' || last_name                       AS "fullName",
+  COALESCE(phone, '+254000000000')                     AS "mobileNumber",
+  date_of_birth::text                                  AS "dateOfBirth",
+  gender                                               AS gender,
+  CASE country_code WHEN 'KE' THEN 'Kenya' WHEN 'TT' THEN 'Trinidad & Tobago' ELSE country_code END AS state,
+  place_of_birth                                       AS district,
+  split_part(farm_location, ' from ', 2)               AS "villageOrTown",
+  '00100'                                              AS "postalCode",
+  COALESCE(farm_size_hectares::text, '1.0')            AS "landArea",
+  'owned'                                              AS "landOwnershipType",
+  COALESCE(split_part(primary_crops, ',', 1), 'Maize') AS "primaryCropType",
+  COALESCE(split_part(primary_crops, ',', 2), 'Beans') AS "secondaryCropType",
+  farm_id                                              AS "farmerID"
 FROM citizens
 WHERE farm_id IS NOT NULL
 ORDER BY id

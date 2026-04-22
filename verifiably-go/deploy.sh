@@ -206,10 +206,13 @@ backends_for() {
         "DirectPDFPlain": "No documented QR-on-PDF export at v0.18.2.",
         "Caveats": "OID4VP v1.0 support in the wallet/demo apps is still rolling out.",
         "Capabilities": [
-          {"Kind": "flow",  "Key": "pre_auth",      "Title": "Pre-authorized code flow", "Body": "Issuer stages the offer; wallet redeems at the token endpoint."},
-          {"Kind": "flow",  "Key": "auth_code",     "Title": "Authorization code flow",  "Body": "Holder consents at the issuer; wallet exchanges the code."},
-          {"Kind": "token", "Key": "issuer_signed", "Title": "Issuer-signed tokens",     "Body": "Tokens signed by this issuer's own keys."},
-          {"Kind": "mode",  "Key": "wallet",        "Title": "Wallet delivery",          "Body": "Offer URI scanned or pasted into any OID4VCI wallet."}
+          {"Kind": "flow",        "Key": "pre_auth",      "Title": "Pre-authorized code flow", "Body": "Issuer stages the offer; wallet redeems at the token endpoint."},
+          {"Kind": "flow",        "Key": "auth_code",     "Title": "Authorization code flow",  "Body": "Holder consents at the issuer; wallet exchanges the code."},
+          {"Kind": "token",       "Key": "issuer_signed", "Title": "Issuer-signed tokens",     "Body": "Tokens signed by this issuer's own keys."},
+          {"Kind": "mode",        "Key": "wallet",        "Title": "Wallet delivery",          "Body": "Offer URI scanned or pasted into any OID4VCI wallet."},
+          {"Kind": "bulk_source", "Key": "csv",           "Title": "Bulk from CSV",            "Body": "Operator uploads a CSV; each row issues one credential."},
+          {"Kind": "bulk_source", "Key": "api",           "Title": "Bulk from secured API",    "Body": "Adapter GETs a JSON array from an external service."},
+          {"Kind": "bulk_source", "Key": "db",            "Title": "Bulk from PostgreSQL",     "Body": "Adapter runs a SELECT against an operator-supplied DSN."}
         ]
       },
       "config": {
@@ -282,12 +285,15 @@ JSON
         "DirectPDFPlain": "Server-side dance mints a signed VC and embeds it as a QR on a printable PDF — the subject walks away with paper instead of a wallet credential.",
         "Caveats": "Not compatible with Inji Web Wallet. Demo-only — no user consent.",
         "Capabilities": [
-          {"Kind": "flow",       "Key": "pre_auth",         "Title": "Pre-Authorized Code flow",           "Body": "POST /v1/certify/pre-authorized-data; wallet redeems code directly."},
-          {"Kind": "data",       "Key": "operator_entered", "Title": "Claims entered by the operator",     "Body": "Operator types claims or loads a CSV row via the Pre-Auth plugin."},
-          {"Kind": "wallet",     "Key": "paste",            "Title": "Works with paste-based wallets",     "Body": "Pasteable offer URI for any OID4VCI wallet."},
-          {"Kind": "token",      "Key": "self_signed",      "Title": "Tokens signed by this instance",     "Body": "No external IdP; isolated JWKS validates its own tokens."},
-          {"Kind": "limitation", "Key": "no_consent",       "Title": "No user consent screen",             "Body": "Demo only — no interactive approval."},
-          {"Kind": "limitation", "Key": "not_inji_web",     "Title": "Not usable by Inji Web Wallet",      "Body": "Mimoto assumes Auth-Code; won't redeem pre-auth offers."}
+          {"Kind": "flow",        "Key": "pre_auth",         "Title": "Pre-Authorized Code flow",           "Body": "POST /v1/certify/pre-authorized-data; wallet redeems code directly."},
+          {"Kind": "data",        "Key": "operator_entered", "Title": "Claims entered by the operator",     "Body": "Operator types claims or loads a CSV row via the Pre-Auth plugin."},
+          {"Kind": "wallet",      "Key": "paste",            "Title": "Works with paste-based wallets",     "Body": "Pasteable offer URI for any OID4VCI wallet."},
+          {"Kind": "token",       "Key": "self_signed",      "Title": "Tokens signed by this instance",     "Body": "No external IdP; isolated JWKS validates its own tokens."},
+          {"Kind": "bulk_source", "Key": "csv",              "Title": "Bulk from CSV",                      "Body": "Matches Inji Certify's native Data Provider Plugin — CSV file uploaded by the operator."},
+          {"Kind": "bulk_source", "Key": "db",               "Title": "Bulk from PostgreSQL",               "Body": "Matches Inji Certify's native Data Provider Plugin — operator supplies a DSN + SELECT."},
+          {"Kind": "limitation",  "Key": "no_bulk_api",      "Title": "No bulk API source",                 "Body": "docs.inji.io lists PostgreSQL + CSV as the supported Data Provider integrations; API is a 2025 roadmap item. Bulk API chip is hidden for this DPG."},
+          {"Kind": "limitation",  "Key": "no_consent",       "Title": "No user consent screen",             "Body": "Demo only — no interactive approval."},
+          {"Kind": "limitation",  "Key": "not_inji_web",     "Title": "Not usable by Inji Web Wallet",      "Body": "Mimoto assumes Auth-Code; won't redeem pre-auth offers."}
         ]
       },
       "config": {

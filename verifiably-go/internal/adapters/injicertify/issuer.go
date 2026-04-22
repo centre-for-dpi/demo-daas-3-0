@@ -184,14 +184,19 @@ func (a *Adapter) IssueAsPDF(ctx context.Context, req backend.IssueRequest) (bac
 	return backend.IssueAsPDFResult{}, backend.ErrNotSupported
 }
 
-// IssueBulk iterates Rows and issues per row.
+// IssueBulk iterates Rows and issues per row. Populates BulkRowResult so
+// the UI's per-row result table can surface each recipient + offer URI +
+// status — the same shape the walt.id adapter returns, so the template
+// renders identically regardless of backend.
 func (a *Adapter) IssueBulk(ctx context.Context, req backend.IssueBulkRequest) (backend.IssueBulkResult, error) {
 	if len(req.Rows) == 0 {
 		return backend.IssueBulkResult{}, fmt.Errorf("injicertify: no rows")
 	}
 	var out backend.IssueBulkResult
+	out.Rows = make([]backend.BulkRowResult, 0, len(req.Rows))
 	for i, row := range req.Rows {
-		_, err := a.IssueToWallet(ctx, backend.IssueRequest{
+		label := rowLabelInji(row)
+		res, err := a.IssueToWallet(ctx, backend.IssueRequest{
 			IssuerDpg:   req.IssuerDpg,
 			Schema:      req.Schema,
 			SubjectData: row,
@@ -199,12 +204,44 @@ func (a *Adapter) IssueBulk(ctx context.Context, req backend.IssueBulkRequest) (
 		})
 		if err != nil {
 			out.Rejected++
-			out.Errors = append(out.Errors, backend.BulkError{Row: i + 1, Reason: truncate(err.Error(), 140)})
+			reason := truncate(err.Error(), 140)
+			out.Errors = append(out.Errors, backend.BulkError{Row: i + 1, Reason: reason})
+			out.Rows = append(out.Rows, backend.BulkRowResult{
+				Row: i + 1, Subject: row, Label: label, Status: "failed", Error: reason,
+			})
 			continue
 		}
 		out.Accepted++
+		out.Rows = append(out.Rows, backend.BulkRowResult{
+			Row: i + 1, Subject: row, Label: label, Status: "issued", OfferURI: res.OfferURI,
+		})
 	}
 	return out, nil
+}
+
+// rowLabelInji picks a one-line label per row for the bulk-result table.
+// Prefers Inji Certify's Farmer Credential identifier fields (fullName,
+// farmerID, mobileNumber) and falls back to walt.id-style (holder, firstName
+// + familyName) so the same adapter can surface sensible labels regardless
+// of which Inji Certify credential configuration the operator picked.
+func rowLabelInji(row map[string]string) string {
+	keys := []string{"fullName", "holder", "farmerID", "mobileNumber", "name", "personalIdentifier"}
+	for _, k := range keys {
+		if v := strings.TrimSpace(row[k]); v != "" {
+			return v
+		}
+	}
+	first := strings.TrimSpace(row["firstName"])
+	last := strings.TrimSpace(row["familyName"])
+	if first != "" || last != "" {
+		return strings.TrimSpace(first + " " + last)
+	}
+	for _, v := range row {
+		if s := strings.TrimSpace(v); s != "" {
+			return s
+		}
+	}
+	return "(empty row)"
 }
 
 // BootstrapOffers issues one canned credential against the first schema the

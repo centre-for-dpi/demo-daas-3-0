@@ -108,6 +108,32 @@ ORDER BY id
 LIMIT 10;
 
 -- ---------------------------------------------------------------------------
+-- Inji Certify — FarmerCredentialV2 (13-field order per the running
+-- instance's /v1/certify/.well-known/openid-credential-issuer).
+-- Only cites citizens who are registered farmers in the seed data.
+-- Column aliases MUST be quoted because camelCase identifiers in postgres
+-- are folded to lowercase unless quoted.
+-- ---------------------------------------------------------------------------
+SELECT
+  first_name || ' ' || last_name                 AS "fullName",
+  COALESCE(phone, '+254000000000')               AS "mobileNumber",
+  date_of_birth::text                            AS "dateOfBirth",
+  gender                                         AS gender,
+  CASE country_code WHEN 'KE' THEN 'Kenya' WHEN 'TT' THEN 'Trinidad & Tobago' ELSE country_code END AS state,
+  place_of_birth                                 AS district,
+  split_part(farm_location, ' from ', 2)         AS "villageOrTown",
+  '00100'                                        AS "postalCode",
+  COALESCE(farm_size_hectares::text, '1.0')      AS "landArea",
+  'owned'                                        AS "landOwnershipType",
+  COALESCE(split_part(primary_crops, ',', 1), 'Maize') AS "primaryCropType",
+  COALESCE(split_part(primary_crops, ',', 2), 'Beans') AS "secondaryCropType",
+  farm_id                                        AS "farmerID"
+FROM citizens
+WHERE farm_id IS NOT NULL
+ORDER BY id
+LIMIT 10;
+
+-- ---------------------------------------------------------------------------
 -- Error-path test: SELECT that returns zero rows (exercises the
 -- "query returned 0 rows" error surface)
 -- ---------------------------------------------------------------------------

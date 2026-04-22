@@ -40,11 +40,20 @@ func (h *H) BulkSource(w http.ResponseWriter, r *http.Request) {
 	source := strings.TrimSpace(r.FormValue("source"))
 	switch source {
 	case "csv", "api", "db":
-		sess.BulkSource = source
+		// fall through
 	default:
 		h.errorToast(w, r, "unknown source: "+source)
 		return
 	}
+	// Enforce the per-DPG whitelist server-side so operators can't reach a
+	// source the DPG disclaims by crafting a POST directly (would just fail
+	// at issue time with a cryptic error; better to reject up-front).
+	dpgs, _ := h.Adapter.ListIssuerDpgs(r.Context())
+	if !bulkSourceAllowed(source, bulkSourcesFor(dpgs[sess.IssuerDpg])) {
+		h.errorToast(w, r, "source '"+source+"' is not supported by the selected issuer DPG")
+		return
+	}
+	sess.BulkSource = source
 	// Re-render the bulk form area with the chosen source's mini-form.
 	schemas, _ := h.Adapter.ListAllSchemas(r.Context())
 	schema, _ := findSchemaByID(schemas, sess.SchemaID)

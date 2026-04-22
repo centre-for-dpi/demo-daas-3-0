@@ -62,6 +62,14 @@ type issueData struct {
 	FieldValues  map[string]string
 	Fields       []string
 	Sources      []sourceOption
+	// BulkSources lists which bulk-source chips the UI should render, in
+	// render order. Derived from the DPG's Kind="bulk_source" capabilities —
+	// walt.id declares csv+api+db, Inji Certify Pre-Auth declares csv+db
+	// (docs.inji.io lists PostgreSQL + CSV as the supported Data Provider
+	// integrations; API is a roadmap item). Legacy DPGs that declare no
+	// bulk_source capabilities fall back to all three so existing backends
+	// aren't silently blocked.
+	BulkSources []sourceOption
 }
 
 // sourceOption is one chip on the issue form's "source" picker. Derived from
@@ -94,6 +102,14 @@ func (h *H) ShowIssue(w http.ResponseWriter, r *http.Request) {
 	if bulkSource == "" {
 		bulkSource = "csv"
 	}
+	bulkSources := bulkSourcesFor(dpg)
+	// If the stored BulkSource was hidden for this DPG, fall back to the
+	// first allowed source so the form doesn't render an empty chip row
+	// when the operator switches DPGs.
+	if !bulkSourceAllowed(bulkSource, bulkSources) && len(bulkSources) > 0 {
+		bulkSource = bulkSources[0].Key
+		sess.BulkSource = bulkSource
+	}
 	data := issueData{
 		Schema:       schema,
 		Scale:        sess.Scale,
@@ -105,6 +121,7 @@ func (h *H) ShowIssue(w http.ResponseWriter, r *http.Request) {
 		FieldValues:  vals,
 		Fields:       schemaFieldsOfH(schema),
 		Sources:      sourcesFromCapabilities(dpg),
+		BulkSources:  bulkSources,
 	}
 	h.render(w, r, "issuer_issue", h.pageData(sess, data))
 }
@@ -302,4 +319,44 @@ func schemaFieldsOfH(s vctypes.Schema) []string {
 		out = append(out, f.Name)
 	}
 	return out
+}
+
+// bulkSourcesFor returns the ordered list of bulk-source chips the UI should
+// render for a given DPG. Reads the DPG's Kind="bulk_source" capabilities
+// (in the order they appear in backends.json) and renders only those. A DPG
+// with zero bulk_source capabilities falls back to all three — preserves
+// behaviour for the mock adapter and any not-yet-annotated backends. Labels
+// come straight from the capability's Title; Hint from its Body — so the
+// operator sees the same per-DPG rationale the DPG-picker card shows.
+func bulkSourcesFor(dpg vctypes.DPG) []sourceOption {
+	var out []sourceOption
+	for _, c := range dpg.Capabilities {
+		if c.Kind != "bulk_source" {
+			continue
+		}
+		if c.Key != "csv" && c.Key != "api" && c.Key != "db" {
+			continue
+		}
+		out = append(out, sourceOption{Key: c.Key, Label: c.Title, Hint: c.Body})
+	}
+	if len(out) == 0 {
+		return []sourceOption{
+			{Key: "csv", Label: "CSV upload", Hint: "Operator uploads a CSV file from the browser."},
+			{Key: "api", Label: "Secured API", Hint: "Pull rows over HTTPS from a secured API (X-Road, REST, etc.)."},
+			{Key: "db", Label: "Database", Hint: "Run a SELECT against a country-provided postgres database."},
+		}
+	}
+	return out
+}
+
+// bulkSourceAllowed reports whether a stored session BulkSource is still in
+// the DPG's whitelist. Used to reset stale selections when the operator
+// switches DPGs.
+func bulkSourceAllowed(key string, allowed []sourceOption) bool {
+	for _, s := range allowed {
+		if s.Key == key {
+			return true
+		}
+	}
+	return false
 }
