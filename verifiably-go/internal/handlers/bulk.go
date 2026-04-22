@@ -132,6 +132,7 @@ func (h *H) runBulkIssue(w http.ResponseWriter, r *http.Request, sess *Session, 
 		"Accepted": res.Accepted,
 		"Rejected": res.Rejected,
 		"Errors":   res.Errors,
+		"RowsOut":  res.Rows,
 		"Label":    label,
 	})
 }

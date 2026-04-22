@@ -25,12 +25,22 @@ COPY --from=builder /out/verifiably /app/verifiably
 COPY templates ./templates
 COPY static ./static
 COPY config ./config
+# /docs browses markdown from this directory. Bundling the docs trees the
+# container already cares about lets the in-app TOC work without mounting
+# the repo at runtime. COPY layers are additive, so each docs source
+# lands under docs-src/ preserving the repo's relative paths.
+COPY docs ./docs-src/docs
+COPY deploy ./docs-src/deploy
+COPY testdata ./docs-src/testdata
+COPY INTEGRATION.md /app/docs-src/INTEGRATION.md
+COPY slim-plan.md   /app/docs-src/slim-plan.md
 
 ENV VERIFIABLY_ADDR=:8080 \
     VERIFIABLY_ADAPTER=mock \
     VERIFIABLY_BACKENDS_FILE=/app/config/backends.json \
     VERIFIABLY_AUTH_PROVIDERS_FILE=/app/config/auth-providers.json \
-    VERIFIABLY_LOCALES_DIR=/app/locales
+    VERIFIABLY_LOCALES_DIR=/app/locales \
+    VERIFIABLY_DOCS_ROOT=/app/docs-src
 EXPOSE 8080
 # /app/locales is writable via a volume mount in production so translation
 # cache persists across container recreates.

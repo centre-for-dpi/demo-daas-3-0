@@ -2,14 +2,20 @@
   "realm": "vcplatform",
   "enabled": true,
   "registrationAllowed": true,
+  "sslRequired": "none",
   "clients": [
     {
       "clientId": "vcplatform",
       "enabled": true,
       "publicClient": true,
       "directAccessGrantsEnabled": true,
-      "redirectUris": ["http://localhost:8080/*"],
-      "webOrigins": ["http://localhost:8080"],
+      "redirectUris": [
+        "http://localhost:8080/*",
+        "http://172.24.0.1:8080/*",
+        "http://*.compute.amazonaws.com:8080/*",
+        "http://*.amazonaws.com:8080/*"
+      ],
+      "webOrigins": ["+"],
       "protocol": "openid-connect",
       "standardFlowEnabled": true
     }

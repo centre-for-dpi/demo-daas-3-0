@@ -1,0 +1,11 @@
+firstName,familyName,dateOfBirth,gender,placeOfBirth,currentAddress,personalIdentifier,nameAndFamilyNameAtBirth
+Aisha,Otieno,1988-03-14,F,Kisumu,"12 Moi Ave, Nairobi",KE-1988-0314-001,Aisha Otieno
+David,Kimani,1979-11-02,M,Nyeri,"45 Kenyatta Rd, Nakuru",KE-1979-1102-002,David Kimani
+Grace,Mwangi,1991-06-25,F,Murang'a,"8 Ngong Rd, Nairobi",KE-1991-0625-003,Grace Mwangi
+Samuel,Odhiambo,1985-09-18,M,Siaya,"22 Tom Mboya St, Kisumu",KE-1985-0918-004,Samuel Odhiambo
+Faith,Njeri,1992-02-07,F,Kiambu,"17 Thika Rd, Ruiru",KE-1992-0207-005,Faith Njeri
+Anand,Ramlogan,1984-05-12,M,Port of Spain,"3 Frederick St, POS",TT-1984-0512-001,Anand Ramlogan
+Kimberly,Seepersad,1990-10-03,F,San Fernando,"12 Harris Prom, SF",TT-1990-1003-002,Kimberly Seepersad
+Rashid,Ali,1982-07-19,M,Chaguanas,"48 Main Rd, Chaguanas",TT-1982-0719-003,Rashid Ali
+Marie,Bernard,1995-12-21,F,Arima,"9 Hollis Ave, Arima",TT-1995-1221-004,Marie Bernard
+Devon,Charles,1978-04-08,M,Point Fortin,"16 Cap-de-Ville, PF",TT-1978-0408-005,Devon Charles

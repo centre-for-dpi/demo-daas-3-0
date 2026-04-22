@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -26,16 +27,25 @@ func holderCtx(r *http.Request, sess *Session) context.Context {
 	// fallback). Then try email, then the session-scoped fallback for
 	// unauthenticated demo mode. Each distinct key maps to its own
 	// wallet account upstream.
-	var userKey string
-	switch {
-	case sess.AuthProvider != "" && sess.UserSubject != "":
-		userKey = sess.AuthProvider + "|" + sess.UserSubject
-	case sess.UserEmail != "":
-		userKey = sess.UserEmail
-	default:
-		userKey = "session-" + sess.ID
+	// Freeze the wallet key on first use so credentials claimed early in
+	// the session (before OIDC `sub` was populated) stay reachable after
+	// a later auth flow fills it in — otherwise holderCtx would flip
+	// userKey mid-session and a subsequent /holder/present would reach
+	// into a different walt.id wallet than the one the credential landed
+	// in. AuthCallback clears WalletUserKey so the next login derives fresh.
+	if sess.WalletUserKey == "" {
+		switch {
+		case sess.AuthProvider != "" && sess.UserSubject != "":
+			sess.WalletUserKey = sess.AuthProvider + "|" + sess.UserSubject
+		case sess.UserEmail != "":
+			sess.WalletUserKey = sess.UserEmail
+		default:
+			sess.WalletUserKey = "session-" + sess.ID
+		}
 	}
-	return backend.WithHolderIdentity(ctx, userKey)
+	log.Printf("holderCtx sess.ID=%s authProv=%q sub=%q email=%q → userKey=%q (frozen)",
+		sess.ID, sess.AuthProvider, sess.UserSubject, sess.UserEmail, sess.WalletUserKey)
+	return backend.WithHolderIdentity(ctx, sess.WalletUserKey)
 }
 
 // ShowWallet renders the wallet home (receive + inbox + held credentials).

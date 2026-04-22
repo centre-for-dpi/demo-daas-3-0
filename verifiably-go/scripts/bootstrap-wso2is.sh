@@ -23,7 +23,17 @@ set -euo pipefail
 : "${WSO2_ADMIN_PASS:=admin}"
 : "${CLIENT_ID:=verifiably_go_client}"
 : "${CLIENT_NAME:=Verifiably Go}"
-: "${REDIRECT_URI:=http://localhost:8080/auth/callback}"
+# Accept any of the hosts deploy.sh might bind to: localhost for laptop
+# dev, PUBLIC_HOST (docker bridge IP or EC2 hostname) for published browser
+# access, and 172.24.0.1 as a belt-and-braces bridge fallback. WSO2 collapses
+# an array of redirect_uris into a "regexp=(...|...)" value on its side, so
+# all three stay acceptable callbacks.
+: "${PUBLIC_HOST:=localhost}"
+: "${VERIFIABLY_HOST_PORT:=8080}"
+_callback_local="http://localhost:${VERIFIABLY_HOST_PORT}/auth/callback"
+_callback_public="http://${PUBLIC_HOST}:${VERIFIABLY_HOST_PORT}/auth/callback"
+_callback_bridge="http://172.24.0.1:${VERIFIABLY_HOST_PORT}/auth/callback"
+: "${REDIRECT_URIS_JSON:=[\"$_callback_local\",\"$_callback_public\",\"$_callback_bridge\"]}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT="$SCRIPT_DIR/../config/wso2is.env"
@@ -47,7 +57,7 @@ DCR=$(cat <<JSON
 {
   "client_name": "$CLIENT_NAME",
   "grant_types": ["authorization_code", "refresh_token"],
-  "redirect_uris": ["$REDIRECT_URI"],
+  "redirect_uris": $REDIRECT_URIS_JSON,
   "ext_param_client_id": "$CLIENT_ID",
   "ext_pkce_mandatory": false
 }
@@ -73,6 +83,14 @@ if [[ -z "$CLIENT_SECRET" ]]; then
     exit 1
   fi
   echo "  existing client found"
+  # Existing registration may have been created with a stale PUBLIC_HOST.
+  # Push the current redirect_uris so a later deploy with a different
+  # PUBLIC_HOST picks up the new callback.
+  curl -sk -u "$WSO2_ADMIN_USER:$WSO2_ADMIN_PASS" \
+    -H 'Content-Type: application/json' \
+    -X PUT "$WSO2_BASE/api/identity/oauth2/dcr/v1.1/register/$CLIENT_ID" \
+    -d "{\"client_name\":\"$CLIENT_NAME\",\"redirect_uris\":$REDIRECT_URIS_JSON,\"grant_types\":[\"authorization_code\",\"refresh_token\"]}" \
+    > /dev/null && echo "  updated redirect_uris on existing client"
 fi
 
 mkdir -p "$(dirname "$OUT")"

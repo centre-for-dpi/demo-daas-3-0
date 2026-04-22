@@ -66,10 +66,12 @@ func (a *Adapter) ensureWalletSession(ctx context.Context) (*walletSession, erro
 	userKey := backend.HolderIdentityFromContext(ctx)
 	acc := a.accountForUser(userKey)
 	cacheKey := acc.Email
+	log.Printf("waltid: sess userKey=%q acc=%q", userKey, cacheKey)
 
 	a.mu.Lock()
 	if s, ok := a.sessions[cacheKey]; ok {
 		a.mu.Unlock()
+		log.Printf("waltid: sess hit walletID=%s", s.WalletID)
 		return s, nil
 	}
 	a.mu.Unlock()
@@ -607,10 +609,27 @@ func (a *Adapter) PreviewPresentation(ctx context.Context, req backend.PresentCr
 	preview.Disclosure, preview.Fields = describePDFields(pd, held)
 	preview.RequestedFormat = extractPDFormat(pd)
 
+	// Diagnostic: dump the raw stored document JWT payload so we can confirm
+	// exactly where walt.id's matcher would resolve the PD's JSONPaths.
+	// Match runs against SDJwt.parse(document).fullPayload — so if the
+	// holder/subject fields don't live at $.vc.credentialSubject.* in that
+	// payload, matchPD returns zero. Log both the PD and each credential's
+	// decoded payload so the mismatch is visible in one place.
+	if pdJSON, err := json.Marshal(pd); err == nil {
+		log.Printf("waltid: PreviewPresentation PD=%s", string(pdJSON))
+	}
+	a.dumpWalletDocumentPayloads(authCtx, sess.WalletID)
+
 	// Walt.id's wallet-api is the authority on whether a credential
 	// satisfies a PD. Ask it directly so the consent page reflects what
 	// the submit will actually do.
 	matches, ok := a.matchPD(authCtx, sess.WalletID, pd)
+	log.Printf("waltid: PreviewPresentation walletID=%s credReq=%s held=%d matched=%d ok=%v heldNotNil=%v",
+		sess.WalletID, req.CredentialID, len(creds), len(matches), ok, held != nil)
+	for i, c := range creds {
+		log.Printf("waltid: PreviewPresentation held[%d] id=%s title=%q format=%s fields=%v",
+			i, c.ID, c.Title, c.Format, c.Fields)
+	}
 	if !ok {
 		return preview, nil
 	}
@@ -912,6 +931,44 @@ func extractClientID(requestURI string) string {
 		return ""
 	}
 	return u.Query().Get("client_id")
+}
+
+// dumpWalletDocumentPayloads fetches the wallet's credential listing and
+// logs the decoded JWT payload for each credential that has one. Purely
+// diagnostic; used to confirm the shape of fullPayload that walt.id's
+// PD matcher sees when evaluating JSONPath constraints.
+func (a *Adapter) dumpWalletDocumentPayloads(ctx context.Context, walletID string) {
+	var raw []map[string]json.RawMessage
+	if err := a.wallet.DoJSON(ctx, http.MethodGet,
+		fmt.Sprintf("/wallet-api/wallet/%s/credentials", walletID),
+		nil, &raw, nil); err != nil {
+		log.Printf("waltid: dump payloads: list failed: %v", err)
+		return
+	}
+	for _, c := range raw {
+		var id, format, doc string
+		_ = json.Unmarshal(c["id"], &id)
+		_ = json.Unmarshal(c["format"], &format)
+		_ = json.Unmarshal(c["document"], &doc)
+		if doc == "" {
+			_ = json.Unmarshal(c["jwt"], &doc)
+		}
+		if doc == "" {
+			log.Printf("waltid: dump payloads id=%s format=%s (no document)", id, format)
+			continue
+		}
+		parts := strings.SplitN(doc, ".", 3)
+		if len(parts) < 2 {
+			log.Printf("waltid: dump payloads id=%s format=%s (non-JWT document)", id, format)
+			continue
+		}
+		body, err := base64urlDecode(parts[1])
+		if err != nil {
+			log.Printf("waltid: dump payloads id=%s format=%s decode err=%v", id, format, err)
+			continue
+		}
+		log.Printf("waltid: dump payloads id=%s format=%s payload=%s", id, format, string(body))
+	}
 }
 
 // matchPD calls walt.id's match endpoint with an inline PD. Returns

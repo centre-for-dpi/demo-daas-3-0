@@ -269,6 +269,8 @@ func (h *H) SimulateCSV(w http.ResponseWriter, r *http.Request) {
 		"Accepted": res.Accepted,
 		"Rejected": res.Rejected,
 		"Errors":   res.Errors,
+		"RowsOut":  res.Rows,
+		"Label":    "csv",
 	})
 }
 

@@ -246,13 +246,34 @@ services:
       timeout: 5s
       retries: 5
 
-  inji-certify-preauth:
-    image: injistack/inji-certify-with-plugins:0.14.0
+  # inji-preauth-proxy is a thin reverse proxy that takes over the
+  # `inji-certify-preauth` network identity. Strict OID4VCI wallets
+  # (walt.id's) fetch metadata at `{credential_issuer}/.well-known/...` and
+  # sign proof-JWTs with `aud = credential_issuer`. Inji itself advertises
+  # `credential_issuer: http://inji-certify-preauth:8090` but only serves
+  # metadata under `/v1/certify/issuance/.well-known/...`, and its
+  # JwtProofValidator requires proof aud to equal `mosip.certify.identifier`
+  # (= the same host). Serving metadata at the ROOT of that host, rewritten
+  # to match walt.id's strict parser, squares both constraints without
+  # touching Inji's config. See cmd/inji-preauth-proxy/main.go for the
+  # intercept rules. Everything else is a transparent httputil reverse proxy.
+  inji-preauth-proxy:
+    image: inji-preauth-proxy:local
     restart: unless-stopped
     container_name: inji-certify-preauth
-    user: root
     ports:
       - "8094:8090"
+    environment:
+      - UPSTREAM_URL=http://inji-certify-preauth-backend:8090
+      - LISTEN_ADDR=:8090
+    depends_on:
+      - inji-certify-preauth-backend
+
+  inji-certify-preauth-backend:
+    image: injistack/inji-certify-with-plugins:0.14.0
+    restart: unless-stopped
+    container_name: inji-certify-preauth-backend
+    user: root
     environment:
       - container_user=mosip
       - active_profile_env=default,csvdp-farmer

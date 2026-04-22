@@ -1,0 +1,11 @@
+salutation,firstName,familyName,emailAddress,dateOfBirth,purchasePrice,totalIncome,mortgageAmount,additionalCollateral,postCodeProperty
+Mrs,Aisha,Otieno,aisha.otieno@example.com,1988-03-14,420000,85000,336000,none,00100
+Mr,David,Kimani,david.kimani@example.com,1979-11-02,560000,110000,448000,none,00200
+Ms,Grace,Mwangi,grace.mwangi@example.com,1991-06-25,380000,72000,304000,vehicle,00300
+Mr,Samuel,Odhiambo,samuel.odhiambo@example.com,1985-09-18,495000,96000,396000,none,00400
+Mrs,Faith,Njeri,faith.njeri@example.com,1992-02-07,310000,68000,248000,savings,00500
+Mr,Brian,Kipchoge,brian.kipchoge@example.com,1983-12-30,640000,125000,512000,shares,00600
+Ms,Mercy,Wambui,mercy.wambui@example.com,1990-07-11,275000,60000,220000,none,00700
+Mr,Emmanuel,Ochieng,emmanuel.ochieng@example.com,1975-04-22,780000,140000,624000,land,00800
+Mrs,Sarah,Achieng,sarah.achieng@example.com,1987-08-15,445000,88000,356000,none,00900
+Mr,Peter,Mutua,peter.mutua@example.com,1981-01-28,520000,105000,416000,none,01000

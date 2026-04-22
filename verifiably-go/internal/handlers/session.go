@@ -91,6 +91,16 @@ type Session struct {
 	// into the same browser session don't collide on an email-less key.
 	UserSubject     string
 
+	// WalletUserKey is the frozen identity the upstream wallet is
+	// partitioned by. Computed once, on the first call to holderCtx, from
+	// the best-available identity at that moment (AuthProvider+Subject >
+	// email > session-id). Never re-derived — if it flipped mid-session
+	// whenever the OIDC subject appeared/disappeared, credentials claimed
+	// before the flip would be stranded in a wallet the browser session
+	// no longer addresses. Cleared in AuthCallback alongside WalletCreds
+	// so a fresh login starts from a clean derivation.
+	WalletUserKey string
+
 	// Misc
 	NextExampleIdx int
 }

@@ -193,6 +193,25 @@ type IssueBulkResult struct {
 	Accepted int
 	Rejected int
 	Errors   []BulkError // illustrative errors for UI display (not necessarily exhaustive)
+
+	// Rows is the per-row report the bulk-issuance UI renders. Each entry
+	// carries the original subject (so the operator can see WHO it was for),
+	// the offer URI (so they can copy/send it), and status metadata. This
+	// is what lets a government issuing office actually use the feature —
+	// without it they can only see "10 accepted" and have no idea which
+	// citizens got which offers. Row numbers are 1-indexed to match the
+	// operator's mental model of "row 1 is the first data row of my file".
+	Rows []BulkRowResult
+}
+
+// BulkRowResult is the per-row output for a bulk issuance.
+type BulkRowResult struct {
+	Row     int               // 1-indexed position in the source (CSV/API/DB)
+	Subject map[string]string // the row's raw field values (holder, dateOfBirth, …)
+	Label   string            // one-line summary picked from Subject (holder | firstName+familyName | first value)
+	Status  string            // "issued" | "failed"
+	OfferURI string           // OID4VCI offer URI — empty when Status=="failed"
+	Error   string            // failure reason (truncated) — empty when Status=="issued"
 }
 
 // BulkError describes one row-level error in a bulk issuance.

@@ -279,6 +279,8 @@ func titleFor(page string) string {
 		"verifier_dpg":           "Verifier · Engine",
 		"verifier_verify":        "Verify",
 		"redirect_notice":        "Redirect",
+		"docs_index":             "Docs",
+		"docs_view":              "Docs",
 	}[page]
 }
 
@@ -297,6 +299,8 @@ func crumbFor(page string) string {
 		"verifier_dpg":          "verifier → engine",
 		"verifier_verify":       "verifier → verify",
 		"redirect_notice":       "redirect",
+		"docs_index":            "docs",
+		"docs_view":             "docs",
 	}[page]
 }
 
@@ -485,7 +489,33 @@ func (h *H) AuthCallback(w http.ResponseWriter, r *http.Request) {
 	// /holder/wallet fetch pulls this user's credentials instead.
 	sess.WalletCreds = nil
 	sess.WalletPending = nil
+	sess.WalletUserKey = ""
 	h.redirect(w, r, authNextFor(sess.Role))
+}
+
+// Logout wipes the session's authenticated identity + wallet key + any
+// cached wallet state, so the next holderCtx re-derives against a clean
+// slate. We keep the session cookie itself so the browser's role +
+// language selections survive, but everything identity-linked is cleared.
+// Used from the topbar "Sign out" button — the primary escape hatch when
+// a user has been bounced between OIDC providers and ended up pointing
+// at a wallet partition they don't recognise.
+func (h *H) Logout(w http.ResponseWriter, r *http.Request) {
+	sess := h.Sessions.MustGet(w, r)
+	sess.AuthProvider = ""
+	sess.AuthOK = false
+	sess.AccessToken = ""
+	sess.RefreshToken = ""
+	sess.IDToken = ""
+	sess.UserEmail = ""
+	sess.UserSubject = ""
+	sess.PendingProvider = ""
+	sess.PendingState = ""
+	sess.PendingPKCE = ""
+	sess.WalletCreds = nil
+	sess.WalletPending = nil
+	sess.WalletUserKey = ""
+	h.redirect(w, r, "/")
 }
 
 // The following are thin indirections through the oidc subpackage so this

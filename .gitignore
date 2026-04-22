@@ -38,3 +38,10 @@ verifiably-go/.env
 # Guard: never commit node_modules anywhere (directory or symlink)
 node_modules
 node_modules/
+
+# Compiled inji-preauth-proxy binary — rebuilt from main.go via go build
+verifiably-go/cmd/inji-preauth-proxy/inji-preauth-proxy
+
+# Python bytecode cache from testdata/bulk-issuance helpers
+__pycache__/
+*.pyc

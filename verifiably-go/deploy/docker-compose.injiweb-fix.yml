@@ -83,3 +83,24 @@ services:
     volumes:
       - {{VERIFIABLY_GO_DIR}}/deploy/injiweb-overrides/mimoto-issuers-config.json:/config/server/mimoto-issuers-config.json:ro
       - {{VERIFIABLY_GO_DIR}}/deploy/injiweb-overrides/certify-nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+  # eSignet (and mock-identity) crash-loop on AWS EC2 kernels (6.17+) because
+  # their bundled OpenJDK 11 can't read cgroup v2 metrics — the JVM throws
+  # NullPointerException in CgroupV2Subsystem.getInstance() at line 81, which
+  # is triggered the moment Micrometer's ProcessorMetrics calls
+  # ManagementFactory.getOperatingSystemMXBean(). Spring Boot 2.3.6 wires
+  # ProcessorMetrics in before the management.metrics.binders.* flag is
+  # consulted, so that env var alone isn't enough — we also have to stop the
+  # JVM from looking at cgroups in the first place. -XX:-UseContainerSupport
+  # makes the JVM fall back to the host-native OperatingSystemImpl path
+  # which doesn't touch CgroupV2Subsystem. Harmless for demo scale; production
+  # deployments would want a newer JDK or Spring Boot.
+  injiweb-esignet:
+    environment:
+      JAVA_TOOL_OPTIONS: "-XX:-UseContainerSupport"
+      MANAGEMENT_METRICS_BINDERS_PROCESSOR_ENABLED: "false"
+
+  injiweb-mock-identity:
+    environment:
+      JAVA_TOOL_OPTIONS: "-XX:-UseContainerSupport"
+      MANAGEMENT_METRICS_BINDERS_PROCESSOR_ENABLED: "false"

@@ -290,21 +290,175 @@
 <div style="margin-top:1.5rem">
   <div class="caps" style="margin-bottom:0.5rem">
     {{if .Label}}{{.Label}} — {{end}}{{.Total}} row{{if ne .Total 1}}s{{end}}
-    · <span class="mono">{{.Accepted}}</span> accepted
-    {{if gt .Rejected 0}}· <span class="mono" style="color:var(--err)">{{.Rejected}}</span> rejected{{end}}
+    · <span class="mono" style="color:var(--ok)">{{.Accepted}}</span> issued
+    {{if gt .Rejected 0}}· <span class="mono" style="color:var(--err)">{{.Rejected}}</span> failed{{end}}
   </div>
+
+  {{if .RowsOut}}
+  <div style="margin-top:0.75rem;overflow:auto;border:1px solid var(--line);border-radius:4px">
+    <table class="bulk-result-table" style="width:100%;border-collapse:collapse;font-size:0.82rem">
+      <thead>
+        <tr style="background:var(--bg-elev);border-bottom:1px solid var(--line)">
+          <th style="text-align:left;padding:0.5rem 0.75rem;width:3rem" class="caps">#</th>
+          <th style="text-align:left;padding:0.5rem 0.75rem" class="caps">Recipient</th>
+          <th style="text-align:left;padding:0.5rem 0.75rem;width:5.5rem" class="caps">Status</th>
+          <th style="text-align:left;padding:0.5rem 0.75rem" class="caps">Offer link</th>
+          <th style="text-align:center;padding:0.5rem 0.75rem;width:8rem" class="caps">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .RowsOut}}
+        <tr style="border-bottom:1px solid var(--line)">
+          <td class="mono" style="padding:0.5rem 0.75rem;color:var(--ink-mute)">{{.Row}}</td>
+          <td style="padding:0.5rem 0.75rem">
+            <div style="font-weight:500">{{.Label}}</div>
+            {{if .Subject}}
+              <details style="margin-top:0.2rem;font-size:0.72rem;color:var(--ink-mute)">
+                <summary style="cursor:pointer">row data</summary>
+                <dl style="margin:0.3rem 0 0;display:grid;grid-template-columns:max-content 1fr;gap:0.15rem 0.6rem">
+                  {{range $k, $v := .Subject}}
+                    <dt class="mono" style="color:var(--ink-mute)">{{$k}}</dt>
+                    <dd class="mono" style="margin:0;color:var(--ink-soft)">{{$v}}</dd>
+                  {{end}}
+                </dl>
+              </details>
+            {{end}}
+          </td>
+          <td style="padding:0.5rem 0.75rem">
+            {{if eq .Status "issued"}}
+              <span class="chip" style="background:color-mix(in srgb, var(--ok) 15%, transparent);color:var(--ok);padding:0.15rem 0.5rem;border-radius:10px;font-size:0.7rem">✓ issued</span>
+            {{else}}
+              <span class="chip" style="background:color-mix(in srgb, var(--err) 15%, transparent);color:var(--err);padding:0.15rem 0.5rem;border-radius:10px;font-size:0.7rem">✗ failed</span>
+            {{end}}
+          </td>
+          <td style="padding:0.5rem 0.75rem">
+            {{if eq .Status "issued"}}
+              {{/* Selectable + readable: wrap so long URIs break instead of
+                   being hidden, render in monospace so the officer can spot
+                   the unique offer-id suffix, cap height so 10 rows still
+                   fit on screen. One-click select handler fills the clipboard
+                   fallback on non-HTTPS origins where navigator.clipboard is
+                   undefined. */}}
+              <textarea readonly rows="2" onclick="this.select()"
+                        style="width:100%;max-width:28rem;font-family:'JetBrains Mono',monospace;font-size:0.68rem;line-height:1.25;padding:0.3rem 0.4rem;border:1px solid var(--line);border-radius:3px;background:var(--bg);color:var(--ink-soft);resize:vertical;word-break:break-all">{{.OfferURI}}</textarea>
+            {{else}}
+              <div style="font-size:0.72rem;color:var(--err);font-style:italic">{{.Error}}</div>
+            {{end}}
+          </td>
+          <td style="padding:0.5rem 0.75rem;text-align:center">
+            {{if eq .Status "issued"}}
+              <button type="button" class="btn ghost" style="font-size:0.72rem;padding:0.2rem 0.55rem;margin:0 0.1rem"
+                      onclick="bulkCopy(this, this.dataset.offer)"
+                      data-offer="{{.OfferURI}}">Copy link</button>
+              <button type="button" class="btn ghost" style="font-size:0.72rem;padding:0.2rem 0.55rem;margin:0 0.1rem"
+                      onclick="openBulkQR(this.dataset.offer, this.dataset.label)"
+                      data-offer="{{.OfferURI}}" data-label="{{.Label}}">QR</button>
+            {{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+
+  <div style="display:flex;gap:0.5rem;margin-top:0.75rem;flex-wrap:wrap">
+    <button type="button" class="btn ghost" style="font-size:0.78rem"
+            onclick="copyBulkOffers(this)" data-count="{{.Accepted}}">
+      Copy all offer links ({{.Accepted}})
+    </button>
+    <button type="button" class="btn ghost" style="font-size:0.78rem"
+            onclick="downloadBulkCsv(this)">
+      Download CSV (recipient + offer link)
+    </button>
+  </div>
+
+  <script>
+    (function () {
+      const rows = {{jsonRows .RowsOut}};
+      window._bulkRows = rows;
+
+      // copyToClipboard works on both secure-context (HTTPS/localhost) and
+      // plain-HTTP origins. navigator.clipboard.writeText is undefined over
+      // http://172.24.0.1:8080 etc., so fall back to the legacy textarea +
+      // execCommand trick — still universally supported and doesn't need
+      // user permission. Returns a Promise that resolves on success so the
+      // caller can flash feedback on the button.
+      window.bulkCopyText = function (text) {
+        return new Promise((resolve, reject) => {
+          if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text).then(resolve, () => fallback());
+          } else {
+            fallback();
+          }
+          function fallback() {
+            try {
+              const ta = document.createElement('textarea');
+              ta.value = text;
+              ta.style.position = 'fixed';
+              ta.style.top = '-9999px';
+              ta.style.opacity = '0';
+              document.body.appendChild(ta);
+              ta.focus(); ta.select();
+              const ok = document.execCommand('copy');
+              document.body.removeChild(ta);
+              ok ? resolve() : reject(new Error('execCommand copy failed'));
+            } catch (e) { reject(e); }
+          }
+        });
+      };
+      window.bulkCopy = function (btn, text) {
+        const orig = btn.textContent;
+        window.bulkCopyText(text).then(
+          () => { btn.textContent = 'Copied ✓'; setTimeout(() => btn.textContent = orig, 1500); },
+          (err) => { btn.textContent = 'Copy failed'; console.warn('bulkCopy:', err); setTimeout(() => btn.textContent = orig, 2000); }
+        );
+      };
+      window.copyBulkOffers = function (btn) {
+        const text = rows.filter(r => r.Status === 'issued').map(r => r.Label + '\t' + r.OfferURI).join('\n');
+        window.bulkCopy(btn, text);
+      };
+      window.downloadBulkCsv = function () {
+        const lines = ['row,recipient,status,offer_uri,error'];
+        for (const r of rows) {
+          const esc = s => '"' + String(s || '').replace(/"/g, '""') + '"';
+          lines.push([r.Row, esc(r.Label), r.Status, esc(r.OfferURI), esc(r.Error)].join(','));
+        }
+        const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'bulk-issuance-' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.csv';
+        a.click();
+        URL.revokeObjectURL(a.href);
+      };
+      window.openBulkQR = function (uri, label) {
+        const modal = document.createElement('div');
+        modal.className = 'modal-mask';
+        modal.onclick = e => { if (e.target === modal) modal.remove(); };
+        // /qr reads the ?text= query param (see internal/handlers/qr.go).
+        const src = '/qr?text=' + encodeURIComponent(uri) + '&size=320';
+        const safeLabel = String(label || '').replace(/[<>&]/g, c => ({ '<':'&lt;','>':'&gt;','&':'&amp;' }[c]));
+        modal.innerHTML =
+          '<div class="modal" style="text-align:center;max-width:420px">' +
+            '<button class="close" onclick="this.closest(\'.modal-mask\').remove()">×</button>' +
+            '<h3 style="margin:0 0 0.5rem;font-family:\'Josefin Sans\',sans-serif;font-weight:500">' + safeLabel + '</h3>' +
+            '<div style="font-size:0.75rem;color:var(--ink-mute);margin-bottom:1rem">Holder scans this QR with any OID4VCI wallet</div>' +
+            '<img src="' + src + '" style="width:320px;height:320px;background:#fff;padding:0.5rem;border-radius:4px;display:block;margin:0 auto" alt="OID4VCI QR">' +
+            '<textarea readonly onclick="this.select()" rows="3" style="width:100%;margin-top:1rem;font-family:\'JetBrains Mono\',monospace;font-size:0.68rem;padding:0.4rem;border:1px solid var(--line);border-radius:3px;background:var(--bg);color:var(--ink-soft);word-break:break-all;resize:vertical"></textarea>' +
+            '<button type="button" class="btn" style="margin-top:0.75rem" onclick="bulkCopy(this, this.closest(\'.modal\').querySelector(\'textarea\').value)">Copy link</button>' +
+          '</div>';
+        document.getElementById('modal-root').appendChild(modal);
+        modal.querySelector('textarea').value = uri;
+      };
+    })();
+  </script>
+  {{end}}
+
   {{if gt .Rejected 0}}
     <div style="background:var(--bg-elev);border-left:3px solid var(--err);padding:0.75rem 1rem;margin-top:0.75rem;font-size:0.82rem">
-      <div class="caps" style="margin-bottom:0.4rem;color:var(--err)">Per-row errors (first {{len .Errors}})</div>
+      <div class="caps" style="margin-bottom:0.4rem;color:var(--err)">Summary — rejected rows</div>
       <ul style="margin:0;padding-left:1.25rem;font-family:'JetBrains Mono',monospace;font-size:0.75rem;color:var(--ink-soft)">
         {{range .Errors}}<li>row {{.Row}}: {{.Reason}}</li>{{end}}
       </ul>
-    </div>
-  {{end}}
-  {{if gt .Accepted 0}}
-    <div style="background:var(--bg-elev);border-left:3px solid var(--ok);padding:0.75rem 1rem;margin-top:0.75rem;font-size:0.82rem">
-      {{.Accepted}} credential{{if ne .Accepted 1}}s{{end}} issued. Each row produced its own offer URI;
-      holders can claim them via the paste flow or with any OID4VCI wallet.
     </div>
   {{end}}
 </div>

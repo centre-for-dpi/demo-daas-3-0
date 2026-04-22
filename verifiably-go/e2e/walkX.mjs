@@ -27,7 +27,67 @@ async function pickDPG(page, role) {
   if (c) { await c.click(); await new Promise(r => setTimeout(r, 300)); await page.click(`#${role}-dpg-continue`).catch(()=>{}); await new Promise(r => setTimeout(r, 900)); }
 }
 
+async function issueFreshSDJWT() {
+  const ctx = await br.createBrowserContext();
+  const p = await ctx.newPage();
+  await p.setViewport({ width: 1400, height: 1100 });
+  await auth(p, 'issuer');
+  await pickDPG(p, 'issuer');
+  await p.goto('http://localhost:8080/issuer/schema', { waitUntil: 'networkidle2' });
+  await p.waitForSelector('.schema-card', { timeout: 15000 });
+  await p.evaluate(() => {
+    const c = [...document.querySelectorAll('.schema-card')].find(x => x.dataset.name === 'Open Badge Credential');
+    const chip = [...c.querySelectorAll('.chip.small')].find(x => x.title === 'vc+sd-jwt');
+    chip?.click();
+  });
+  await p.waitForNetworkIdle({ idleTime: 400, timeout: 5000 }).catch(()=>{});
+  await p.goto('http://localhost:8080/issuer/mode', { waitUntil: 'networkidle2' });
+  await p.evaluate(() => document.querySelector('button[hx-vals*="single"]')?.click());
+  await new Promise(r => setTimeout(r, 300));
+  await p.evaluate(() => document.querySelector('button[hx-vals*="wallet"]')?.click());
+  await new Promise(r => setTimeout(r, 300));
+  await p.goto('http://localhost:8080/issuer/issue', { waitUntil: 'networkidle2' });
+  await new Promise(r => setTimeout(r, 600));
+  await p.evaluate(() => {
+    for (const [n, v] of [['holder','FullDiscTest'],['achievement','Passed'],['issuedOn','2026-04-21']]) {
+      const i = document.querySelector(`input[name="field_${n}"]`);
+      if (i) { i.value = v; i.dispatchEvent(new Event('input',{bubbles:true})); }
+    }
+  });
+  await p.evaluate(() => [...document.querySelectorAll('button')].find(x => /Issue credential/i.test(x.textContent||''))?.click());
+  await p.waitForNetworkIdle({ idleTime: 600, timeout: 10000 }).catch(()=>{});
+  await new Promise(r => setTimeout(r, 1200));
+  const offer = await p.evaluate(() => document.querySelector('.link-display')?.textContent?.trim());
+  await p.close();
+  await ctx.close();
+
+  const hCtx = await br.createBrowserContext();
+  const hp = await hCtx.newPage();
+  await hp.setViewport({ width: 1400, height: 1100 });
+  await auth(hp, 'holder');
+  await pickDPG(hp, 'holder');
+  await hp.goto('http://localhost:8080/holder/wallet', { waitUntil: 'networkidle2' });
+  await hp.evaluate((u) => {
+    const ta = document.getElementById('offer-paste');
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+    setter.call(ta, u);
+    ta.dispatchEvent(new Event('input', {bubbles:true}));
+    ta.closest('form').requestSubmit();
+  }, offer);
+  await hp.waitForNetworkIdle({ idleTime: 600, timeout: 10000 }).catch(()=>{});
+  await new Promise(r => setTimeout(r, 800));
+  await hp.evaluate(() => [...document.querySelectorAll('button')].find(x => /Accept/i.test((x.textContent||'').trim()))?.click());
+  await hp.waitForNetworkIdle({ idleTime: 600, timeout: 10000 }).catch(()=>{});
+  await new Promise(r => setTimeout(r, 900));
+  await hp.close();
+  return hCtx;
+}
+
 try {
+  console.log('issuing fresh SD-JWT Open Badge with selectiveDisclosure...');
+  const holderCtx = await issueFreshSDJWT();
+  console.log('issued + claimed');
+
   // Verifier tab stays open to watch polling result
   const vCtx = await br.createBrowserContext();
   const vPage = await vCtx.newPage();
@@ -44,6 +104,12 @@ try {
   });
   await vPage.waitForNetworkIdle({ idleTime: 400, timeout: 5000 }).catch(()=>{});
   await new Promise(r => setTimeout(r, 400));
+  // Switch to FULL disclosure explicitly
+  await vPage.evaluate(() => {
+    const r = document.querySelector('input[name="disclosure"][value="full"]');
+    if (r) { r.checked = true; r.dispatchEvent(new Event('change', {bubbles:true})); }
+  });
+  await new Promise(r => setTimeout(r, 200));
   await vPage.evaluate(() => {
     const b = [...document.querySelectorAll('#custom-template-form button[type="submit"]')].find(x => /Generate/i.test(x.textContent||''));
     b?.click();
@@ -53,12 +119,9 @@ try {
   const vURI = await vPage.evaluate(() => document.querySelector('#oid4vp-output .link-display')?.textContent?.trim());
   console.log('verifier URI generated');
 
-  // Present via holder
-  const hCtx = await br.createBrowserContext();
-  const hPage = await hCtx.newPage();
+  // Present via holder — reuse the holder context that claimed the fresh cred
+  const hPage = await holderCtx.newPage();
   await hPage.setViewport({ width: 1400, height: 1100 });
-  await auth(hPage, 'holder');
-  await pickDPG(hPage, 'holder');
   await hPage.goto('http://localhost:8080/holder/present', { waitUntil: 'networkidle2' });
   await new Promise(r => setTimeout(r, 400));
   await hPage.evaluate((u) => {
@@ -67,6 +130,7 @@ try {
     setter.call(ta, u);
     ta.dispatchEvent(new Event('input', {bubbles:true}));
   }, vURI);
+  // Pick the MOST RECENT Open Badge vc+sd-jwt (the one we just issued)
   await hPage.evaluate(() => {
     const sel = document.querySelector('select[name="credential_id"]');
     const m = [...sel.options].reverse().find(o => /Open Badge/i.test(o.textContent) && o.dataset.format === 'vc+sd-jwt');
@@ -84,7 +148,7 @@ try {
   await new Promise(r => setTimeout(r, 1500));
   console.log('holder disclosed');
   await hPage.close();
-  await hCtx.close();
+  await holderCtx.close();
 
   // Wait for the verifier's auto-poll to pick up the terminal state.
   // With the isTerminalSession fix, we keep polling until verificationResult is set.

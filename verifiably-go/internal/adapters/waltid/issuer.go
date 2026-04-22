@@ -478,7 +478,10 @@ func (a *Adapter) IssueAsPDF(_ context.Context, _ backend.IssueRequest) (backend
 	return backend.IssueAsPDFResult{}, backend.ErrNotSupported
 }
 
-// IssueBulk iterates Rows and calls IssueToWallet per row.
+// IssueBulk iterates Rows and calls IssueToWallet per row. Returns a
+// per-row report (offer URI on success, error reason on failure, plus a
+// human-readable label for each row) so the UI can render the detail
+// table the issuing officer actually needs.
 func (a *Adapter) IssueBulk(ctx context.Context, req backend.IssueBulkRequest) (backend.IssueBulkResult, error) {
 	if len(req.Rows) == 0 {
 		return backend.IssueBulkResult{}, fmt.Errorf("waltid: no rows supplied")
@@ -486,8 +489,10 @@ func (a *Adapter) IssueBulk(ctx context.Context, req backend.IssueBulkRequest) (
 	accepted := 0
 	rejected := 0
 	var errs []backend.BulkError
+	rows := make([]backend.BulkRowResult, 0, len(req.Rows))
 	for i, row := range req.Rows {
-		_, err := a.IssueToWallet(ctx, backend.IssueRequest{
+		label := rowLabel(row)
+		res, err := a.IssueToWallet(ctx, backend.IssueRequest{
 			IssuerDpg:   req.IssuerDpg,
 			Schema:      req.Schema,
 			SubjectData: row,
@@ -495,12 +500,52 @@ func (a *Adapter) IssueBulk(ctx context.Context, req backend.IssueBulkRequest) (
 		})
 		if err != nil {
 			rejected++
-			errs = append(errs, backend.BulkError{Row: i + 1, Reason: truncate(err.Error(), 140)})
+			reason := truncate(err.Error(), 140)
+			errs = append(errs, backend.BulkError{Row: i + 1, Reason: reason})
+			rows = append(rows, backend.BulkRowResult{
+				Row: i + 1, Subject: row, Label: label, Status: "failed", Error: reason,
+			})
 			continue
 		}
 		accepted++
+		rows = append(rows, backend.BulkRowResult{
+			Row: i + 1, Subject: row, Label: label, Status: "issued", OfferURI: res.OfferURI,
+		})
 	}
-	return backend.IssueBulkResult{Accepted: accepted, Rejected: rejected, Errors: errs}, nil
+	return backend.IssueBulkResult{
+		Accepted: accepted, Rejected: rejected, Errors: errs, Rows: rows,
+	}, nil
+}
+
+// rowLabel picks a one-line label the UI table can display per row.
+// Government officers scan these to recognise WHO a credential was for,
+// so we prefer named-person fields over opaque ids. Falls back to the
+// first non-empty value so every row surfaces something.
+func rowLabel(row map[string]string) string {
+	if v := strings.TrimSpace(row["holder"]); v != "" {
+		return v
+	}
+	first := strings.TrimSpace(row["firstName"])
+	last := strings.TrimSpace(row["familyName"])
+	if first != "" || last != "" {
+		return strings.TrimSpace(first + " " + last)
+	}
+	if v := strings.TrimSpace(row["name"]); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(row["personalIdentifier"]); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(row["ReceiptId"]); v != "" {
+		return v
+	}
+	// Fallback: first non-empty value in the row.
+	for _, v := range row {
+		if s := strings.TrimSpace(v); s != "" {
+			return s
+		}
+	}
+	return "(empty row)"
 }
 
 // BootstrapOffers issues a single canned credential against whatever schema is

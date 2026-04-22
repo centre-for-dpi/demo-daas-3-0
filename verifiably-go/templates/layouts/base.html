@@ -22,6 +22,8 @@
 <nav class="nav">
   <a href="/" class="nav-brand" hx-boost="true" hx-target="#main" hx-swap="innerHTML show:window:top">Verifiably<span>.</span></a>
   <div class="nav-right">
+    <a href="/docs" hx-boost="true" hx-target="#main" hx-swap="innerHTML show:window:top"
+       class="mono" style="font-size:0.78rem;color:var(--ink-soft);text-decoration:none;padding:0.25rem 0.5rem;border:1px solid var(--line);border-radius:2px;margin-right:0.5rem">Docs</a>
     <div class="nav-crumb mono">{{.Crumb}}</div>
     <form method="post" action="/lang" id="lang-form" style="display:inline-flex;align-items:center;gap:0.35rem">
       <select name="lang" onchange="this.form.submit()" aria-label="Language"
@@ -36,6 +38,17 @@
         <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
       </svg>
     </button>
+    {{if and .Session .Session.AuthProvider}}
+    <form method="post" action="/auth/logout" style="display:inline">
+      <button type="submit" class="theme-toggle" title="Sign out" aria-label="Sign out">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+          <polyline points="16 17 21 12 16 7"/>
+          <line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
+      </button>
+    </form>
+    {{end}}
   </div>
 </nav>
 

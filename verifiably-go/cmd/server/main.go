@@ -11,6 +11,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -56,6 +57,17 @@ func main() {
 		Debug:      debug,
 	}
 
+	// /docs browser reads markdown from VERIFIABLY_DOCS_ROOT (set by the
+	// Dockerfile to /app/docs-src — a snapshot of the repo's .md files).
+	// Falls back to "." for bare-metal `go run` from the repo root.
+	docsRoot := os.Getenv("VERIFIABLY_DOCS_ROOT")
+	if docsRoot == "" {
+		docsRoot = "."
+	}
+	if err := handlers.SetDocsRoot(docsRoot); err != nil {
+		log.Printf("docs: SetDocsRoot(%q) failed: %v (TOC may be empty)", docsRoot, err)
+	}
+
 	mux := http.NewServeMux()
 
 	// Static files
@@ -76,9 +88,12 @@ func main() {
 	mux.HandleFunc("POST /auth", h.CompleteAuth)
 	mux.HandleFunc("POST /auth/start", h.StartAuth)
 	mux.HandleFunc("GET /auth/callback", h.AuthCallback)
+	mux.HandleFunc("POST /auth/logout", h.Logout)
 	mux.HandleFunc("GET /lang", h.SetLang)
 	mux.HandleFunc("POST /lang", h.SetLang)
 	mux.HandleFunc("GET /qr", h.QRImage)
+	mux.HandleFunc("GET /docs", h.DocsIndex)
+	mux.HandleFunc("GET /docs/view", h.DocsView)
 
 	// Inji Web integration: certify-nginx routes POST /v1/certify/issuance/credential
 	// back to us at host.docker.internal:8080/inji-proxy/issuance/credential. We
@@ -200,6 +215,19 @@ func funcMap() template.FuncMap {
 		"hasPrefix":         strings.HasPrefix,
 		"replaceUnderscore": func(s string) string { return strings.ReplaceAll(s, "_", " ") },
 		"trimPrefix":        strings.TrimPrefix,
+
+		// jsonRows marshals arbitrary data to a JSON literal the bulk-result
+		// fragment embeds into its <script> block so client-side handlers
+		// (copy-all, download-CSV) can operate on the per-row data without
+		// a round trip. html/template escapes the result safely for <script>
+		// context.
+		"jsonRows": func(v any) template.JS {
+			b, err := json.Marshal(v)
+			if err != nil {
+				return template.JS("[]")
+			}
+			return template.JS(b)
+		},
 
 		// dict builds a map[string]any from alternating key/value args so templates
 		// can pass multiple named params into sub-templates.

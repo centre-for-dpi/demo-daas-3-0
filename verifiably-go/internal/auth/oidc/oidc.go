@@ -162,6 +162,12 @@ func (p *Provider) AuthorizeURL(ctx context.Context, state, pkceVerifier, redire
 		"state":                 {state},
 		"code_challenge":        {s256(pkceVerifier)},
 		"code_challenge_method": {"S256"},
+		// Force the IdP to re-show its login form every time so the user
+		// can consciously pick between configured providers — without this,
+		// Keycloak/WSO2 short-circuit via their own SSO cookie and auto-log
+		// the returning user in, skipping the verifiably-go provider picker
+		// entirely on the second round-trip.
+		"prompt": {"login"},
 	}
 	sep := "?"
 	if strings.Contains(authorize, "?") {

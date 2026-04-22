@@ -1,0 +1,100 @@
+# Standalone "Ministry of Records" scenario for the bulk-issuance demo.
+#
+# Two containers:
+#   * citizens-db       — postgres seeded with the same 200-citizen dataset
+#                         used by the main stack (Kenya + Trinidad/Tobago).
+#   * citizens-service  — Python HTTP API that wraps citizens-db as JSON.
+#
+# This compose is self-contained: it brings its own copy of citizens-db so
+# you can demo bulk issuance on a separate host from the VC platform. The
+# VC platform then reaches this host the same way a real deployment would —
+# over HTTP for the API source, and over postgres protocol for the DB
+# source (with whatever network policy the operator cares to enforce).
+#
+# Usage:
+#
+#   # Bring up the ministry scenario (from this directory):
+#   cd testdata/bulk-issuance && docker compose up -d
+#
+#   # Smoke tests:
+#   curl -s http://localhost:8199/health | jq
+#   curl -s http://localhost:8199/api/mortgage-simple?limit=3 | jq
+#   psql postgres://citizens:citizens@localhost:5437/citizens \
+#     -c 'SELECT count(*) FROM citizens'
+#
+#   # Wire into the VC platform's bulk form:
+#   #   API    → http://host.docker.internal:8199/api/<endpoint>
+#   #            (or the server's real hostname if the VC platform is remote)
+#   #   DB     → postgres://citizens:citizens@host.docker.internal:5437/citizens
+#   #            (or the server's hostname when deployed separately)
+#
+# The container names deliberately don't collide with the main stack's
+# `citizens-postgres` / same-network container — this is a second,
+# independent registry scenario.
+
+services:
+  citizens-db:
+    image: postgres:16
+    container_name: ministry-citizens-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: citizens
+      POSTGRES_PASSWORD: citizens
+      POSTGRES_DB: citizens
+    # Host-port publication is a CONVENIENCE, not the primary path.
+    # - Humans running psql on the laptop reach the DB at localhost:5437.
+    # - Remote deployments (ministry on a separate host) reach it as
+    #   ministry-host:5437.
+    # When the VC platform runs on the SAME host, it talks to this DB
+    # directly via its docker service name on waltid_default — see the
+    # networks block at the bottom — no published port needed.
+    ports:
+      - "5437:5432"
+    networks:
+      - default            # so citizens-service can reach us by name
+      - vc-platform        # so verifiably-go can reach us by name (same-host)
+    volumes:
+      - ../../deploy/compose/stack/citizens-db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ministry-citizens-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U citizens"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  citizens-service:
+    build: ./api
+    container_name: ministry-citizens-service
+    restart: unless-stopped
+    depends_on:
+      citizens-db:
+        condition: service_healthy
+    environment:
+      CITIZENS_DSN: postgres://citizens:citizens@citizens-db:5432/citizens
+      PORT: "8099"
+      # Set CITIZENS_API_TOKEN via an .env file or -e to turn on bearer auth:
+      #   CITIZENS_API_TOKEN=hunter2 docker compose up -d citizens-service
+      CITIZENS_API_TOKEN: ${CITIZENS_API_TOKEN:-}
+    # As with the DB: host-port publication is for humans + remote deploys.
+    # Same-host VC platform reaches us directly as
+    # ministry-citizens-service:8099 on the shared vc-platform network.
+    ports:
+      - "8199:8099"
+    networks:
+      - default
+      - vc-platform
+
+volumes:
+  ministry-citizens-data:
+
+networks:
+  # The ministry's private network (api ↔ db).
+  default:
+  # Pre-existing network the VC platform runs on. Joining it lets the VC
+  # platform reach citizens-service and citizens-db by name — the path a
+  # production deployment would actually use. When the VC platform runs
+  # on a DIFFERENT host this network simply won't exist, and the ministry
+  # stack still works because the published ports cover the remote case.
+  vc-platform:
+    external: true
+    name: waltid_default
