@@ -25,12 +25,36 @@ translator, Postgres, Redis, MinIO — runs in compose.
 
 ```bash
 cd verifiably-go
+cp .env.example .env     # first time only — defaults target localhost
 ./deploy.sh up  all      # start every service for every DPG
 ./deploy.sh run all      # build + launch the verifiably-go container
 
 # point a browser at:
 http://localhost:8080
 ```
+
+### Deploying somewhere other than localhost (EC2, bare-metal demo box, …)
+
+There is **exactly one variable** to change. Edit `.env` before running
+`deploy.sh` and set `VERIFIABLY_PUBLIC_HOST` to the hostname the browser
+will reach the services on:
+
+```bash
+# Laptop (default):
+VERIFIABLY_PUBLIC_HOST=172.24.0.1
+
+# EC2 / remote host:
+VERIFIABLY_PUBLIC_HOST=ec2-1-2-3-4.compute-1.amazonaws.com
+```
+
+Everything downstream — `backends.json` browser-facing URLs, Mimoto's
+OIDC redirect_uris, Keycloak/WSO2IS issuer URLs, eSignet redirects, the
+Caddy virtualhost — is derived by substituting `${VERIFIABLY_PUBLIC_HOST}`
+inside `deploy.sh`, so nothing else needs hand-editing.
+
+Then the usual `./deploy.sh up all && ./deploy.sh run all` stands the
+stack up at `http://${VERIFIABLY_PUBLIC_HOST}:8080`. Full variable
+reference + TLS / proxy notes in [`verifiably-go/docs/deploy.md`](verifiably-go/docs/deploy.md).
 
 ### Scenarios
 
