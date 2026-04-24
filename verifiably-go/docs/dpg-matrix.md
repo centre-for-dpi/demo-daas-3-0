@@ -161,6 +161,35 @@ out below with the workaround the verifiably-go inji-proxy applies.
    SD-JWT QR path. **Not fixed** — pick LDP Farmer (V2 or plain) if you
    need a QR; SD-JWT credential is storage-only.
 
+4. **Auth-Code + Mimoto rejects Farmer Credential and Farmer Credential (V2)
+   with `err_signature_verification_failed`.** The `/v1/mimoto/credentials/download`
+   call returns HTTP 400 "we were unable to download the card" after a
+   successful eSignet login. **SD-JWT variant works; LDP_VC variants don't.**
+
+   Upstream: Mimoto's `io.mosip.vercred.vcverifier` library calls
+   `LdpVerifier.verify(vc)` during the PDF rendering step. It canonicalises
+   the VC via URDNA2015 + URDNA2015-hash, then compares the hash against
+   the Ed25519Signature2020 proof's base58btc-decoded `proofValue`. For
+   Farmer Credential V2 (VCDM 2.0 + `{"@vocab":"https://example.org/vocab#"}`
+   in the @context) the library produces a different canonicalised byte
+   sequence than Inji Certify v0.14.0's signer — `@vocab` expansion and
+   JSON-LD 1.1 vs 1.0 mode handling drifted between the two sides'
+   versions of `danubetech/ld-signatures-java`. Signature bytes match,
+   hash bytes don't, verify returns false.
+
+   MOSIP's tested matrix is Mimoto v0.16.0 ↔ Inji Certify **v0.13.1**.
+   We run v0.14.0 — same version skew that causes Inji Verify's
+   `/assets/config.json` workaround above.
+
+   **Workaround**: use **Farmer Credential (SD-JWT)** in Auth-Code
+   demos. SD-JWT verification is a plain JWS signature check — no
+   URDNA2015, no context expansion, no canonicalisation — and
+   round-trips cleanly. The LDP variants are "issue-only" for Auth-Code
+   + Inji Web until Mimoto v0.17.x lands (expected to ship an updated
+   vc-verifier) or Inji Certify switches Farmer templates to
+   `DataIntegrityProof` + `eddsa-rdfc-2022` (VCDM 2.0's spec-current
+   proof suite).
+
 ## Inji Verify v0.16.0
 
 **What works**
