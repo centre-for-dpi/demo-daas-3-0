@@ -3,6 +3,7 @@ package registry
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 
 	"github.com/verifiably/verifiably-go/backend"
@@ -186,7 +187,14 @@ func (r *Registry) ListAllSchemas(ctx context.Context) ([]vctypes.Schema, error)
 		ad, _ := r.issuerFor(v)
 		sch, err := ad.ListSchemas(ctx, v)
 		if err != nil {
-			return nil, err
+			// Log and continue rather than fail-fast: a fresh stack often
+			// has one DPG still warming up when the operator reaches the
+			// issue screen, and taking the whole aggregated list down
+			// because Inji Certify is unhealthy (for example) blocks walt.id
+			// flows that have nothing to do with it. Callers that need
+			// per-DPG precision should use ListSchemas(ctx, vendor) directly.
+			log.Printf("registry: ListSchemas(%q) failed, skipping: %v", v, err)
+			continue
 		}
 		for _, s := range sch {
 			if _, dup := seen[s.ID]; dup {
