@@ -94,6 +94,18 @@ out below with the workaround the verifiably-go inji-proxy applies.
    `/v1/certify/credentials/status-list/` endpoint is also proxied so
    status-list kids get recorded.
 
+   The primary (auth-code) and pre-auth Inji Certify instances run
+   under **separate DIDs** — `did:web:certify-nginx` and
+   `did:web:certify-preauth-nginx` respectively — so their signing
+   keys never appear in the same did.json. Before the split, both
+   instances claimed `did:web:certify-nginx` and an unfortunate kid
+   collision (different Ed25519 keys, same kid fragment) stranded
+   whichever flow lost the merge-order race. Now each flow has its own
+   resolution path: `/inji-proxy/.well-known/did.json` (primary) and
+   `/inji-proxy-preauth/.well-known/did.json` (pre-auth), backed by
+   separate `certify-nginx` + `certify-preauth-nginx` front-ends and
+   separate `injidid.Primary` + `injidid.Preauth` kid observers.
+
 2. **Key rotation desyncs status-list signatures.** If the Ed25519 key
    rotates (any compose reset that wipes `waltid_certify-pkcs12`) but
    the status-list credential row survives (`waltid_certify-db`), every

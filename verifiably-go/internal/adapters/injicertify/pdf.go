@@ -110,12 +110,13 @@ func (a *Adapter) issueAsPDFPreAuth(ctx context.Context, req backend.IssueReques
 	if err != nil {
 		return backend.IssueAsPDFResult{}, err
 	}
-	// Feed the VC through the observed-kids pipeline so the
-	// inji-proxy's /.well-known/did.json includes whichever kid the
-	// pre-auth instance used to sign. Without this, Inji Verify's strict
-	// kid matcher calls the VC invalid because did:web:certify-nginx
-	// doesn't advertise the preauth-instance kid.
-	injidid.Remember([]byte(vc))
+	_ = format
+	// Feed the VC through the pre-auth observer so
+	// /inji-proxy-preauth/.well-known/did.json (served as
+	// did:web:certify-preauth-nginx) includes whichever kid this
+	// pre-auth instance used to sign. Primary observer is untouched —
+	// the two DIDs have separate key sets.
+	injidid.Preauth.Remember([]byte(vc))
 
 	// 5. Encode the VC into MOSIP PixelPass format (CBOR → zlib → base45)
 	// so Inji Verify's QR decoder accepts it. Raw JSON starting with `{`

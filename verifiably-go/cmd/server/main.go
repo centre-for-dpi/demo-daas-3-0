@@ -100,11 +100,15 @@ func main() {
 	// forward straight to inji-certify:8090, patching the request body for wallets
 	// that omit credential_definition.@context.
 	mux.HandleFunc("POST /inji-proxy/issuance/credential", h.InjiProxyCredential)
-	// did:web resolution for did:web:certify-nginx. Inji Certify's upstream
-	// did.json advertises a kid that doesn't match the kid its own signer
-	// uses, so Inji Verify fails with PublicKeyResolutionFailed. We serve a
-	// patched did.json that advertises every kid we've seen signed VCs use.
-	mux.HandleFunc("GET /inji-proxy/.well-known/did.json", h.InjiProxyDidJSON)
+	// did:web resolution split PER INJI CERTIFY INSTANCE. Each instance has
+	// its own DID (did:web:certify-nginx for primary, did:web:certify-preauth-nginx
+	// for pre-auth) and its own handler that fetches ONLY that instance's
+	// upstream did.json — no merge, no ordering, no ambient kid-collision
+	// risk. Each handler also synthesises verificationMethod aliases for
+	// every kid the corresponding injidid.Observer has seen the instance
+	// sign with, so Inji Verify's strict kid matcher can resolve the key.
+	mux.HandleFunc("GET /inji-proxy/.well-known/did.json", h.InjiProxyPrimaryDidJSON)
+	mux.HandleFunc("GET /inji-proxy-preauth/.well-known/did.json", h.InjiProxyPreauthDidJSON)
 	// Bitstring status-list credentials are signed with a DIFFERENT kid than
 	// the main VC (both derive from the same key, different code paths).
 	// Proxy this endpoint too so rememberSigningKids() records the status-list

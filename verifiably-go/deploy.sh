@@ -93,7 +93,7 @@ TRANSLATOR_SERVICES=( libretranslate )
 INJI_CORE_SERVICES=(
   certify-postgres inji-certify
   certify-preauth-postgres inji-certify-preauth-backend inji-preauth-proxy
-  certify-nginx
+  certify-nginx certify-preauth-nginx
   inji-verify-postgres inji-verify-service inji-verify-ui
   citizens-postgres vc-adapter
 )

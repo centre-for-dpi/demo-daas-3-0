@@ -14,13 +14,23 @@ package handlers
 // without an @context array, and some wallets (walt.id in particular) don't
 // send one. Mimoto usually includes it; the injection is a no-op for them.
 //
-// The did.json handler below is the second reason we need this proxy: Inji
-// Certify v0.14.0 publishes did:web:certify-nginx#<kid_A> in its did.json but
-// signs VCs with did:web:certify-nginx#<kid_B> — both derivations of the same
-// Ed25519 key. Inji Verify's DidWebPublicKeyResolver strictly matches kid, so
-// verification fails. We watch outgoing VC responses, extract whatever kid
-// appears in the signature, and add it to the did.json we serve — as many
-// aliases as needed, all mapped to the upstream publicKeyMultibase.
+// The did.json handlers below are the second reason we need this proxy: Inji
+// Certify v0.14.0 publishes did:web:…#<kid_A> in its did.json but signs VCs
+// with did:web:…#<kid_B> — both derivations of the same Ed25519 key. Inji
+// Verify's DidWebPublicKeyResolver strictly matches kid, so verification
+// fails. We watch outgoing VC responses, extract whatever kid appears in the
+// signature, and add it to the did.json we serve — as many aliases as
+// needed, all mapped to the upstream publicKeyMultibase.
+//
+// TWO did.json handlers, one per Inji Certify instance:
+//   - InjiProxyPrimaryDidJSON at /inji-proxy/.well-known/did.json
+//     Serves did:web:certify-nginx → auth-code (primary) instance's keys.
+//   - InjiProxyPreauthDidJSON at /inji-proxy-preauth/.well-known/did.json
+//     Serves did:web:certify-preauth-nginx → pre-auth instance's keys.
+// Each handler fetches ONLY its own instance's upstream did.json and
+// patches in ONLY kids observed on that instance. No merge, no ordering,
+// no collision. The two instances issue under distinct DIDs so their
+// verification paths never cross.
 
 import (
 	"context"
@@ -45,9 +55,22 @@ func injiCertifyUpstream() string {
 	return "http://inji-certify:8090"
 }
 
+// injiCertifyPreauthUpstream points at the pre-auth instance's backend.
+// The public-facing `inji-certify-preauth` container is actually the
+// preauth-proxy sidecar; the real backend sits behind it as
+// `inji-certify-preauth-backend`. did.json fetches go direct to the
+// backend because the sidecar doesn't implement that route.
+func injiCertifyPreauthUpstream() string {
+	if v := os.Getenv("INJI_CERTIFY_PREAUTH_UPSTREAM_URL"); v != "" {
+		return strings.TrimRight(v, "/")
+	}
+	return "http://inji-certify-preauth-backend:8090"
+}
+
 // InjiProxyCredential forwards a POST to Inji Certify's issuance/credential
 // endpoint, patching in @context if the wallet omitted it. Also records any
-// kid that appears in the signed VC so our did.json handler can advertise it.
+// kid that appears in the signed VC into the PRIMARY observer — this route
+// only ever forwards to the auth-code (primary) instance.
 func (h *H) InjiProxyCredential(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -81,7 +104,7 @@ func (h *H) InjiProxyCredential(w http.ResponseWriter, r *http.Request) {
 	if resp.StatusCode >= 400 {
 		log.Printf("inji-proxy: credential RESP %d body=%s", resp.StatusCode, truncateForLog(string(respBody), 400))
 	} else {
-		injidid.Remember(respBody)
+		injidid.Primary.Remember(respBody)
 	}
 	if ct := resp.Header.Get("Content-Type"); ct != "" {
 		w.Header().Set("Content-Type", ct)
@@ -90,16 +113,13 @@ func (h *H) InjiProxyCredential(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(respBody)
 }
 
-// Observed-kid state moved to internal/injidid so both the in-process
-// inji-proxy and the pre-auth direct-to-PDF issuance path share one
-// source of truth for kid discovery. See injidid/observed.go.
-
 // InjiProxyStatusList forwards a GET to Inji Certify's bitstring status-list
-// credential endpoint. We tap it so rememberSigningKids() sees the kid that
-// signed the status-list VC — which Inji Certify v0.14.0 derives differently
-// from the kid it uses on regular VCs. Both are the SAME Ed25519 key, but
-// Inji Verify's strict kid-matching fails on the status-list unless our
-// did.json advertises both.
+// credential endpoint. We tap it so the primary observer sees the kid that
+// signed the status-list VC — Inji Certify v0.14.0 derives that kid
+// differently from the one on regular VCs. Both are the SAME Ed25519 key,
+// but Inji Verify's strict kid-matching fails on the status-list unless our
+// did.json advertises both. Only targets the primary instance; pre-auth
+// has no separate status-list we proxy.
 func (h *H) InjiProxyStatusList(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -120,7 +140,7 @@ func (h *H) InjiProxyStatusList(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 400 {
-		injidid.Remember(body)
+		injidid.Primary.Remember(body)
 	}
 	if ct := resp.Header.Get("Content-Type"); ct != "" {
 		w.Header().Set("Content-Type", ct)
@@ -129,53 +149,43 @@ func (h *H) InjiProxyStatusList(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
-// InjiProxyDidJSON serves /.well-known/did.json for did:web:certify-nginx,
-// patched so verificationMethod includes every kid we've seen in signed VCs
-// (plus the upstream's own advertised kid). Inji Verify's DidWebPublicKeyResolver
-// matches kid exactly, so without this it fails with
-// "Public key extraction failed for kid: did:web:certify-nginx#<signing-kid>".
-//
-// All synthesized verificationMethod entries point at the SAME Ed25519
-// publicKeyMultibase — we're not multiplying keys, just publishing aliases
-// for the one real key Inji Certify uses.
-func (h *H) InjiProxyDidJSON(w http.ResponseWriter, r *http.Request) {
-	// Primary upstream (auth-code Inji Certify).
-	primary, primaryStatus, err := fetchDidJSON(r.Context(), injiCertifyUpstream()+"/v1/certify/.well-known/did.json")
-	if err != nil || primaryStatus != http.StatusOK {
-		log.Printf("inji-proxy: did.json primary upstream status=%d err=%v", primaryStatus, err)
+// InjiProxyPrimaryDidJSON serves /.well-known/did.json for did:web:certify-nginx.
+// Fetches the PRIMARY (auth-code) Inji Certify instance's own did.json and
+// patches verificationMethod with every kid we've seen the primary sign
+// with. Does NOT touch the pre-auth instance — its keys live under a
+// separate DID and a separate handler.
+func (h *H) InjiProxyPrimaryDidJSON(w http.ResponseWriter, r *http.Request) {
+	doc, status, err := fetchDidJSON(r.Context(), injiCertifyUpstream()+"/v1/certify/.well-known/did.json")
+	if err != nil || status != http.StatusOK {
+		log.Printf("inji-proxy: primary did.json upstream status=%d err=%v", status, err)
 		w.WriteHeader(http.StatusBadGateway)
 		return
 	}
-
-	// Pre-auth upstream (if configured). Order matters: Inji Verify's
-	// DID resolver returns the FIRST matching verificationMethod for a
-	// given kid. If the primary and pre-auth instances collide on kid
-	// but have different keypairs (observed on EC2), the primary's key
-	// would win and every pre-auth VC would fail verification. Prepend
-	// the pre-auth entries so they're tried first. The primary entries
-	// still survive for auth-code VCs whose kid doesn't collide.
-	preauthURL := strings.TrimRight(injiCertifyPreauthUpstream(), "/") + "/v1/certify/.well-known/did.json"
-	if preauth, status, err := fetchDidJSON(r.Context(), preauthURL); err == nil && status == http.StatusOK {
-		prependVerificationMethods(primary, preauth)
-	}
-
-	patchedDidDoc(primary, injidid.Snapshot())
-
+	patchedDidDoc(doc, injidid.Primary.Snapshot())
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(primary)
+	_ = json.NewEncoder(w).Encode(doc)
 }
 
-// injiCertifyPreauthUpstream mirrors injiCertifyUpstream but for the
-// pre-auth instance. Overridable via env so a different topology can
-// point elsewhere.
-func injiCertifyPreauthUpstream() string {
-	if v := os.Getenv("INJI_CERTIFY_PREAUTH_UPSTREAM_URL"); v != "" {
-		return strings.TrimRight(v, "/")
+// InjiProxyPreauthDidJSON serves /.well-known/did.json for
+// did:web:certify-preauth-nginx. Fetches the PRE-AUTH Inji Certify
+// instance's own did.json and patches verificationMethod with every kid
+// we've seen the pre-auth instance sign with. Fully independent of the
+// primary handler — no merge, no ordering, no ambient kid-collision
+// risk.
+func (h *H) InjiProxyPreauthDidJSON(w http.ResponseWriter, r *http.Request) {
+	doc, status, err := fetchDidJSON(r.Context(), injiCertifyPreauthUpstream()+"/v1/certify/.well-known/did.json")
+	if err != nil || status != http.StatusOK {
+		log.Printf("inji-proxy: preauth did.json upstream status=%d err=%v", status, err)
+		w.WriteHeader(http.StatusBadGateway)
+		return
 	}
-	return "http://inji-certify-preauth:8090"
+	patchedDidDoc(doc, injidid.Preauth.Snapshot())
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(doc)
 }
 
 // fetchDidJSON GETs the upstream did.json, returns the parsed doc + status.
+// Shared by both Primary and Preauth handlers — the ONLY shared helper.
 func fetchDidJSON(ctx context.Context, url string) (map[string]any, int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -195,59 +205,6 @@ func fetchDidJSON(ctx context.Context, url string) (map[string]any, int, error) 
 		return nil, resp.StatusCode, err
 	}
 	return doc, resp.StatusCode, nil
-}
-
-// prependVerificationMethods puts every entry from src at the FRONT of
-// dst's verificationMethod array, then appends dst's own remaining
-// entries. Dedup by id+publicKeyMultibase so we don't emit true
-// duplicates. Ordering matters because Inji Verify's DID resolver
-// returns the first entry whose id matches the VC's verificationMethod
-// kid — when primary + pre-auth instances collide on kid but have
-// different Ed25519 keys (observed on EC2: kid ZFBjSBkXgs9A8…), the
-// first entry wins. We put pre-auth first so pre-auth-signed VCs (which
-// are what the PDF flow produces) verify; primary entries survive for
-// any kid that ISN'T colliding so auth-code VCs from the primary
-// instance still resolve.
-func prependVerificationMethods(dst, src map[string]any) {
-	dstMethods, _ := dst["verificationMethod"].([]any)
-	srcMethods, _ := src["verificationMethod"].([]any)
-	if len(srcMethods) == 0 {
-		return
-	}
-	key := func(m map[string]any) string {
-		id, _ := m["id"].(string)
-		mb, _ := m["publicKeyMultibase"].(string)
-		return id + "|" + mb
-	}
-	seen := map[string]struct{}{}
-	// Start with src (pre-auth) entries at the front of the array.
-	merged := make([]any, 0, len(dstMethods)+len(srcMethods))
-	for _, m := range srcMethods {
-		mm, _ := m.(map[string]any)
-		if mm == nil {
-			continue
-		}
-		k := key(mm)
-		if _, dup := seen[k]; dup {
-			continue
-		}
-		merged = append(merged, mm)
-		seen[k] = struct{}{}
-	}
-	// Append dst (primary) entries that aren't already represented.
-	for _, m := range dstMethods {
-		mm, _ := m.(map[string]any)
-		if mm == nil {
-			continue
-		}
-		k := key(mm)
-		if _, dup := seen[k]; dup {
-			continue
-		}
-		merged = append(merged, mm)
-		seen[k] = struct{}{}
-	}
-	dst["verificationMethod"] = merged
 }
 
 // patchedDidDoc mutates doc to add one verificationMethod per extra kid,
@@ -295,22 +252,27 @@ func patchedDidDoc(doc map[string]any, extras []string) {
 	doc["verificationMethod"] = methods
 }
 
-// SeedObservedKid pre-populates observedKids from a comma-separated env var.
-// Lets operators survive a cold start: if an old VC is verified before any
-// new issuance has run through this proxy, the kid is still known. The
-// resolved value comes from INJI_PROXY_EXTRA_KIDS.
+// Seed each observer from its own env-var. Primary gets INJI_PROXY_EXTRA_KIDS
+// (unchanged for backward compat); pre-auth gets a separate
+// INJI_PROXY_PREAUTH_EXTRA_KIDS so operators can pre-populate the two
+// observers independently. Either list is comma-separated kid fragments.
 func init() {
-	if v := os.Getenv("INJI_PROXY_EXTRA_KIDS"); v != "" {
+	seed := func(env string, obs *injidid.Observer) {
+		v := os.Getenv(env)
+		if v == "" {
+			return
+		}
 		for _, k := range strings.Split(v, ",") {
-			injidid.Add(k)
+			obs.Add(k)
 		}
 	}
+	seed("INJI_PROXY_EXTRA_KIDS", injidid.Primary)
+	seed("INJI_PROXY_PREAUTH_EXTRA_KIDS", injidid.Preauth)
 }
 
-
-// injectCredentialContext parses the request body as JSON and adds
-// credential_definition.@context when absent. Returns the patched bytes and
-// true if it modified the body; otherwise returns the original bytes and false.
+// injectCredentialContext adds credential_definition.@context when a wallet
+// omits it. Inji Certify's LdpVcCredentialRequestValidator rejects
+// w3c_vcdm_2 requests without it; Mimoto sends one, walt.id doesn't.
 func injectCredentialContext(body []byte) ([]byte, bool) {
 	var parsed map[string]any
 	if err := json.Unmarshal(body, &parsed); err != nil {
@@ -332,6 +294,8 @@ func injectCredentialContext(body []byte) ([]byte, bool) {
 	return patched, true
 }
 
+// truncateForLog trims log strings so a misbehaving upstream can't flood
+// the log with multi-megabyte error bodies.
 func truncateForLog(s string, n int) string {
 	if len(s) <= n {
 		return s

@@ -242,7 +242,10 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     volumes:
-      - ./inji/certify/init.sql:/docker-entrypoint-initdb.d/certify_init.sql
+      # Use the pre-auth-specific init so credential_config rows advertise
+      # did:web:certify-preauth-nginx, not did:web:certify-nginx. That's
+      # what keeps the two instances from colliding on DID resolution.
+      - ./inji/certify/init-preauth.sql:/docker-entrypoint-initdb.d/certify_init.sql
       - certify-preauth-db:/var/lib/postgresql/data
     ports:
       - "5436:5432"
@@ -357,6 +360,30 @@ services:
     depends_on:
       - inji-certify
 
+  # certify-preauth-nginx — parallel to certify-nginx, but serving
+  # did:web:certify-preauth-nginx for the PRE-AUTH Inji Certify instance.
+  # Listens on :8095 host / :80 container so it doesn't collide with
+  # certify-nginx's :8091. The whole point of this service is to make
+  # the pre-auth instance's DID document resolvable at a HOSTNAME
+  # distinct from the primary's, so kid collisions between the two
+  # instances' Ed25519 keypairs (observed on EC2) can no longer strand
+  # one flow's verification — each DID resolves only to its own keys.
+  certify-preauth-nginx:
+    image: nginx:stable
+    restart: unless-stopped
+    container_name: certify-preauth-nginx
+    ports:
+      - "8095:80"
+      - "8445:443"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./inji/certify-preauth-nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./inji/certify-preauth-nginx/certs/nginx.crt:/etc/nginx/certs/nginx.crt:ro
+      - ./inji/certify-preauth-nginx/certs/nginx.key:/etc/nginx/certs/nginx.key:ro
+    depends_on:
+      - inji-certify-preauth-backend
+
   # ==========================================================================
   # Inji Verify — MOSIP's credential verification service (OID4VP)
   # ==========================================================================
@@ -396,10 +423,16 @@ services:
       - DATABASE_PASSWORD=postgres
     volumes:
       - ./inji/certify-nginx/certs/nginx.crt:/tmp/certify-nginx.crt:ro
+      # Pre-auth nginx serves did:web:certify-preauth-nginx; import its
+      # self-signed cert into Java cacerts so Inji Verify's HTTPS-based
+      # did:web resolver can fetch that DID document without TLS errors.
+      - ./inji/certify-preauth-nginx/certs/nginx.crt:/tmp/certify-preauth-nginx.crt:ro
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         keytool -importcert -alias certify-nginx -file /tmp/certify-nginx.crt \
+          -keystore $$JAVA_HOME/lib/security/cacerts -storepass changeit -noprompt 2>/dev/null || true
+        keytool -importcert -alias certify-preauth-nginx -file /tmp/certify-preauth-nginx.crt \
           -keystore $$JAVA_HOME/lib/security/cacerts -storepass changeit -noprompt 2>/dev/null || true
         exec java -jar /home/mosip/verify-service.jar
     depends_on:

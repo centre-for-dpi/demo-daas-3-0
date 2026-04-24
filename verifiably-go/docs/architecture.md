@@ -168,27 +168,56 @@ span holding them.
 
 ## Inji-proxy (did:web resolver + credential forwarder)
 
-`certify-nginx` (MOSIP's nginx in front of inji-certify) proxies
-`POST /v1/certify/issuance/credential` and `GET /.well-known/did.json`
-back through `host.docker.internal:8080` — our port. Three endpoints
-fulfil these:
+Two separate Inji Certify instances run behind two separate nginx
+front-ends, each publishing its OWN DID document. Before the split, both
+instances signed under `did:web:certify-nginx` and collided on kid (two
+different Ed25519 keypairs claiming the same kid fragment), which
+stranded whichever flow's VC didn't happen to resolve to the winning
+entry in the merged did.json. The per-instance DID split eliminates
+that class of failure entirely:
+
+| Flow      | Instance                          | Nginx                   | DID                                |
+|-----------|-----------------------------------|-------------------------|------------------------------------|
+| Auth-code | `inji-certify`                    | `certify-nginx`         | `did:web:certify-nginx`            |
+| Pre-auth  | `inji-certify-preauth-backend`    | `certify-preauth-nginx` | `did:web:certify-preauth-nginx`    |
+
+Each nginx routes `GET /.well-known/did.json` back through
+`host.docker.internal:8080` to its own verifiably-go handler; each
+handler fetches ONLY its own upstream's did.json (no merge), and each
+has its own `injidid.Observer` tracking the kids the corresponding
+instance has signed with. Four endpoints total:
 
 - `POST /inji-proxy/issuance/credential` — forwards to
   `inji-certify:8090`, patching `credential_definition.@context` if the
   wallet omitted it (walt.id's Kotlin wallet does; Mimoto doesn't).
+  Records observed kids into `injidid.Primary`.
 
-- `GET /inji-proxy/.well-known/did.json` — fetches upstream did.json,
-  then appends synthetic `verificationMethod` entries for every kid we've
-  seen in issued VCs. Inji Certify v0.14.0 signs VCs and bitstring
-  status-list credentials with different kid fragments derived from the
-  same Ed25519 key via different hash paths — its own did.json only
-  advertises one. Without this indirection, Inji Verify fails with
-  `PublicKeyResolutionFailed`.
+- `GET /inji-proxy/.well-known/did.json` — serves did:web:certify-nginx.
+  Fetches `inji-certify:8090/v1/certify/.well-known/did.json`, appends
+  synthetic `verificationMethod` entries for every kid `injidid.Primary`
+  has seen.
+
+- `GET /inji-proxy-preauth/.well-known/did.json` — serves
+  did:web:certify-preauth-nginx. Fetches
+  `inji-certify-preauth-backend:8090/v1/certify/.well-known/did.json`,
+  appends entries for every kid `injidid.Preauth` has seen. Pre-auth
+  kids come from the direct-to-PDF flow in
+  `adapters/injicertify/pdf.go`, not through the proxy endpoints.
 
 - `GET /inji-proxy/credentials/status-list/{id}` — forwards the
-  status-list VC and records its `proof.verificationMethod` kid so the
-  did.json handler publishes it. The set of observed kids can also be
-  pre-seeded via the `INJI_PROXY_EXTRA_KIDS` env var for restarts.
+  primary status-list VC and records its `proof.verificationMethod` kid
+  into `injidid.Primary`.
+
+Observers can be pre-seeded for restarts: `INJI_PROXY_EXTRA_KIDS` feeds
+primary, `INJI_PROXY_PREAUTH_EXTRA_KIDS` feeds pre-auth. Both are
+comma-separated kid fragments.
+
+The individual kid-synthesis workarounds (derived from multiple hash
+paths over one Ed25519 key) stay in place within each handler because
+Inji Certify v0.14.0 still publishes a kid in its did.json that
+isn't the kid its signer uses. What's gone is the cross-instance merge
+— Inji Verify never sees keys from a different instance while resolving
+one instance's DID.
 
 See [dpg-matrix.md](dpg-matrix.md) for the upstream bugs each of these
 workarounds target.

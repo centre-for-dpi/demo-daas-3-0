@@ -28,9 +28,9 @@ Typical first run: `./deploy.sh up all && ./deploy.sh run all`.
 
 | Scenario | DPG services                                                                  | IdPs (always both) | Translator |
 |----------|-------------------------------------------------------------------------------|--------------------|------------|
-| `all`    | walt.id (issuer/wallet/verifier) + Inji Certify + Inji Certify Preauth + Inji Verify + Inji Web + Mimoto + eSignet + mock-identity + certify-nginx | Keycloak + WSO2IS | Yes |
+| `all`    | walt.id (issuer/wallet/verifier) + Inji Certify + Inji Certify Preauth + Inji Verify + Inji Web + Mimoto + eSignet + mock-identity + certify-nginx + certify-preauth-nginx | Keycloak + WSO2IS | Yes |
 | `waltid` | walt.id only                                                                  | Keycloak + WSO2IS  | Yes        |
-| `inji`   | Inji Certify + Inji Verify + Inji Web + Mimoto + eSignet + mock-identity + certify-nginx | Keycloak + WSO2IS  | Yes        |
+| `inji`   | Inji Certify + Inji Verify + Inji Web + Mimoto + eSignet + mock-identity + certify-nginx + certify-preauth-nginx | Keycloak + WSO2IS  | Yes        |
 
 `backends.json` is rendered per scenario so the UI never offers a DPG
 whose backend isn't running. **Auth providers are not scoped**: every
@@ -137,7 +137,8 @@ The key ones:
 | `KEYCLOAK_{PORT,REALM,CLIENT_ID}` | `8180/vcplatform/vcplatform` | Keycloak OIDC wiring                            |
 | `WSO2_{PORT,CLIENT_ID,CLIENT_SECRET}` | `9443/verifiably_go_client/<generated>` | WSO2IS OIDC. `CLIENT_SECRET` populated by `scripts/bootstrap-wso2is.sh` on first up |
 | `INJIWEB_P12_PASSWORD`         | `xy4gh6swa2i` | Matches the p12 in `deploy/compose/injiweb/config/certs/`                  |
-| `VERIFIABLY_INJI_EXTRA_KIDS`   | _(empty)_     | Pre-seed kids for the inji-proxy did.json handler                          |
+| `INJI_PROXY_EXTRA_KIDS`        | _(empty)_     | Pre-seed kids for the PRIMARY (auth-code) inji-proxy did.json handler      |
+| `INJI_PROXY_PREAUTH_EXTRA_KIDS`| _(empty)_     | Pre-seed kids for the PRE-AUTH inji-proxy did.json handler                 |
 | `VERIFIABLY_DEBUG_MOCK_MARKERS`| `0`           | Show `[mock]` pills on surfaces still mock-backed                          |
 
 Command-line override: set `VERIFIABLY_ENV_FILE=/path/to/other.env
@@ -171,8 +172,10 @@ all issued VCs):
 
 docker compose -p waltid --profile injiweb \
   -f deploy/compose/stack/docker-compose.yml \
-  rm -f -v certify-postgres inji-certify inji-certify-preauth \
-              certify-nginx injeweb-postgres injiweb-esignet \
+  rm -f -v certify-postgres inji-certify \
+              certify-preauth-postgres inji-certify-preauth-backend inji-preauth-proxy \
+              certify-nginx certify-preauth-nginx \
+              injeweb-postgres injiweb-esignet \
               injiweb-mimoto injiweb-ui injiweb-oidc-ui \
               injiweb-mock-identity injiweb-datashare injiweb-minio \
               injiweb-redis
