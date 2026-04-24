@@ -166,29 +166,65 @@ out below with the workaround the verifiably-go inji-proxy applies.
    call returns HTTP 400 "we were unable to download the card" after a
    successful eSignet login. **SD-JWT variant works; LDP_VC variants don't.**
 
-   Upstream: Mimoto's `io.mosip.vercred.vcverifier` library calls
-   `LdpVerifier.verify(vc)` during the PDF rendering step. It canonicalises
-   the VC via URDNA2015 + URDNA2015-hash, then compares the hash against
-   the Ed25519Signature2020 proof's base58btc-decoded `proofValue`. For
-   Farmer Credential V2 (VCDM 2.0 + `{"@vocab":"https://example.org/vocab#"}`
-   in the @context) the library produces a different canonicalised byte
-   sequence than Inji Certify v0.14.0's signer — `@vocab` expansion and
-   JSON-LD 1.1 vs 1.0 mode handling drifted between the two sides'
-   versions of `danubetech/ld-signatures-java`. Signature bytes match,
-   hash bytes don't, verify returns false.
+   **The bug is in MOSIP's vc-verifier library, not in Inji Certify's
+   signing.** We proved this end-to-end:
 
-   MOSIP's tested matrix is Mimoto v0.16.0 ↔ Inji Certify **v0.13.1**.
-   We run v0.14.0 — same version skew that causes Inji Verify's
-   `/assets/config.json` workaround above.
+   1. Intercepted the VC Inji Certify hands Mimoto via tcpdump on Mimoto's
+      netns (port 80 on certify-nginx upstream).
+   2. Ran the intercepted VC through pyld (reference Python URDNA2015) +
+      pynacl Ed25519 verify, using the same public key certify-nginx's
+      did.json advertises. Result: **VALID**. Signature matches
+      SHA256(canon(proofOpts)) || SHA256(canon(doc)) per the
+      Ed25519Signature2020 / W3C Data Integrity spec.
+   3. Posted the same VC to Inji Verify's `/v1/verify/vc-verification`
+      endpoint (which also uses `io.mosip.vercred.vcverifier`). Result:
+      **INVALID** — same library, same rejection, independently of Mimoto.
+
+   Conclusion: the library's URDNA2015 canonicaliser disagrees with the
+   reference spec implementation for this VC. Most likely divergence points:
+   the `BitstringStatusListEntry` credentialStatus block (VCDM 2.0 feature)
+   or the `{"@vocab": "…"}` context fragment — setting
+   `mosip.certify.issuer.ledger-enabled=false` in the Farmer plugin config
+   doesn't actually strip `credentialStatus`, and replacing `@vocab` with
+   explicit term definitions didn't fix it either. Both tested here.
+
+   The danubetech/ld-signatures-java version Mimoto ships (v0.16.0) is
+   older than Inji Certify's (v0.14.0). MOSIP's tested matrix is Mimoto
+   v0.16.0 ↔ Inji Certify v0.13.1 — we run v0.14.0. Upstream issue to
+   track against mosip/vc-verifier, not a verifiably-go fix.
 
    **Workaround**: use **Farmer Credential (SD-JWT)** in Auth-Code
    demos. SD-JWT verification is a plain JWS signature check — no
    URDNA2015, no context expansion, no canonicalisation — and
    round-trips cleanly. The LDP variants are "issue-only" for Auth-Code
-   + Inji Web until Mimoto v0.17.x lands (expected to ship an updated
-   vc-verifier) or Inji Certify switches Farmer templates to
-   `DataIntegrityProof` + `eddsa-rdfc-2022` (VCDM 2.0's spec-current
-   proof suite).
+   + Inji Web until Mimoto ships with an updated vc-verifier library.
+
+   Reproduction (for tracking progress against upstream):
+
+   ```bash
+   # 1. capture a VC from Mimoto's download flow
+   docker run -d --rm --name mimoto-tcpdump \
+     --network=container:injiweb-mimoto \
+     --cap-add=NET_ADMIN --cap-add=NET_RAW \
+     -v /tmp/pcap:/cap nicolaka/netshoot \
+     tcpdump -i any -A -s 0 -w /cap/mimoto.pcap 'tcp port 80'
+   # drive the failing Auth-Code + Farmer Credential (V2) flow in the UI
+   docker stop mimoto-tcpdump
+   grep -a -o '{"credential":.\{500,6000\}"proof":[^}]*}}*' /tmp/pcap/mimoto.pcap | head -1 > /tmp/vc.json
+
+   # 2. verify via pyld + pynacl (reference implementations)
+   python3 -m venv /tmp/vv && /tmp/vv/bin/pip install pyld pynacl base58 requests
+   /tmp/vv/bin/python - <<'PY'
+   # (see docs/dpg-matrix.md — same script runs pyld URDNA2015 + pynacl Ed25519)
+   PY
+   # → VALID
+
+   # 3. verify via MOSIP's library
+   docker run --rm --network waltid_default -v /tmp/vc.json:/b.json:ro \
+     curlimages/curl:latest -s -X POST -H 'Content-Type: application/json' \
+     -d @/b.json http://inji-verify-service:8080/v1/verify/vc-verification
+   # → {"verificationStatus":"INVALID"}
+   ```
 
 ## Inji Verify v0.16.0
 
