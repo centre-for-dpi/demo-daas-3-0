@@ -470,6 +470,14 @@ cmd_up() {
     fi
   fi
 
+  # Render per-deployment configs the containers will mount. WSO2's
+  # deployment.toml is envsubst'd from a template so the `hostname` +
+  # proxy settings reflect $VERIFIABLY_PUBLIC_HOST for whatever host
+  # the operator is deploying on (localhost / EC2 / their own domain).
+  # Without this, WSO2 boots with a stale hardcoded hostname and its
+  # OIDC metadata advertises the wrong `iss`.
+  render_wso2_deployment_toml
+
   bold "▶ Starting DPG services via docker compose"
   local -a services
   readarray -t services < <(scenario_services "$scenario")
@@ -723,6 +731,22 @@ stop_container() {
   if docker ps -a --filter "name=^${VERIFIABLY_CONTAINER}$" -q | grep -q .; then
     docker rm -f "$VERIFIABLY_CONTAINER" >/dev/null 2>&1 || true
   fi
+}
+
+# render_wso2_deployment_toml envsubsts wso2-deployment.toml.template
+# with the current VERIFIABLY_PUBLIC_HOST and writes the result to
+# wso2-deployment.toml, which the compose file mounts read-only into
+# the wso2is container. Keeps the committed template portable while the
+# rendered file (gitignored) always matches the operator's .env.
+render_wso2_deployment_toml() {
+  local tpl="$SCRIPT_DIR/deploy/compose/stack/wso2-deployment.toml.template"
+  local out="$SCRIPT_DIR/deploy/compose/stack/wso2-deployment.toml"
+  if [[ ! -f "$tpl" ]]; then
+    red "  WARN: $tpl missing — WSO2 will boot with whatever hostname is in the compose-mounted toml"
+    return 0
+  fi
+  VERIFIABLY_PUBLIC_HOST="$VERIFIABLY_PUBLIC_HOST" envsubst '$VERIFIABLY_PUBLIC_HOST' < "$tpl" > "$out"
+  green "  rendered wso2-deployment.toml (hostname=$VERIFIABLY_PUBLIC_HOST)"
 }
 
 # backends_for_docker writes a sibling config/backends.docker.json with

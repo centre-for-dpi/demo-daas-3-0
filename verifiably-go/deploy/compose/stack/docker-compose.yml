@@ -264,7 +264,10 @@ services:
   # touching Inji's config. See cmd/inji-preauth-proxy/main.go for the
   # intercept rules. Everything else is a transparent httputil reverse proxy.
   inji-preauth-proxy:
-    image: inji-preauth-proxy:local
+    # Published image: https://hub.docker.com/r/adammwaniki/inji-preauth-poc
+    # Source: verifiably-go/cmd/inji-preauth-proxy (pinned version keeps
+    # fresh clones reproducible; :latest is also pushed for convenience).
+    image: adammwaniki/inji-preauth-poc:v0.1.0
     restart: unless-stopped
     container_name: inji-certify-preauth
     ports:
@@ -464,7 +467,13 @@ services:
   # ==========================================================================
 
   vc-adapter:
-    image: verification-adapter-adapter:latest
+    # Published image: https://hub.docker.com/r/adammwaniki/verification-adapter
+    # Source: github.com/credebl/adapter-standalone (backend-agnostic
+    # verifier demo). Not currently reached by verifiably-go's own code —
+    # runs as a parallel showcase of the backend-agnostic verifier
+    # pattern on :8085. Safe to comment out of the `inji`/`all` scenarios
+    # if you want to slim the footprint.
+    image: adammwaniki/verification-adapter:v0.1.0
     restart: unless-stopped
     container_name: vc-adapter
     ports:

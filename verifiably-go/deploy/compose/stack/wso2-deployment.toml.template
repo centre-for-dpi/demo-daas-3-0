@@ -1,16 +1,21 @@
 [server]
-hostname = "wso2.bootcamp.cdpi.dev"
+# Templated by deploy.sh — the hostname line is envsubst'd against
+# VERIFIABLY_PUBLIC_HOST (defined in .env) whenever deploy.sh up runs.
+# Deployment targets: localhost, 172.24.0.1, an EC2 hostname, or a
+# TLS-terminated subdomain like wso2.bootcamp.cdpi.dev. The rendered
+# file is wso2-deployment.toml (gitignored) — the compose file mounts
+# that read-only. Edit this TEMPLATE; never edit the rendered output.
+hostname = "$VERIFIABLY_PUBLIC_HOST"
 node_ip = "127.0.0.1"
 offset = 0
 
-# TLS is terminated by Caddy at wso2.bootcamp.cdpi.dev:443. WSO2 still
-# serves its self-signed cert on 9443 for container-to-container calls
-# (Caddy's upstream), but advertises the external 443 in the OIDC metadata
-# so the `iss` claim matches what browsers and the verifiably-go OIDC
-# client discover. Without these, /oauth2/token/.well-known/...
-# returns endpoints pointing at the old ec2-… hostname.
-[transport.https.properties]
-proxyPort = 443
+# When fronting WSO2 with a TLS-terminator (Caddy / ALB / nginx),
+# uncomment proxyPort = 443 so OIDC discovery advertises https URLs on
+# the external port rather than WSO2's internal 9443. For direct
+# (no-proxy) access to 9443, leave this commented out — WSO2's
+# self-signed cert will be what the browser sees.
+#[transport.https.properties]
+#proxyPort = 443
 
 [super_admin]
 username = "admin"

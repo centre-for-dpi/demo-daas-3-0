@@ -13,7 +13,10 @@
         "http://localhost:8080/*",
         "http://172.24.0.1:8080/*",
         "http://*.compute.amazonaws.com:8080/*",
-        "http://*.amazonaws.com:8080/*"
+        "http://*.amazonaws.com:8080/*",
+        "http://*:8080/*",
+        "https://*/auth/callback",
+        "https://*/*"
       ],
       "webOrigins": ["+"],
       "protocol": "openid-connect",

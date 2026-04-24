@@ -28,6 +28,9 @@ verifiably-go/config/backends.json
 verifiably-go/config/backends.docker.json
 verifiably-go/config/auth-providers.json
 verifiably-go/config/auth-providers.docker.json
+# Rendered from wso2-deployment.toml.template by deploy.sh; contains the
+# current VERIFIABLY_PUBLIC_HOST which differs per deployment.
+verifiably-go/deploy/compose/stack/wso2-deployment.toml
 verifiably-go/config/docker-compose.injiweb-fix.rendered.yml
 verifiably-go/config/wso2is.env
 verifiably-go/locales/
