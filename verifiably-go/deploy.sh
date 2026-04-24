@@ -590,6 +590,39 @@ cmd_down() {
   compose "${profile_args[@]}" stop "${services[@]}"
 }
 
+cmd_reset() {
+  bold "▶ Full reset — wipe all waltid_* named volumes + remove containers"
+  echo
+  echo "  This removes every persistent volume created by the compose stack:"
+  echo "    waltid_certify-db + waltid_certify-pkcs12           (Inji Certify auth-code)"
+  echo "    waltid_certify-preauth-db + waltid_certify-preauth-pkcs12 (Inji Certify pre-auth)"
+  echo "    waltid_inji-verify-db                                (Inji Verify)"
+  echo "    waltid_injiweb-db + friends                          (Inji Web / Mimoto / eSignet / mock-identity)"
+  echo "    waltid_postgres + waltid_citizens-data               (walt.id + bulk-issuance citizens)"
+  echo "    waltid_locales / waltid_lt-data / waltid_caddy-data  (translator + TLS state)"
+  echo
+  echo "  Use this when a keystore regenerated but its aliases are still"
+  echo "  in the DB — symptom: 'KER-KMA-004 -- No such alias: <uuid>' in"
+  echo "  inji-certify or inji-certify-preauth-backend logs."
+  echo
+  read -r -p "  Type 'RESET' to proceed, anything else cancels: " ack
+  if [[ "$ack" != "RESET" ]]; then
+    red "  aborted"; return 0
+  fi
+  stop_container
+  compose --profile injiweb down -v 2>&1 | tail -10
+  # Belt-and-braces: remove any stragglers not claimed by docker compose
+  # (different project name / previous owner). Silent on not-found.
+  local vols
+  vols="$(docker volume ls --format '{{.Name}}' | grep -E '^waltid_' || true)"
+  if [[ -n "$vols" ]]; then
+    echo "  removing stragglers: $vols"
+    # shellcheck disable=SC2086
+    docker volume rm $vols 2>&1 | sed 's/^/  /'
+  fi
+  green "  reset complete. Next up will start clean."
+}
+
 cmd_status() {
   bold "▶ Running compose services"
   compose --profile injiweb ps --format '  {{.Service}}  {{.Status}}' 2>/dev/null | sort -u
@@ -869,6 +902,9 @@ commands:
                            (use when the DPG stack is already up)
   config <all|waltid|inji> print the backends.json that would be generated
   status                   summarise what's running
+  reset                    wipe every waltid_* named volume — fixes keystore/DB
+                           desync ("KER-KMA-004 No such alias: ..."). DESTRUCTIVE;
+                           asks for explicit 'RESET' confirmation.
 
 scenarios:
   all     every DPG + both IdPs + LibreTranslate
@@ -885,6 +921,7 @@ main() {
   case "$cmd" in
     up)      shift; cmd_up "$@";;
     down)    shift; cmd_down "$@";;
+    reset)   cmd_reset;;
     status)  cmd_status;;
     config)  shift; cmd_config "$@";;
     run)     shift; cmd_run "$@";;

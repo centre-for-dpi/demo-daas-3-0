@@ -168,6 +168,37 @@ curl -sk https://<your-host>:9443/oauth2/token/.well-known/openid-configuration 
 # should echo your host, NOT "localhost"
 ```
 
+**Inji Certify / Inji Certify Preauth container is `unhealthy`, schema page empty, `/issuer/schema` 502s on the well-known metadata**
+
+Symptom in `docker logs inji-certify` (or `inji-certify-preauth-backend`):
+```
+io.mosip.kernel.core.keymanager.exception.NoSuchSecurityProviderException:
+  KER-KMA-004 --> No such alias: <uuid>
+Application run failed
+```
+This is a **keystore / DB desync**: a previous run wrote key aliases
+into the postgres DB, the keystore PKCS12 got regenerated on a later
+run, and the alias the DB still references no longer exists in the
+keystore. The named volumes (`waltid_certify-db`, `waltid_certify-pkcs12`,
+`waltid_certify-preauth-db`, `waltid_certify-preauth-pkcs12`) are hardcoded
+to the `waltid` project prefix, so they persist across `docker compose
+down` AND across cwd moves (e.g. running from a fresh clone in `/tmp`
+inherits volumes from your usual workspace).
+
+Fix:
+```bash
+./deploy.sh reset       # wipes every waltid_* volume; asks for 'RESET' to confirm
+./deploy.sh up <scenario>
+```
+
+If you want to wipe just the Inji Certify halves without touching
+walt.id / Inji Web / citizens DBs:
+```bash
+docker compose -f deploy/compose/stack/docker-compose.yml rm -fs certify-postgres inji-certify certify-preauth-postgres inji-certify-preauth-backend
+docker volume rm waltid_certify-db waltid_certify-pkcs12 waltid_certify-preauth-db waltid_certify-preauth-pkcs12
+./deploy.sh up <scenario>
+```
+
 **`./deploy.sh` calls `docker` and gets "permission denied"**
 
 Your user isn't in the `docker` group. Fix once:
