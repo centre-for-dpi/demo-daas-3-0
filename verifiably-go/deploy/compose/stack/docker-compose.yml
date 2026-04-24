@@ -104,6 +104,12 @@ services:
       - "${WSO2_PORT:-9443}:9443"
     environment:
       JAVA_OPTS: "-Xms512m -Xmx1024m"
+    # Mount our patched deployment.toml so WSO2 advertises the public
+    # hostname + proxy port in its OIDC metadata. Without this, the
+    # container uses its baked-in config whose hostname doesn't match
+    # what the browser / verifiably-go reaches it as via Caddy.
+    volumes:
+      - ./wso2-deployment.toml:/home/wso2carbon/wso2is-7.0.0/repository/conf/deployment.toml:ro
 
   libretranslate:
     image: libretranslate/libretranslate:latest

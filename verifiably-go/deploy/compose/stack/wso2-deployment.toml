@@ -1,12 +1,29 @@
 [server]
-hostname = "localhost"
+hostname = "wso2.bootcamp.cdpi.dev"
 node_ip = "127.0.0.1"
 offset = 0
+
+# TLS is terminated by Caddy at wso2.bootcamp.cdpi.dev:443. WSO2 still
+# serves its self-signed cert on 9443 for container-to-container calls
+# (Caddy's upstream), but advertises the external 443 in the OIDC metadata
+# so the `iss` claim matches what browsers and the verifiably-go OIDC
+# client discover. Without these, /oauth2/token/.well-known/...
+# returns endpoints pointing at the old ec2-… hostname.
+[transport.https.properties]
+proxyPort = 443
 
 [super_admin]
 username = "admin"
 password = "admin"
 create_admin_account = true
+
+# The primary user store is required — WSO2 IS 7.0 derives user_mgt.xml
+# from this at startup, and without it the RealmConfigXMLProcessor fails
+# with "Required property 'TenantManager' not found" and refuses to boot.
+# database_unique_id is the stock default — JDBC-backed, matches what the
+# image generates on a fresh run.
+[user_store]
+type = "database_unique_id"
 
 [database.identity_db]
 type = "h2"
@@ -21,14 +38,17 @@ username = "wso2carbon"
 password = "wso2carbon"
 
 [keystore.primary]
-file_name = "repository/resources/security/wso2carbon.jks"
+# file_name is resolved relative to repository/resources/security/,
+# so use the basename only — prepending "repository/resources/security/"
+# makes WSO2 double the path and fail boot with FileNotFoundException.
+file_name = "wso2carbon.jks"
 type = "JKS"
 password = "wso2carbon"
 alias = "wso2carbon"
 key_password = "wso2carbon"
 
 [truststore]
-file_name = "repository/resources/security/client-truststore.jks"
+file_name = "client-truststore.jks"
 type = "JKS"
 password = "wso2carbon"
 
