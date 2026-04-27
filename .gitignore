@@ -2,11 +2,13 @@
 .claude
 
 # Sibling projects — kept local only; not part of the verifiably-go repo.
-# Re-add any of these if the split reverses.
-ui-demo/
-scripts/
-references/
-agent-service/
+# Re-add any of these if the split reverses. Leading slashes anchor to
+# the repo root so verifiably-go/scripts/ etc. aren't accidentally
+# matched (was hiding new bootstrap scripts).
+/ui-demo/
+/scripts/
+/references/
+/agent-service/
 
 # Plans
 go-build-plan.md

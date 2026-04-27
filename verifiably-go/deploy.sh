@@ -490,8 +490,25 @@ cmd_up() {
   bold "▶ Waiting for services to be reachable"
   wait_for_services "$scenario"
 
-  # Every scenario runs both IdPs, so the WSO2IS client registration always
-  # needs to happen. Idempotent — a second run reuses the existing client.
+  # Every scenario runs both IdPs, so the OIDC client registrations always
+  # need to happen. Both bootstraps are idempotent — a second run reuses
+  # the existing client and only patches drift (Keycloak: redirect_uris;
+  # WSO2: redirect_uris + self-heals if the OAuth app is missing).
+  #
+  # Why both run on every up: the only env that needs to change between
+  # localhost / EC2 / a custom domain is VERIFIABLY_PUBLIC_HOST. The
+  # bootstrap scripts then propagate that value into the IdPs' client
+  # configs, so a host change followed by `./deploy.sh up all` is enough
+  # to make Keycloak + WSO2 accept the new callback URL.
+  bold "▶ Bootstrapping Keycloak vcplatform client"
+  PUBLIC_HOST="$VERIFIABLY_PUBLIC_HOST" \
+    VERIFIABLY_HOST_PORT="$VERIFIABLY_HOST_PORT" \
+    KEYCLOAK_BASE="http://localhost:${KEYCLOAK_PORT}" \
+    KEYCLOAK_REALM="$KEYCLOAK_REALM" \
+    KEYCLOAK_CLIENT_ID="$KEYCLOAK_CLIENT_ID" \
+    "$SCRIPT_DIR/scripts/bootstrap-keycloak.sh" \
+    || red "  Keycloak bootstrap failed (proceeding — you can re-run it manually)"
+
   bold "▶ Bootstrapping WSO2IS OIDC client"
   "$SCRIPT_DIR/scripts/bootstrap-wso2is.sh" || red "  WSO2IS bootstrap failed (proceeding — you can re-run it manually)"
   # Re-generate auth-providers.json now that wso2is.env exists, so the

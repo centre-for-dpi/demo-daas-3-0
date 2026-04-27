@@ -93,6 +93,52 @@ if [[ -z "$CLIENT_SECRET" ]]; then
     > /dev/null && echo "  updated redirect_uris on existing client"
 fi
 
+# Self-heal check: confirm the client_secret in our hands actually
+# authenticates against WSO2's token endpoint. WSO2 7's DCR can leave the
+# OAuth-app side missing while the SP record persists (observed when an
+# earlier registration partially failed and was followed by a GET-fallback
+# branch); subsequent token requests then return:
+#
+#   {"error":"invalid_client",
+#    "error_description":"A valid OAuth client could not be found for client_id"}
+#   …or via the AS:
+#   "no application could be found associated with the given consumer key"
+#
+# We probe with a client_credentials request — succeeds with 200 if WSO2
+# recognises the client (even if scope is empty), 401 if not. On failure we
+# DELETE the orphan SP and POST a fresh DCR registration so the OAuth app is
+# created cleanly. Idempotent: a healthy client passes the probe and the
+# heal branch is skipped.
+echo "verifying client_secret authenticates with WSO2 token endpoint…"
+TOKEN_PROBE_HTTP=$(curl -sk -o /dev/null -w '%{http_code}' \
+  -u "$CLIENT_ID:$CLIENT_SECRET" \
+  -X POST "$WSO2_BASE/oauth2/token" \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -d 'grant_type=client_credentials' || echo '000')
+
+if [[ "$TOKEN_PROBE_HTTP" != "200" && "$TOKEN_PROBE_HTTP" != "400" ]]; then
+  # 200 = success. 400 = "unsupported_grant_type" or similar AFTER auth
+  # succeeded — the client_id+secret pair was accepted, just the grant
+  # isn't allowed. Anything else (401, 404) means auth failed.
+  echo "  client_secret rejected (HTTP $TOKEN_PROBE_HTTP) — re-registering from scratch"
+  curl -sk -u "$WSO2_ADMIN_USER:$WSO2_ADMIN_PASS" \
+    -X DELETE "$WSO2_BASE/api/identity/oauth2/dcr/v1.1/register/$CLIENT_ID" \
+    > /dev/null || true
+  RESP=$(curl -sk -u "$WSO2_ADMIN_USER:$WSO2_ADMIN_PASS" \
+    -H 'Content-Type: application/json' \
+    -X POST "$WSO2_BASE/api/identity/oauth2/dcr/v1.1/register" \
+    -d "$DCR")
+  CLIENT_SECRET=$(echo "$RESP" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("client_secret",""))' 2>/dev/null || echo '')
+  if [[ -z "$CLIENT_SECRET" ]]; then
+    echo "  re-registration failed:" >&2
+    echo "  $RESP" >&2
+    exit 1
+  fi
+  echo "  re-registered with fresh client_secret"
+else
+  echo "  client_secret OK (HTTP $TOKEN_PROBE_HTTP)"
+fi
+
 mkdir -p "$(dirname "$OUT")"
 cat > "$OUT" <<EOF
 # Written by scripts/bootstrap-wso2is.sh. deploy.sh's auth-providers generator
