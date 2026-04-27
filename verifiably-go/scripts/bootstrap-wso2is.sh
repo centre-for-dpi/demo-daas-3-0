@@ -38,16 +38,22 @@ _callback_bridge="http://172.24.0.1:${VERIFIABLY_HOST_PORT}/auth/callback"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT="$SCRIPT_DIR/../config/wso2is.env"
 
+# WSO2 7's full startup (Carbon kernel + identity-server module + admin
+# API) can take 5+ minutes on a small VPS even after port 9443 goes
+# ready. Probe the admin API itself with a generous timeout — it returns
+# 200 only after WSO2 is genuinely usable, so this is also a usability
+# signal, not just a TCP-ready signal.
 echo "waiting for WSO2IS at $WSO2_BASE…"
-for i in $(seq 1 60); do
+for i in $(seq 1 240); do
   if curl -sfk -o /dev/null "$WSO2_BASE/api/server/v1/applications?limit=1" \
        -u "$WSO2_ADMIN_USER:$WSO2_ADMIN_PASS"; then
     echo "  reachable"
     break
   fi
   sleep 2
-  if [[ $i -eq 60 ]]; then
-    echo "  WSO2IS admin API not reachable after 2 minutes — abort"
+  if [[ $i -eq 240 ]]; then
+    echo "  WSO2IS admin API not reachable after 8 minutes — abort"
+    echo "  hint: check 'docker logs waltid-wso2is-1 --tail 40' for boot errors"
     exit 1
   fi
 done

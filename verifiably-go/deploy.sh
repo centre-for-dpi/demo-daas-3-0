@@ -543,7 +543,16 @@ cmd_up() {
   fi
 
   bold "▶ Building verifiably-go image ($VERIFIABLY_IMAGE)"
-  docker build -q -t "$VERIFIABLY_IMAGE" "$SCRIPT_DIR" >/dev/null
+  # --progress=plain streams every step's output to the terminal so the
+  # operator can SEE which step is slow or stuck. Previously this was
+  # `-q ... >/dev/null`, which silenced everything and made an OOM-killed
+  # Go compile look like a 20-minute hang. On low-RAM VPS instances
+  # (1-2GB) the Go compiler often OOMs during the build step — if you
+  # see the run halt at `RUN go build` and the container appear to hang,
+  # add swap before retrying:
+  #   fallocate -l 4G /swapfile && chmod 600 /swapfile \
+  #     && mkswap /swapfile && swapon /swapfile
+  docker build --progress=plain -t "$VERIFIABLY_IMAGE" "$SCRIPT_DIR"
 
   bold "▶ Starting verifiably-go container"
   start_container "$scenario"
@@ -667,7 +676,16 @@ cmd_run() {
   backends_for "$scenario"
   auth_providers_for "$scenario"
   bold "▶ Building verifiably-go image ($VERIFIABLY_IMAGE)"
-  docker build -q -t "$VERIFIABLY_IMAGE" "$SCRIPT_DIR" >/dev/null
+  # --progress=plain streams every step's output to the terminal so the
+  # operator can SEE which step is slow or stuck. Previously this was
+  # `-q ... >/dev/null`, which silenced everything and made an OOM-killed
+  # Go compile look like a 20-minute hang. On low-RAM VPS instances
+  # (1-2GB) the Go compiler often OOMs during the build step — if you
+  # see the run halt at `RUN go build` and the container appear to hang,
+  # add swap before retrying:
+  #   fallocate -l 4G /swapfile && chmod 600 /swapfile \
+  #     && mkswap /swapfile && swapon /swapfile
+  docker build --progress=plain -t "$VERIFIABLY_IMAGE" "$SCRIPT_DIR"
   start_container "$scenario"
   echo "    point your browser at $VERIFIABLY_PUBLIC_URL"
 }

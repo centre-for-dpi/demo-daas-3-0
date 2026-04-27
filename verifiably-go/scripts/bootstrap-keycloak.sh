@@ -53,42 +53,60 @@ if [[ -z "$PUBLIC_HOST" ]]; then
   exit 1
 fi
 
-echo "waiting for Keycloak at $KEYCLOAK_BASE…"
-for i in $(seq 1 60); do
-  if curl -sf -o /dev/null "$KEYCLOAK_BASE/realms/$KEYCLOAK_REALM/.well-known/openid-configuration"; then
-    echo "  reachable"
+# Probe master realm first — it always exists once Keycloak finishes
+# its boot-up cycle (the vcplatform realm is imported AFTER the master
+# realm is up, so probing master gives us a stable readiness signal even
+# while imports are still running). On slow VPS instances Keycloak's
+# Quarkus runtime + H2 schema migration can take several minutes after
+# the TCP port goes ready, so we wait up to 8 minutes.
+echo "waiting for Keycloak master realm at $KEYCLOAK_BASE…"
+for i in $(seq 1 240); do
+  if curl -sf -o /dev/null "$KEYCLOAK_BASE/realms/master/.well-known/openid-configuration"; then
+    echo "  master realm reachable"
     break
   fi
   sleep 2
-  if [[ $i -eq 60 ]]; then
-    echo "  Keycloak not reachable after 2 minutes — abort"
+  if [[ $i -eq 240 ]]; then
+    echo "  Keycloak master realm not reachable after 8 minutes — abort"
+    echo "  hint: check 'docker logs waltid-keycloak-1 --tail 40' for boot errors"
     exit 1
   fi
 done
 
 # Master-realm admin token. admin-cli is a built-in public client, no
 # secret needed.
-TOKEN=$(curl -sS -X POST \
-  "$KEYCLOAK_BASE/realms/master/protocol/openid-connect/token" \
-  -H 'Content-Type: application/x-www-form-urlencoded' \
-  -d "grant_type=password&client_id=admin-cli&username=$KEYCLOAK_ADMIN_USER&password=$KEYCLOAK_ADMIN_PASS" \
-  | python3 -c 'import json,sys; print(json.load(sys.stdin).get("access_token",""))')
+TOKEN=""
+for i in $(seq 1 60); do
+  TOKEN=$(curl -sS -X POST \
+    "$KEYCLOAK_BASE/realms/master/protocol/openid-connect/token" \
+    -H 'Content-Type: application/x-www-form-urlencoded' \
+    -d "grant_type=password&client_id=admin-cli&username=$KEYCLOAK_ADMIN_USER&password=$KEYCLOAK_ADMIN_PASS" \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null || echo "")
+  [[ -n "$TOKEN" ]] && break
+  sleep 2
+  if [[ $i -eq 60 ]]; then
+    echo "  failed to obtain master-realm admin token after 2 minutes (user/pass wrong?)"
+    exit 1
+  fi
+done
 
-if [[ -z "$TOKEN" ]]; then
-  echo "  failed to obtain master-realm admin token (user/pass wrong?)"
-  exit 1
-fi
-
-# Look up the vcplatform client by clientId (different from the UUID
-# Keycloak uses internally — Admin API needs the UUID for PUT).
-CLIENT_UUID=$(curl -sS -H "Authorization: Bearer $TOKEN" \
-  "$KEYCLOAK_BASE/admin/realms/$KEYCLOAK_REALM/clients?clientId=$KEYCLOAK_CLIENT_ID" \
-  | python3 -c 'import json,sys; arr=json.load(sys.stdin); print(arr[0]["id"]) if arr else print("")')
-
-if [[ -z "$CLIENT_UUID" ]]; then
-  echo "  client $KEYCLOAK_CLIENT_ID not found in realm $KEYCLOAK_REALM — was the realm imported?"
-  exit 1
-fi
+# Look up the vcplatform client by clientId. The vcplatform realm is
+# imported asynchronously after Keycloak is up, so the realm or its
+# clients may not exist for the first minute or two — retry until either
+# success or 5-minute timeout.
+CLIENT_UUID=""
+for i in $(seq 1 150); do
+  RESP=$(curl -sS -H "Authorization: Bearer $TOKEN" \
+    "$KEYCLOAK_BASE/admin/realms/$KEYCLOAK_REALM/clients?clientId=$KEYCLOAK_CLIENT_ID" 2>/dev/null || echo '[]')
+  CLIENT_UUID=$(echo "$RESP" | python3 -c 'import json,sys; arr=json.load(sys.stdin); print(arr[0]["id"]) if arr else print("")' 2>/dev/null || echo "")
+  [[ -n "$CLIENT_UUID" ]] && break
+  sleep 2
+  if [[ $i -eq 150 ]]; then
+    echo "  client $KEYCLOAK_CLIENT_ID not found in realm $KEYCLOAK_REALM after 5 minutes — was the realm imported?"
+    echo "  hint: check 'docker logs waltid-keycloak-1 | grep -i import' for import errors"
+    exit 1
+  fi
+done
 
 # Pull current client config, fold new URIs into redirectUris + webOrigins,
 # PUT back. Set-union via Python so re-runs don't keep growing the list.
