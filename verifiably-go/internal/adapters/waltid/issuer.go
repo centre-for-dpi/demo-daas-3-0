@@ -204,7 +204,6 @@ func (a *Adapter) ListSchemas(ctx context.Context, issuerDpg string) ([]vctypes.
 var schemaAllowlistDefault = []string{
 	"Bank Id",
 	"Educational ID",
-	"Iso18013 Drivers License Credential",
 	"Tax Receipt",
 	"University Degree",
 }
