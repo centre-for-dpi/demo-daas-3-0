@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -189,7 +190,71 @@ func (a *Adapter) ListSchemas(ctx context.Context, issuerDpg string) ([]vctypes.
 			Variants:   variants,
 		})
 	}
+	out = applySchemaAllowlist(out)
 	return out, nil
+}
+
+// schemaAllowlistDefault is the five-credential demo set we surface in the
+// walt.id issuance flow by default — chosen to reduce decision fatigue on
+// the schema-picker card grid (walt.id ships ~30 credential configurations
+// out-of-the-box, most of which are noise for a demo). To override at
+// deploy time, set VERIFIABLY_WALTID_SCHEMA_ALLOWLIST to a comma-separated
+// list of display-names. Set it to "*" to disable filtering and see every
+// schema walt.id advertises.
+var schemaAllowlistDefault = []string{
+	"Bank Id",
+	"Educational ID",
+	"Iso18013 Drivers License Credential",
+	"Tax Receipt",
+	"University Degree",
+}
+
+// applySchemaAllowlist filters the walt.id ListSchemas output to the
+// configured display-name allowlist. Case-insensitive trimmed match.
+// Schemas not in the allowlist are still served — they just don't appear
+// in the UI's card grid (the underlying credential_configurations are
+// untouched on walt.id's side, so the issuer can still target a hidden
+// schema by id via direct API).
+//
+// Empty allowlist or "*" → no filtering (every schema passes through).
+func applySchemaAllowlist(in []vctypes.Schema) []vctypes.Schema {
+	allowed := schemaAllowlistFromEnv()
+	if len(allowed) == 0 {
+		return in
+	}
+	out := in[:0]
+	for _, s := range in {
+		key := strings.ToLower(strings.TrimSpace(s.Name))
+		if _, ok := allowed[key]; ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// schemaAllowlistFromEnv returns the allowlist as a lookup set, honouring
+// the env override. Returns nil to mean "no filtering".
+func schemaAllowlistFromEnv() map[string]struct{} {
+	raw := strings.TrimSpace(os.Getenv("VERIFIABLY_WALTID_SCHEMA_ALLOWLIST"))
+	if raw == "*" {
+		return nil
+	}
+	names := schemaAllowlistDefault
+	if raw != "" {
+		names = strings.Split(raw, ",")
+	}
+	out := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		k := strings.ToLower(strings.TrimSpace(n))
+		if k == "" {
+			continue
+		}
+		out[k] = struct{}{}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // preferConfigID returns true when candidate should replace current as the
