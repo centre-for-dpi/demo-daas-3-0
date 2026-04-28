@@ -120,16 +120,22 @@ services:
     volumes:
       - ./wso2-deployment.toml:/home/wso2carbon/wso2is-7.0.0/repository/conf/deployment.toml:ro
       - ./inji/wso2is/patch-signup-redirect.sh:/home/wso2carbon/patch-signup-redirect.sh:ro
-    # Wrap the upstream init.sh so our background patcher runs alongside
-    # the JVM. The patcher polls for the extracted JSP, sed-injects a
-    # meta-refresh, and exits — `&` detaches it from the foreground so
-    # WSO2's main startup isn't blocked. exec replaces the wrapper
-    # process with the upstream entrypoint so PID 1 stays correct.
-    entrypoint: ["/bin/sh", "-c"]
+    # Wrap the upstream startup script so our background patcher runs
+    # alongside the JVM. The patcher polls for the extracted JSP,
+    # sed-injects a meta-refresh, and exits — `&` detaches it from the
+    # foreground so WSO2's main startup isn't blocked. exec replaces
+    # the wrapper process with the upstream entrypoint so PID 1 stays
+    # correct.
+    #
+    # The WSO2 IS 7.0 image's launcher is wso2server.sh (alpine + ubuntu
+    # variants both); init.sh exists on some older images but NOT on
+    # 7.0 — invoking it returned exit-127 and put the container in a
+    # restart loop the first time we tried this.
+    entrypoint: ["/bin/bash", "-c"]
     command:
       - |
         /home/wso2carbon/patch-signup-redirect.sh > /tmp/patch-signup-redirect.log 2>&1 &
-        exec /home/wso2carbon/init.sh
+        exec /home/wso2carbon/wso2is-7.0.0/bin/wso2server.sh
 
   libretranslate:
     image: libretranslate/libretranslate:latest
