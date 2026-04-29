@@ -649,9 +649,24 @@ func (a *Adapter) IssueToWallet(ctx context.Context, req backend.IssueRequest) (
 		if err != nil {
 			return backend.IssueToWalletResult{}, err
 		}
-		if req.Schema.Vct != "" {
+		// vct selection precedence (matters because the wallet stores the
+		// issued vct verbatim and the verifier's PD filter must hit the
+		// SAME string):
+		//   1. Schema.Vct — populated from a SchemaVariant for stock
+		//      schemas; carries the URL walt.id's catalog advertises.
+		//   2. CustomTypeName for custom schemas — "FarmerCredential",
+		//      matching the catalog entry buildSDJWTEntry writes AND
+		//      what the verifier handler sends in tpl.Vct.
+		//   3. Schema.ID as a last resort. Pre-Phase-2 we used this for
+		//      custom schemas, but the random "custom-..." ID didn't
+		//      align with what the catalog advertised, so the wallet
+		//      matcher rejected the verifier's request.
+		switch {
+		case req.Schema.Vct != "":
 			ir.Vct = req.Schema.Vct
-		} else {
+		case req.Schema.Custom:
+			ir.Vct = req.Schema.CustomTypeName()
+		default:
 			ir.Vct = req.Schema.ID
 		}
 		ir.CredentialData = cd

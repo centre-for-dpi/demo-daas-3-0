@@ -180,6 +180,63 @@ func (s Schema) BaseType() string {
 	return s.ID
 }
 
+// CustomTypeName returns the canonical credential type identifier for a
+// custom (user-built) schema. This is the string that:
+//   - lands in the issued VC's `type` array (W3C JWT/LDP) or `vct` claim
+//     (SD-JWT VC) — set during issuance by the walt.id adapter
+//   - identifies the catalog entry registered with walt.id (configID is
+//     "<TypeName>_<wireFormat>")
+//   - is what the verifier's PD filter must ask for to match what's in the
+//     wallet
+//
+// Prefers AdditionalTypes[0] (the builder's "Extra Type" field) so an
+// operator who knows the canonical name can pin it; otherwise CamelCases
+// the schema's Name. Empty/all-non-alphanumeric Name falls back to
+// "CustomCredential" so we always emit something valid.
+//
+// Stock (non-Custom) schemas should use Schema.BaseType() — this method
+// is meaningful only when Schema.Custom == true.
+func (s Schema) CustomTypeName() string {
+	if len(s.AdditionalTypes) > 0 {
+		if t := strings.TrimSpace(s.AdditionalTypes[0]); t != "" {
+			return t
+		}
+	}
+	return sanitizeTypeNameVC(s.Name)
+}
+
+// sanitizeTypeNameVC mirrors waltid.sanitizeTypeName — kept here so vctypes
+// stays vendor-agnostic. Title-cases letter runs and strips non-alphanumerics;
+// "" → "CustomCredential" so callers always get a valid identifier.
+func sanitizeTypeNameVC(name string) string {
+	var b strings.Builder
+	capNext := true
+	for _, r := range name {
+		switch {
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r)
+			capNext = false
+		case r >= 'a' && r <= 'z':
+			if capNext {
+				b.WriteRune(r - 32)
+			} else {
+				b.WriteRune(r)
+			}
+			capNext = false
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+			capNext = false
+		default:
+			capNext = true
+		}
+	}
+	out := b.String()
+	if out == "" {
+		return "CustomCredential"
+	}
+	return out
+}
+
 // FieldSpec describes one claim in a credential schema.
 type FieldSpec struct {
 	Name     string

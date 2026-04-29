@@ -230,21 +230,31 @@ func buildLinkedDataEntry(configID, typeName, wireFormat string, schema vctypes.
 }
 
 // buildSDJWTEntry covers vc+sd-jwt (the older media type) and dc+sd-jwt
-// (the IETF draft's newer name). SD-JWT VC keys off `vct` (a URL string)
-// not `credential_definition.type`. Walt.id's verifier matches presentations
-// against the exact vct string the issuer advertised, so the URL we synth
-// has to be deterministic and stable across restarts.
+// (the IETF draft's newer name). SD-JWT VC keys off `vct` not
+// `credential_definition.type`. Walt.id's verifier matches presentations
+// against the exact vct string the issuer advertised, so all three
+// touchpoints (catalog vct here, ir.Vct in IssueToWallet, tpl.Vct in
+// the verifier handler) must use the same string for the round-trip
+// to work.
 //
-// We use HOCON's ${SERVICE_HOST}/${ISSUER_API_PORT} substitution so the URL
-// adapts when those env vars change between deploys (matches the pattern
-// walt.id's stock identity_credential_vc+sd-jwt entry uses). cose_key isn't
-// supported for SD-JWT VC — bind via JWK only.
+// We pin the vct to the bare type name (e.g. "FarmerCredential") rather
+// than a URL with HOCON substitution. Reasons:
+//   - The URL form (http://${SERVICE_HOST}:${ISSUER_API_PORT}/<typeName>)
+//     resolves at walt.id boot time, which means walt.id and the wallet
+//     see the resolved string but verifiably-go's verifier handler can't
+//     reconstruct it without knowing the resolved env vars. Bare typeName
+//     sidesteps that — every layer can compute it from Schema.CustomTypeName.
+//   - SD-JWT VC's vct field is spec'd as "any URI or unique identifier";
+//     a bare type name is a valid identifier and walt.id accepts it.
+//   - The pre-Phase-2 mismatch (catalog vct = URL, issued vct = Schema.ID,
+//     verifier vct = Schema.ID) was the root cause of "your wallet has no
+//     credential matching this request" reported on 2026-04-29.
 func buildSDJWTEntry(configID, typeName, wireFormat string, _ vctypes.Schema) string {
 	return fmt.Sprintf(`    "%s" = {
         format = "%s"
         cryptographic_binding_methods_supported = ["jwk"]
         credential_signing_alg_values_supported = ["ES256"]
-        vct = "http://${SERVICE_HOST}:${ISSUER_API_PORT}/%s"
+        vct = "%s"
     }`, configID, wireFormat, typeName)
 }
 

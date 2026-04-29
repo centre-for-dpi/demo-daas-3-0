@@ -220,14 +220,36 @@ func (h *H) assembleCustomTemplate(r *http.Request) (vctypes.OID4VPTemplate, err
 	// to everything, which broke types whose real name doesn't end that way
 	// (e.g. walt.id's "BankId") and used a bare short type instead of the
 	// full vct URL walt.id's SD-JWT matcher requires.
+	//
+	// Custom schemas need a different code path because Variants is empty
+	// (vctypes.Schema.Variants is "Empty for custom schemas") and BaseType()
+	// falls through to Schema.ID — which is the random "custom-..." string,
+	// NOT what the wallet stored. Using ID here was the cause of "your
+	// wallet has no credential matching this request (verifier asked for
+	// custom-... in vc+sd-jwt format)" reported on 2026-04-29.
 	credType := picked.BaseType()
 	vct := ""
 	wireFormat := ""
-	for _, v := range picked.Variants {
-		if v.ID == picked.ID {
-			vct = v.Vct
-			wireFormat = v.Format
-			break
+	if picked.Custom {
+		credType = picked.CustomTypeName()
+		// For SD-JWT VC, the wallet matches the held credential's `vct`
+		// claim against the PD filter's `vct`. The walt.id adapter issues
+		// custom SD-JWT credentials with vct=CustomTypeName(), so the
+		// verifier must ask for that same string.
+		if strings.HasPrefix(picked.Std, "sd_jwt_vc") {
+			vct = picked.CustomTypeName()
+		}
+		// wireFormat stays empty — adapter falls back to credentialFormatForStd
+		// which maps "sd_jwt_vc (IETF)" → "vc+sd-jwt". Custom schemas don't
+		// expose a per-variant wire-format chip yet so picking the default
+		// is the right behaviour.
+	} else {
+		for _, v := range picked.Variants {
+			if v.ID == picked.ID {
+				vct = v.Vct
+				wireFormat = v.Format
+				break
+			}
 		}
 	}
 	return vctypes.OID4VPTemplate{

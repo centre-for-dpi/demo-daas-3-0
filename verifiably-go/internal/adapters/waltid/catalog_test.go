@@ -102,7 +102,7 @@ func TestAppendCredentialType_sdJWT(t *testing.T) {
 	for _, frag := range []string{
 		`"HealthCard_vc+sd-jwt" = {`,
 		`format = "vc+sd-jwt"`,
-		`vct = "http://${SERVICE_HOST}:${ISSUER_API_PORT}/HealthCard"`,
+		`vct = "HealthCard"`, // bare type name — see buildSDJWTEntry rationale
 		`cryptographic_binding_methods_supported = ["jwk"]`,
 	} {
 		if !strings.Contains(string(got), frag) {
