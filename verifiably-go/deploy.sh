@@ -769,6 +769,13 @@ start_container() {
   # actually resolve. Container-side discovery + token exchange travel via
   # docker-internal DNS (wallet-api, issuer-api, ...) where the hostname
   # differs from the browser-facing one.
+  # The walt.id catalog mount + docker socket below are what let the
+  # SaveCustomSchema hook in internal/adapters/waltid append to
+  # credential-issuer-metadata.conf and restart issuer-api when an operator
+  # builds a new schema. The catalog mount is rw (it's an edit), the docker
+  # socket gates restartContainer's Engine API call. Both are skipped on
+  # scenarios that don't bring up walt.id — but it's cheaper to always bind
+  # them in than to branch (the host paths exist regardless).
   docker run -d \
     --name "$VERIFIABLY_CONTAINER" \
     --network "${COMPOSE_PROJECT}_default" \
@@ -776,6 +783,8 @@ start_container() {
     -p "${VERIFIABLY_HOST_PORT}:8080" \
     -v "$SCRIPT_DIR/config/backends.docker.json:/app/config/backends.json:ro" \
     -v "$SCRIPT_DIR/config/auth-providers.docker.json:/app/config/auth-providers.json:ro" \
+    -v "$SCRIPT_DIR/deploy/compose/stack/issuer-api/config:/app/issuer-api-config" \
+    -v /var/run/docker.sock:/var/run/docker.sock \
     -v "${VERIFIABLY_CONTAINER}-locales:/app/locales" \
     -e VERIFIABLY_ADAPTER=registry \
     -e VERIFIABLY_ADDR=:8080 \
@@ -783,6 +792,8 @@ start_container() {
     -e LIBRETRANSLATE_URL="http://libretranslate:5000" \
     -e INJI_CERTIFY_UPSTREAM_URL="http://inji-certify:8090" \
     -e INJI_PROXY_EXTRA_KIDS="${VERIFIABLY_INJI_EXTRA_KIDS:-}" \
+    -e WALTID_CATALOG_PATH=/app/issuer-api-config/credential-issuer-metadata.conf \
+    -e WALTID_ISSUER_SERVICE=issuer-api \
     "$VERIFIABLY_IMAGE" >/dev/null
 
   sleep 1

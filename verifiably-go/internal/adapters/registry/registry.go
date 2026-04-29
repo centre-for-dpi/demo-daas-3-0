@@ -208,24 +208,57 @@ func (r *Registry) ListAllSchemas(ctx context.Context) ([]vctypes.Schema, error)
 	return out, nil
 }
 
-func (r *Registry) SaveCustomSchema(_ context.Context, schema vctypes.Schema) error {
+func (r *Registry) SaveCustomSchema(ctx context.Context, schema vctypes.Schema) error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	schema.Custom = true
 	r.customSchemas = append(r.customSchemas, schema)
+	// Snapshot the issuer adapters that own the schema's DPGs so we can
+	// hand them the save without holding r.mu (the adapter's own callback
+	// may take seconds — restartContainer waits for the issuer-api to
+	// come back up).
+	dispatch := make([]backend.Adapter, 0, len(schema.DPGs))
+	for _, vendor := range schema.DPGs {
+		if ad, ok := r.issuers[vendor]; ok {
+			dispatch = append(dispatch, ad)
+		}
+	}
+	r.mu.Unlock()
+	for _, ad := range dispatch {
+		if err := ad.SaveCustomSchema(ctx, schema); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
-func (r *Registry) DeleteCustomSchema(_ context.Context, id string) error {
+func (r *Registry) DeleteCustomSchema(ctx context.Context, id string) error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	idx := -1
 	for i, s := range r.customSchemas {
 		if s.ID == id {
-			r.customSchemas = append(r.customSchemas[:i], r.customSchemas[i+1:]...)
-			return nil
+			idx = i
+			break
 		}
 	}
-	return fmt.Errorf("custom schema %q not found", id)
+	if idx == -1 {
+		r.mu.Unlock()
+		return fmt.Errorf("custom schema %q not found", id)
+	}
+	removed := r.customSchemas[idx]
+	r.customSchemas = append(r.customSchemas[:idx], r.customSchemas[idx+1:]...)
+	dispatch := make([]backend.Adapter, 0, len(removed.DPGs))
+	for _, vendor := range removed.DPGs {
+		if ad, ok := r.issuers[vendor]; ok {
+			dispatch = append(dispatch, ad)
+		}
+	}
+	r.mu.Unlock()
+	for _, ad := range dispatch {
+		if err := ad.DeleteCustomSchema(ctx, id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *Registry) PrefillSubjectFields(ctx context.Context, schema vctypes.Schema) (map[string]string, error) {

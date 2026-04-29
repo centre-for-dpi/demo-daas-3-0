@@ -411,15 +411,84 @@ func (a *Adapter) ResolveSchemaFields(schema vctypes.Schema) vctypes.Schema {
 	return schema
 }
 
-// SaveCustomSchema is a no-op at the adapter level — registry owns custom
-// schemas as a cross-vendor store.
-func (a *Adapter) SaveCustomSchema(_ context.Context, _ vctypes.Schema) error {
+// SaveCustomSchema appends an entry to walt.id's credential-issuer-metadata.conf
+// HOCON catalog and restarts issuer-api so the new configurationId becomes
+// part of credential_configurations_supported. This is what lets a custom
+// schema (e.g. "FarmerCred") issue with its own type — without this hook
+// IssueToWallet falls back to borrowing a stock walt.id config and the
+// resulting VC is filed under the borrowed type's name.
+//
+// Phase 1 supports jwt_vc_json (matched by Std="w3c_vcdm_2"). For schemas
+// declaring other Std values the catalog edit returns "format not yet
+// supported" and the adapter silently leaves the borrow path in place — so
+// existing flows keep working until Phase 2 extends format coverage.
+//
+// Skipped (with a logged note) when CatalogPath is empty: a deploy that
+// hasn't bind-mounted the catalog file in still works for stock schemas.
+func (a *Adapter) SaveCustomSchema(_ context.Context, schema vctypes.Schema) error {
+	if !schema.Custom || a.cfg.CatalogPath == "" {
+		return nil
+	}
+	if waltidFormatSuffix(schema.Std) == "" {
+		return nil
+	}
+	configID, changed, err := appendCredentialType(a.cfg.CatalogPath, schema)
+	if err != nil {
+		return fmt.Errorf("append catalog entry: %w", err)
+	}
+	a.mu.Lock()
+	if a.registeredConfigIDs == nil {
+		a.registeredConfigIDs = map[string]string{}
+	}
+	a.registeredConfigIDs[schema.ID] = configID
+	a.mu.Unlock()
+	if !changed {
+		return nil
+	}
+	service := a.cfg.IssuerServiceName
+	if service == "" {
+		service = "issuer-api"
+	}
+	if err := restartContainer(service); err != nil {
+		return fmt.Errorf("restart %s: %w", service, err)
+	}
 	return nil
 }
 
-// DeleteCustomSchema is a no-op for the same reason.
-func (a *Adapter) DeleteCustomSchema(_ context.Context, _ string) error {
-	return nil
+// DeleteCustomSchema removes the schema's catalog entry (if any) and
+// restarts issuer-api. Mirrors SaveCustomSchema — the registry's in-memory
+// custom-schemas slice is cleared by the registry itself; this hook only
+// owns the walt.id-side bookkeeping.
+//
+// Best-effort: a deploy without a CatalogPath, or a delete of a schema
+// whose entry never made it into the catalog (Phase-2-only formats), is a
+// no-op.
+func (a *Adapter) DeleteCustomSchema(_ context.Context, id string) error {
+	if a.cfg.CatalogPath == "" {
+		return nil
+	}
+	a.mu.Lock()
+	configID := a.registeredConfigIDs[id]
+	delete(a.registeredConfigIDs, id)
+	a.mu.Unlock()
+	if configID == "" {
+		return nil
+	}
+	// Reconstruct a minimal Schema for removeCredentialType; only ID/Name
+	// fields it reads are part of the configID, which we already have.
+	if err := removeCredentialType(a.cfg.CatalogPath, vctypes.Schema{
+		ID:              id,
+		Name:            configID, // unused by stripper but harmless
+		AdditionalTypes: []string{strings.TrimSuffix(configID, "_jwt_vc_json")},
+		Std:             "w3c_vcdm_2",
+	}); err != nil {
+		return fmt.Errorf("remove catalog entry: %w", err)
+	}
+	service := a.cfg.IssuerServiceName
+	if service == "" {
+		service = "issuer-api"
+	}
+	return restartContainer(service)
 }
 
 // PrefillSubjectFields returns empty: walt.id doesn't carry an identity plugin
@@ -472,11 +541,24 @@ func (a *Adapter) IssueToWallet(ctx context.Context, req backend.IssueRequest) (
 	// walt.id doesn't cross-check it against the credentialData payload.
 	configID := req.Schema.ID
 	if req.Schema.Custom {
-		resolved, err := a.borrowConfigIDFor(ctx, req.Schema.Std)
-		if err != nil {
-			return backend.IssueToWalletResult{}, fmt.Errorf("custom schema: %w", err)
+		// Prefer a configurationId we registered into walt.id's catalog
+		// via SaveCustomSchema — that way the signed VC carries the
+		// operator's actual type name (e.g. "FarmerCred") instead of the
+		// borrowed credential's name. Falls back to borrowConfigIDFor for
+		// schemas saved in formats Phase 1 doesn't yet write to the
+		// catalog (everything except jwt_vc_json).
+		a.mu.Lock()
+		registered := a.registeredConfigIDs[req.Schema.ID]
+		a.mu.Unlock()
+		if registered != "" {
+			configID = registered
+		} else {
+			resolved, err := a.borrowConfigIDFor(ctx, req.Schema.Std)
+			if err != nil {
+				return backend.IssueToWalletResult{}, fmt.Errorf("custom schema: %w", err)
+			}
+			configID = resolved
 		}
-		configID = resolved
 	}
 
 	ir := issuanceRequest{

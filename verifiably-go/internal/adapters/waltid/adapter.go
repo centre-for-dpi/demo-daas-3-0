@@ -41,6 +41,12 @@ type Adapter struct {
 	// never leak into another's inbox. Empty key hits the legacy shared
 	// demo account — covers the pre-OIDC single-user demo mode.
 	sessions map[string]*walletSession
+	// registeredConfigIDs maps a custom schema's ID to the configurationId
+	// SaveCustomSchema appended to walt.id's HOCON catalog. IssueToWallet
+	// reads this to skip the borrow trick when a real catalog entry exists
+	// — the issued VC then carries the user's chosen type name instead of
+	// the borrowed credential's name.
+	registeredConfigIDs map[string]string
 }
 
 // walletSession is the bootstrapped wallet-api state: a session JWT + a

@@ -13,7 +13,10 @@
 //     /wallet-api/wallet/{walletId}/credentials.
 package waltid
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"os"
+)
 
 // Config is the per-backend config blob the registry passes in.
 // Shape matches the "config" object under a "type":"waltid" backend in
@@ -31,6 +34,17 @@ type Config struct {
 	// IssuerKey mirrors /onboard/issuer response (a JWK wrapper).
 	IssuerKey json.RawMessage `json:"issuerKey"`
 	IssuerDID string          `json:"issuerDid"`
+	// CatalogPath points at credential-issuer-metadata.conf as visible from
+	// the verifiably-go process — typically a host-mounted bind into the
+	// container (e.g. /app/issuer-api-config/credential-issuer-metadata.conf).
+	// When empty, custom-schema saves fall back to the in-memory borrow trick
+	// so the adapter still works in dev setups that don't mount the file in.
+	CatalogPath string `json:"catalogPath"`
+	// IssuerServiceName is the Compose service name of the walt.id issuer-api
+	// container (default "issuer-api"). The adapter restarts this container
+	// after appending to the HOCON catalog so walt.id reloads its
+	// credential_configurations_supported map.
+	IssuerServiceName string `json:"issuerServiceName"`
 }
 
 // Account holds credentials for the demo wallet user this adapter logs in as.
@@ -41,14 +55,28 @@ type Account struct {
 }
 
 // UnmarshalConfig extracts a Config from a raw json.RawMessage.
+//
+// CatalogPath and IssuerServiceName fall through to env vars
+// (WALTID_CATALOG_PATH, WALTID_ISSUER_SERVICE) when the JSON omits them, so
+// deploy.sh can wire the runtime mount path without touching backends.json.
+// Empty values mean "feature disabled" — SaveCustomSchema/DeleteCustomSchema
+// no-op rather than erroring, which keeps dev setups (no docker socket,
+// no mounted catalog) working.
 func UnmarshalConfig(raw json.RawMessage) (Config, error) {
 	var c Config
-	if len(raw) == 0 {
-		return c, nil
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &c); err != nil {
+			return c, err
+		}
 	}
-	err := json.Unmarshal(raw, &c)
 	if c.StandardVersion == "" {
 		c.StandardVersion = "draft13"
 	}
-	return c, err
+	if c.CatalogPath == "" {
+		c.CatalogPath = os.Getenv("WALTID_CATALOG_PATH")
+	}
+	if c.IssuerServiceName == "" {
+		c.IssuerServiceName = os.Getenv("WALTID_ISSUER_SERVICE")
+	}
+	return c, nil
 }
