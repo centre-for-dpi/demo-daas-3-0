@@ -599,23 +599,35 @@ func (a *Adapter) IssueToWallet(ctx context.Context, req backend.IssueRequest) (
 	// walt.id doesn't cross-check it against the credentialData payload.
 	configID := req.Schema.ID
 	if req.Schema.Custom {
-		// Prefer a configurationId we registered into walt.id's catalog
-		// via SaveCustomSchema — that way the signed VC carries the
-		// operator's actual type name (e.g. "FarmerCred") instead of the
-		// borrowed credential's name. Falls back to borrowConfigIDFor for
-		// schemas saved in formats Phase 1 doesn't yet write to the
-		// catalog (everything except jwt_vc_json).
+		// Custom schemas use the catalog entry SaveCustomSchema wrote.
+		// Resolution order:
+		//   1. registeredConfigIDs[schema.ID] — fastest, populated by the
+		//      most recent SaveCustomSchema call this process saw.
+		//   2. Deterministic reconstruction: <CustomTypeName>_<wireFormat>.
+		//      Survives a verifiably-go restart that wipes the in-memory
+		//      map but where walt.id still has the catalog entry from a
+		//      prior save. Without this fallback the issuer hits "Invalid
+		//      Credential Configuration Id" because borrowConfigIDFor
+		//      returns a stock walt.id configID that's the wrong type.
+		//   3. borrowConfigIDFor — last-resort for Std values we don't
+		//      know how to fan out (currently only legacy jwt_vc).
 		a.mu.Lock()
 		registered := a.registeredConfigIDs[req.Schema.ID]
 		a.mu.Unlock()
-		if registered != "" {
+		switch {
+		case registered != "":
 			configID = registered
-		} else {
-			resolved, err := a.borrowConfigIDFor(ctx, req.Schema.Std)
-			if err != nil {
-				return backend.IssueToWalletResult{}, fmt.Errorf("custom schema: %w", err)
+		default:
+			if wireFormats := waltidWireFormatsForStd(req.Schema.Std); len(wireFormats) > 0 {
+				typeName := req.Schema.CustomTypeName()
+				configID = typeName + "_" + wireFormats[0]
+			} else {
+				resolved, err := a.borrowConfigIDFor(ctx, req.Schema.Std)
+				if err != nil {
+					return backend.IssueToWalletResult{}, fmt.Errorf("custom schema: %w", err)
+				}
+				configID = resolved
 			}
-			configID = resolved
 		}
 	}
 
@@ -681,6 +693,18 @@ func (a *Adapter) IssueToWallet(ctx context.Context, req backend.IssueRequest) (
 
 	raw, err := a.issuer.DoRaw(ctx, "POST", path, jsonReader(ir), "application/json", nil)
 	if err != nil {
+		// Specifically diagnose "Invalid Credential Configuration Id" — that
+		// either means the catalog write didn't take effect (verifiably-go
+		// restarted and lost registeredConfigIDs while walt.id still has the
+		// stale boot catalog), or walt.id is silently rejecting our entry.
+		// Fetch the live metadata so the user sees what configIDs walt.id
+		// actually advertises right now vs what we tried to send.
+		if strings.Contains(err.Error(), "Invalid Credential Configuration Id") {
+			advertised := a.peekAdvertisedConfigIDs(ctx)
+			return backend.IssueToWalletResult{}, fmt.Errorf(
+				"%w [DIAG: walt.id rejected configurationId=%q. Advertised configIDs (%d): %s. If the configID we sent is not in this list, the catalog write didn't take effect — try saving the schema again to retrigger the catalog edit + walt.id restart]",
+				err, configID, len(advertised), strings.Join(advertised, ", "))
+		}
 		return backend.IssueToWalletResult{}, err
 	}
 	return backend.IssueToWalletResult{
@@ -688,6 +712,24 @@ func (a *Adapter) IssueToWallet(ctx context.Context, req backend.IssueRequest) (
 		OfferID:  req.Schema.ID + "-" + req.IssuerDpg,
 		Flow:     req.Flow,
 	}, nil
+}
+
+// peekAdvertisedConfigIDs fetches walt.id's openid-credential-issuer
+// metadata and returns the keys of credential_configurations_supported.
+// Best-effort — used only to diagnose issuance failures, so a fetch
+// error returns an empty list rather than failing the caller.
+func (a *Adapter) peekAdvertisedConfigIDs(ctx context.Context) []string {
+	var meta credentialIssuerMetadata
+	path := fmt.Sprintf("/%s/.well-known/openid-credential-issuer", a.cfg.StandardVersion)
+	if err := a.issuer.DoJSON(ctx, "GET", path, nil, &meta, nil); err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(meta.CredentialConfigurationsSupported))
+	for k := range meta.CredentialConfigurationsSupported {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // IssueAsPDF — walt.id Community Stack v0.18.2 has no documented QR-on-PDF

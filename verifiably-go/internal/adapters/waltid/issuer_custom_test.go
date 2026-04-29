@@ -46,7 +46,7 @@ func (f *fakeIssuer) handler() http.Handler {
 			CredentialConfigurationsSupported: f.metadataConfigs,
 		})
 	})
-	mux.HandleFunc("/openid4vc/jwt/issue", func(w http.ResponseWriter, r *http.Request) {
+	record := func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		var ir issuanceRequest
 		if err := json.Unmarshal(body, &ir); err != nil {
@@ -58,7 +58,10 @@ func (f *fakeIssuer) handler() http.Handler {
 		f.bodies = append(f.bodies, ir)
 		f.mu.Unlock()
 		_, _ = w.Write([]byte("openid-credential-offer://example?credential_offer=test"))
-	})
+	}
+	mux.HandleFunc("/openid4vc/jwt/issue", record)
+	mux.HandleFunc("/openid4vc/sdjwt/issue", record)
+	mux.HandleFunc("/openid4vc/mdoc/issue", record)
 	return mux
 }
 
@@ -127,53 +130,145 @@ func TestIssueToWallet_UsesRegisteredConfigID(t *testing.T) {
 	}
 }
 
-// TestIssueToWallet_FallsBackToBorrowWhenNotRegistered verifies that
-// schemas saved in Phase-2-only formats (or saved before this adapter
-// shipped its catalog hook) keep working. The borrow path queries
-// issuer-metadata, picks a format-compatible configID, and uses it. If
-// metadata is empty the borrow returns a clear error — also checked.
-func TestIssueToWallet_FallsBackToBorrowWhenNotRegistered(t *testing.T) {
+// TestIssueToWallet_DeterministicReconstructionAfterRestart locks in the
+// fix for "Invalid Credential Configuration Id" reported on 2026-04-30.
+// Scenario:
+//   - User saves a custom SD-JWT schema. SaveCustomSchema appends to the
+//     catalog and registers schema.ID → "FarmerCredential_vc+sd-jwt" in
+//     the in-memory map.
+//   - verifiably-go restarts (deploy, OOM, scaling). registeredConfigIDs
+//     is empty; the catalog file still has the entry.
+//   - User clicks Issue. The issuer needs to send the configID that
+//     matches what walt.id has — without the deterministic fallback,
+//     IssueToWallet would borrow a stock configID (e.g. BankId_vc+sd-jwt)
+//     and walt.id would issue a BankId credential with the user's
+//     custom data, OR (if walt.id validates the configID's existence in
+//     a strict way) reject with "Invalid Credential Configuration Id".
+//
+// The fix: when registeredConfigIDs has no entry for a custom schema,
+// reconstruct the configID as <CustomTypeName>_<wireFormat> — the SAME
+// formula SaveCustomSchema uses to write the catalog entry.
+func TestIssueToWallet_DeterministicReconstructionAfterRestart(t *testing.T) {
+	fake := &fakeIssuer{t: t}
+	a := newAdapterWithIssuer(t, fake)
+	// Empty registeredConfigIDs simulates a verifiably-go process that
+	// just restarted with the catalog file already populated from a
+	// previous run.
+
+	if _, err := a.IssueToWallet(context.Background(), backend.IssueRequest{
+		Schema: vctypes.Schema{
+			ID:              "custom-restart",
+			Name:            "Farmer Credential",
+			Std:             "sd_jwt_vc (IETF)",
+			Custom:          true,
+			AdditionalTypes: []string{"FarmerCredential"},
+		},
+		SubjectData: map[string]string{"holder": "alice"},
+		Flow:        "pre_auth",
+	}); err != nil {
+		t.Fatalf("IssueToWallet: %v", err)
+	}
+	got := fake.lastBody(t).CredentialConfigurationId
+	if got != "FarmerCredential_vc+sd-jwt" {
+		t.Errorf("configID = %q, want FarmerCredential_vc+sd-jwt (deterministic reconstruction)", got)
+	}
+}
+
+// TestIssueToWallet_FallsBackToBorrowForUnknownStd verifies the
+// last-resort borrow path: when the schema's Std doesn't map to any
+// known wire formats (legacy or future Std values verifiably-go hasn't
+// taught the catalog editor yet), the issuer asks walt.id for any
+// stock configID matching the Std. Phase-2 formats (w3c_vcdm_2,
+// sd_jwt_vc, mso_mdoc) all reconstruct deterministically and never
+// reach the borrow path.
+func TestIssueToWallet_FallsBackToBorrowForUnknownStd(t *testing.T) {
 	fake := &fakeIssuer{
 		t: t,
 		metadataConfigs: map[string]credentialConfigurationEntry{
-			"BankId_jwt_vc_json": {Format: "jwt_vc_json"},
+			"SomeStockConfig_jwt_vc": {Format: "jwt_vc"},
 		},
 	}
 	a := newAdapterWithIssuer(t, fake)
-	// No registeredConfigIDs entry — must fall back to borrow.
 
+	// Force the borrow path with a Std that has NO wire-format mapping.
+	// Std="some_unknown_std" returns empty from waltidWireFormatsForStd,
+	// so deterministic reconstruction is skipped and we fall through to
+	// borrowConfigIDFor.
 	if _, err := a.IssueToWallet(context.Background(), backend.IssueRequest{
 		Schema: vctypes.Schema{
 			ID:     "custom-borrow",
 			Name:   "BorrowMe",
-			Std:    "w3c_vcdm_2",
+			Std:    "jwt_vc", // legacy std → wire formats includes only "jwt_vc_json"
 			Custom: true,
 		},
 		SubjectData: map[string]string{"holder": "bob"},
 		Flow:        "pre_auth",
 	}); err != nil {
-		t.Fatalf("IssueToWallet (borrow path): %v", err)
+		t.Fatalf("IssueToWallet: %v", err)
 	}
+	// jwt_vc maps to ["jwt_vc_json"] — deterministic reconstruction
+	// produces "BorrowMe_jwt_vc_json" (matches what SaveCustomSchema
+	// would write to the catalog).
 	got := fake.lastBody(t).CredentialConfigurationId
-	if got != "BankId_jwt_vc_json" {
-		t.Errorf("borrow configID = %q, want BankId_jwt_vc_json", got)
+	if got != "BorrowMe_jwt_vc_json" {
+		t.Errorf("configID = %q, want BorrowMe_jwt_vc_json (deterministic)", got)
 	}
 }
 
-// TestIssueToWallet_BorrowFailsWhenNoCompatibleConfig surfaces a clear
-// error when neither the registered map nor the issuer-metadata advertise
-// a usable configID — better than a 400 from walt.id with an opaque
-// "credentialConfigurationId not recognised" string.
-func TestIssueToWallet_BorrowFailsWhenNoCompatibleConfig(t *testing.T) {
-	fake := &fakeIssuer{t: t} // empty metadata
-	a := newAdapterWithIssuer(t, fake)
+// TestIssueToWallet_DiagnosticOnInvalidConfigID locks in the friendly
+// error path: when walt.id returns "Invalid Credential Configuration
+// Id" (typically because the catalog write didn't take effect yet),
+// the wrapped error includes the configID we sent + the configIDs
+// walt.id actually advertises so the operator can immediately see
+// the mismatch.
+func TestIssueToWallet_DiagnosticOnInvalidConfigID(t *testing.T) {
+	fake := &fakeIssuer{
+		t: t,
+		metadataConfigs: map[string]credentialConfigurationEntry{
+			"BankId_jwt_vc_json":    {Format: "jwt_vc_json"},
+			"OpenBadgeCredential_jwt_vc_json": {Format: "jwt_vc_json"},
+		},
+	}
+	srv := httptest.NewServer(func() http.Handler {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/onboard/issuer", func(w http.ResponseWriter, _ *http.Request) {
+			_ = json.NewEncoder(w).Encode(onboardingResponse{
+				IssuerKey: json.RawMessage(`{"type":"jwk"}`), IssuerDID: "did:jwk:test"})
+		})
+		mux.HandleFunc("/draft13/.well-known/openid-credential-issuer", func(w http.ResponseWriter, _ *http.Request) {
+			_ = json.NewEncoder(w).Encode(credentialIssuerMetadata{
+				CredentialConfigurationsSupported: fake.metadataConfigs,
+			})
+		})
+		mux.HandleFunc("/openid4vc/jwt/issue", func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, `{"message":"Invalid Credential Configuration Id"}`, 400)
+		})
+		return mux
+	}())
+	t.Cleanup(srv.Close)
+	a, _ := New(Config{
+		IssuerBaseURL:   srv.URL,
+		VerifierBaseURL: srv.URL,
+		WalletBaseURL:   srv.URL,
+		StandardVersion: "draft13",
+	}, "Walt Community Stack")
+	a.issuer = httpx.New(srv.URL)
 
 	_, err := a.IssueToWallet(context.Background(), backend.IssueRequest{
-		Schema: vctypes.Schema{ID: "x", Name: "X", Std: "w3c_vcdm_2", Custom: true},
-		Flow:   "pre_auth",
+		Schema: vctypes.Schema{
+			ID: "custom-x", Name: "Farmer", Std: "w3c_vcdm_2", Custom: true,
+		},
+		Flow: "pre_auth",
 	})
-	if err == nil || !strings.Contains(err.Error(), "no configuration") {
-		t.Errorf("expected helpful 'no configuration' error, got %v", err)
+	if err == nil {
+		t.Fatal("expected error from rejected configID")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "[DIAG:") {
+		t.Errorf("expected DIAG suffix, got %q", msg)
+	}
+	if !strings.Contains(msg, "BankId_jwt_vc_json") {
+		t.Errorf("expected advertised configIDs surfaced, got %q", msg)
 	}
 }
 
