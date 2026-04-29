@@ -92,14 +92,31 @@ type schemaBrowserData struct {
 	ExpandedID   string
 	SelectedID   string
 	ExpandedJSON string
+	// Notice is a soft error banner the page renders inline, used when the
+	// vendor's catalog endpoint is briefly unreachable (e.g. walt.id is
+	// restarting after a custom-schema save). Custom schemas saved in the
+	// session still appear in Schemas; the banner explains why stock walt.id
+	// types are temporarily missing. Without this, the old error path called
+	// errorToast → http.Error(500) which wrote a plain-text response body
+	// THEN the template render appended HTML — the user saw the error
+	// message followed by the page, all rendered as one wall of text.
+	Notice string
 }
 
 func (h *H) schemaBrowserData(w http.ResponseWriter, r *http.Request, sess *Session) schemaBrowserData {
 	ctx := r.Context()
 	schemas, err := h.Adapter.ListSchemas(ctx, sess.IssuerDpg)
+	notice := ""
 	if err != nil {
-		h.errorToast(w, r, err.Error())
-		return schemaBrowserData{}
+		// Registry.ListSchemas returns the custom-schema slice alongside the
+		// error so we can render gracefully. Show a banner instead of
+		// blowing up the response.
+		notice = transientCatalogNotice(err)
+		// Defensive: a stricter caller (no resilience layer) would return
+		// nil; treat that as an empty list so the template still renders.
+		if schemas == nil {
+			schemas = []vctypes.Schema{}
+		}
 	}
 	// Build the std-chip list from EVERY variant's Std — after grouping a
 	// card may carry several variants, so filtering by Std needs to consider
@@ -162,7 +179,22 @@ func (h *H) schemaBrowserData(w http.ResponseWriter, r *http.Request, sess *Sess
 		ExpandedID:   sess.ExpandedSchemaID,
 		SelectedID:   sess.SchemaID,
 		ExpandedJSON: expandedJSON,
+		Notice:       notice,
 	}
+}
+
+// transientCatalogNotice turns a vendor catalog fetch error into a
+// human-readable banner. Connection-refused / connection-reset patterns
+// almost always mean walt.id is restarting (which the catalog-edit hook
+// itself triggers), so we hint at that case explicitly. Anything else
+// surfaces the underlying error verbatim so an actual misconfiguration
+// (wrong URL, auth failure) doesn't get hidden.
+func transientCatalogNotice(err error) string {
+	msg := err.Error()
+	if strings.Contains(msg, "connection refused") || strings.Contains(msg, "connection reset") {
+		return "Walt.id catalog is briefly unavailable (issuer-api may be restarting after a custom-schema save). Refresh in a few seconds."
+	}
+	return "Couldn't fetch catalog from walt.id: " + msg
 }
 
 // SchemaSearch handles HTMX search requests. Updates session query and returns the list fragment.

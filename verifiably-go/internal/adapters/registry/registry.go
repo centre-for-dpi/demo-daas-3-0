@@ -155,21 +155,31 @@ func (r *Registry) ListSchemas(ctx context.Context, issuerDpg string) ([]vctypes
 	if err != nil {
 		return nil, err
 	}
-	vendorSchemas, err := ad.ListSchemas(ctx, issuerDpg)
-	if err != nil {
-		return nil, err
-	}
+	// Collect in-memory custom schemas first so a vendor outage (e.g. walt.id
+	// restarting itself after a SaveCustomSchema catalog edit — a self-
+	// inflicted ~10s window) doesn't make the browser look empty. The handler
+	// renders whatever we return; on partial success it shows the custom
+	// schemas plus a transient-error banner instead of a blank page or, worse,
+	// an http.Error body bleeding into the rendered HTML.
 	r.mu.RLock()
-	defer r.mu.RUnlock()
+	custom := make([]vctypes.Schema, 0, len(r.customSchemas))
 	for _, s := range r.customSchemas {
 		for _, d := range s.DPGs {
 			if d == issuerDpg {
-				vendorSchemas = append(vendorSchemas, s)
+				custom = append(custom, s)
 				break
 			}
 		}
 	}
-	return vendorSchemas, nil
+	r.mu.RUnlock()
+	vendorSchemas, vendorErr := ad.ListSchemas(ctx, issuerDpg)
+	if vendorErr != nil {
+		// Return the custom schemas we already gathered alongside the vendor
+		// error. Caller decides whether to surface (handler shows a banner;
+		// strict callers can treat err != nil as a hard failure).
+		return custom, vendorErr
+	}
+	return append(vendorSchemas, custom...), nil
 }
 
 func (r *Registry) ListAllSchemas(ctx context.Context) ([]vctypes.Schema, error) {

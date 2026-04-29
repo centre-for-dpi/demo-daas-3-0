@@ -14,6 +14,18 @@
     <span>Issue-only — walt.id's verifier can't filter for this format, so credentials issued here can't be presented end-to-end. Pick a non-⚠ format to keep the full issue → hold → present flow working.</span>
   </div>
 
+  {{/* Transient catalog-fetch banner. Set when the vendor's well-known
+       endpoint is briefly unreachable — typically because walt.id's
+       issuer-api restarts after a SaveCustomSchema catalog write. The
+       page still renders custom schemas saved in the session so the
+       user has something to click while walt.id comes back up. */}}
+  {{if .Body.Notice}}
+  <div class="format-legend" style="border-color:var(--accent-warn,#c98a00);background:rgba(255,176,0,0.08)">
+    <span class="chip small">ℹ</span>
+    <span>{{.Body.Notice}}</span>
+  </div>
+  {{end}}
+
   <div id="schema-browser">
     {{template "fragment_schema_browser_body" .Body}}
   </div>
