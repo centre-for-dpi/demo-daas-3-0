@@ -776,10 +776,40 @@ start_container() {
   # socket gates restartContainer's Engine API call. Both are skipped on
   # scenarios that don't bring up walt.id — but it's cheaper to always bind
   # them in than to branch (the host paths exist regardless).
+  #
+  # Permission gymnastics: verifiably-go runs as the distroless `nonroot`
+  # user (UID 65532), but the host bind mount is owned by whoever ran
+  # `git clone` (typically UID 1000). The container can read but not
+  # write the catalog file, so /issuer/schema/build's HOCON append
+  # fails with EACCES. Two practical options:
+  #   - chmod the dir + files world-rw (simple, what we do here)
+  #   - chown to 65532 (cleaner but needs sudo)
+  # Chosen: chmod. This is a dev/demo tool and the host dir already lives
+  # under the user's home; world-write doesn't expose anything new. Also
+  # mounts /var/run/docker.sock as group-readable so isContainerRunning
+  # / restartContainer work without root inside the container.
+  local catalog_dir="$SCRIPT_DIR/deploy/compose/stack/issuer-api/config"
+  if [[ -d "$catalog_dir" ]]; then
+    chmod 0777 "$catalog_dir" 2>/dev/null || true
+    chmod 0666 "$catalog_dir"/*.conf 2>/dev/null || true
+  fi
+  # Resolve the docker group's GID at deploy time so --group-add works on
+  # any host (Debian/Ubuntu typically use 999 or 984; macOS Docker Desktop
+  # has a different mapping). Without this, restartContainer's POST to
+  # /var/run/docker.sock returns 403 because UID 65532 isn't in the docker
+  # group inside the container. Empty fallback keeps `docker run` happy on
+  # hosts that don't have a docker group (rootless setups).
+  local docker_gid
+  docker_gid=$(stat -c '%g' /var/run/docker.sock 2>/dev/null || echo "")
+  local group_add_args=()
+  if [[ -n "$docker_gid" ]]; then
+    group_add_args=( --group-add "$docker_gid" )
+  fi
   docker run -d \
     --name "$VERIFIABLY_CONTAINER" \
     --network "${COMPOSE_PROJECT}_default" \
     --add-host=host.docker.internal:host-gateway \
+    "${group_add_args[@]}" \
     -p "${VERIFIABLY_HOST_PORT}:8080" \
     -v "$SCRIPT_DIR/config/backends.docker.json:/app/config/backends.json:ro" \
     -v "$SCRIPT_DIR/config/auth-providers.docker.json:/app/config/auth-providers.json:ro" \
