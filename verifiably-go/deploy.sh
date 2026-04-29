@@ -558,7 +558,17 @@ cmd_up() {
   if [[ "$(scenario_needs_injiweb "$scenario")" == "yes" ]]; then
     profile_args+=( --profile injiweb )
   fi
+  # Per-subdomain mode (VERIFIABLY_HOSTS_PATTERN set) brings up the
+  # caddy-public service that fronts every container on 80/443. Skipped
+  # for localhost / port-per-service deployments — the existing per-port
+  # bindings already serve those without TLS.
+  if [[ -n "$VERIFIABLY_HOSTS_PATTERN" ]]; then
+    profile_args+=( --profile subdomain )
+  fi
   compose "${profile_args[@]}" up -d "${services[@]}"
+  if [[ -n "$VERIFIABLY_HOSTS_PATTERN" ]]; then
+    compose "${profile_args[@]}" up -d caddy-public
+  fi
 
   bold "▶ Waiting for services to be reachable"
   wait_for_services "$scenario"

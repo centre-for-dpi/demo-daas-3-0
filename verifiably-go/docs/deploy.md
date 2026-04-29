@@ -197,29 +197,76 @@ So `VERIFIABLY_HOSTS_PATTERN=https://%s.example.com` yields `https://walt-issuer
 
 ### What you need to wire (one-time, on the host)
 
-1. **DNS records** — one `A` record per slug pointing at the host running the stack. With thirteen records you cover every service; with a wildcard `*.example.com` record you cover them all in one entry. Use whichever your DNS provider makes easier.
+A working Caddy reverse proxy ships in the repo — you don't need to write your own. Three things to do on the host:
 
-2. **A reverse proxy doing Host-header routing** — the simplest is Caddy because it auto-provisions Let's Encrypt certs:
+#### 1. DNS
 
-   ```caddy
-   walt-issuer.example.com   { reverse_proxy issuer-api:7002 }
-   walt-wallet.example.com   { reverse_proxy wallet-api:7001 }
-   walt-verifier.example.com { reverse_proxy verifier-api:7003 }
-   inji-certify.example.com  { reverse_proxy certify-nginx:80 }
-   inji-certify-preauth.example.com { reverse_proxy certify-preauth-nginx:80 }
-   inji-verify.example.com   { reverse_proxy inji-verify-service:8080 }
-   inji-verify-ui.example.com { reverse_proxy inji-verify-ui:80 }
-   inji-web.example.com      { reverse_proxy injiweb:3004 }
-   mimoto.example.com        { reverse_proxy injiweb-mimoto:8099 }
-   esignet.example.com       { reverse_proxy injiweb-esignet:8088 }
-   keycloak.example.com      { reverse_proxy keycloak:8080 }
-   wso2.example.com          { reverse_proxy wso2is:9443 }
-   verifiably.example.com    { reverse_proxy verifiably-go:8080 }
-   ```
+Point either:
 
-   nginx, Traefik, AWS ALB, Cloudflare Tunnel etc. all work too — the requirement is just that they route by Host header to the matching container.
+- **A wildcard `A` record** `*.example.com → <host-ip>` (one entry covers every service), or
+- **One `A` record per slug** — `walt-issuer.example.com`, `walt-wallet.example.com`, ... thirteen total. Use this if your DNS provider charges per record-type or you prefer explicit per-service control.
 
-3. **Open ports 80 + 443** on the host firewall (per-service ports stay container-internal — only the proxy is exposed).
+Verify with `dig walt-issuer.example.com +short` from anywhere — should resolve to your host's public IP.
+
+#### 2. Caddyfile (already written for you)
+
+The repo ships a complete Caddyfile at:
+
+```
+verifiably-go/deploy/compose/stack/Caddyfile.public
+```
+
+It declares one block per slug pointing at the right container + internal port — including the WSO2-on-self-signed-HTTPS upstream and Inji Verify's quirky port-8000 SPA. Don't edit unless you want a different subdomain scheme; the `{$VERIFIABLY_PUBLIC_DOMAIN}` placeholder is filled in from `.env` at container start.
+
+The matching `caddy-public` service is registered in `docker-compose.yml` behind the `subdomain` profile. `deploy.sh` automatically passes `--profile subdomain` to compose when `VERIFIABLY_HOSTS_PATTERN` is non-empty, so you don't run anything new — `./deploy.sh up <scenario>` brings Caddy up alongside the rest.
+
+Set these in `.env`:
+
+```bash
+VERIFIABLY_HOSTS_PATTERN=https://%s.example.com
+VERIFIABLY_PUBLIC_DOMAIN=example.com          # apex must match the pattern
+VERIFIABLY_LE_EMAIL=ops@example.com           # Let's Encrypt account email
+```
+
+If `VERIFIABLY_LE_EMAIL` is left empty Caddy falls back to an internal CA — fine for local-dev with `/etc/hosts` overrides, but browsers will reject the cert on a public deploy.
+
+#### 3. Firewall
+
+Caddy needs ports 80 + 443 reachable from the public internet. Per-service container ports stay internal — they're not bound to the host in subdomain mode.
+
+**Ubuntu/Debian (UFW)**:
+
+```bash
+sudo ufw allow 80/tcp        # ACME HTTP-01 challenge + redirect to 443
+sudo ufw allow 443/tcp       # HTTPS
+sudo ufw allow 443/udp       # HTTP/3 (QUIC) — Caddy serves it by default
+sudo ufw allow 22/tcp        # SSH (don't forget this BEFORE enabling the firewall)
+sudo ufw enable
+sudo ufw status numbered
+```
+
+**RHEL/CentOS/Fedora (firewalld)**:
+
+```bash
+sudo firewall-cmd --permanent --add-service=http
+sudo firewall-cmd --permanent --add-service=https
+sudo firewall-cmd --permanent --add-port=443/udp
+sudo firewall-cmd --reload
+```
+
+**Cloud-provider firewall (EC2, DigitalOcean, etc.)**: open inbound 80, 443/tcp, 443/udp from `0.0.0.0/0`. The host-level UFW/firewalld step is still recommended as defense-in-depth.
+
+**Check from outside the host** (a different machine):
+
+```bash
+curl -fsSL https://walt-issuer.example.com/.well-known/openid-credential-issuer | head
+```
+
+Returns the walt.id metadata document → routing works. Fails with a TLS error → Let's Encrypt didn't complete (usually port 80 unreachable, DNS not propagated, or a rate-limit hit on Let's Encrypt — see `docker logs caddy-public` for specifics).
+
+#### Using a different reverse proxy
+
+If you'd rather use nginx, Traefik, AWS ALB, Cloudflare Tunnel, etc.: skip the `subdomain` profile (just don't set `VERIFIABLY_HOSTS_PATTERN`'s companion `VERIFIABLY_PUBLIC_DOMAIN` and add `--profile=""`) and route from your own proxy to the per-service container ports. The full upstream map is in `Caddyfile.public` if you need a reference for what each subdomain should target.
 
 ### Picking your subdomain scheme
 

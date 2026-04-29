@@ -39,6 +39,28 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
 
+  # caddy-public terminates TLS for the per-subdomain VERIFIABLY_HOSTS_PATTERN
+  # mode. Activated by `--profile subdomain`. deploy.sh auto-passes that
+  # profile when VERIFIABLY_HOSTS_PATTERN is non-empty so a localhost
+  # deploy never bothers binding 80/443. Two prerequisites the operator
+  # arranges externally: (1) per-service A records pointing at this host,
+  # (2) ports 80 + 443 open. See docs/deploy.md § Per-subdomain deployment.
+  caddy-public:
+    image: caddy:2
+    restart: unless-stopped
+    profiles: ["subdomain"]
+    environment:
+      VERIFIABLY_PUBLIC_DOMAIN: ${VERIFIABLY_PUBLIC_DOMAIN:-}
+      VERIFIABLY_LE_EMAIL: ${VERIFIABLY_LE_EMAIL:-}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile.public:/etc/caddy/Caddyfile
+      - caddy-public-data:/data
+      - caddy-public-config:/config
+
   issuer-api:
     image: waltid/issuer-api:0.18.2
     restart: unless-stopped
@@ -926,6 +948,10 @@ volumes:
   # service block for rationale.
   certify-preauth-db:
   certify-preauth-pkcs12:
+  # caddy-public's auto-issued certs + ACME state. Persists across
+  # restarts so Let's Encrypt's rate limit isn't burned on every redeploy.
+  caddy-public-data:
+  caddy-public-config:
 
 # Pin the default network to a fixed subnet + gateway so that every service
 # URL hardcoded against 172.24.0.1 (esignet MOSIP_ESIGNET_DOMAIN_URL, Mimoto
