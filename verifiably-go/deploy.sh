@@ -994,8 +994,36 @@ render_wso2_deployment_toml() {
     red "  WARN: $tpl missing — WSO2 will boot with whatever hostname is in the compose-mounted toml"
     return 0
   fi
-  VERIFIABLY_PUBLIC_HOST="$VERIFIABLY_PUBLIC_HOST" envsubst '$VERIFIABLY_PUBLIC_HOST' < "$tpl" > "$out"
-  green "  rendered wso2-deployment.toml (hostname=$VERIFIABLY_PUBLIC_HOST)"
+  # In subdomain mode, WSO2's external hostname is its subdomain and the
+  # proxyPort is 443 (Caddy's external HTTPS). Without these, WSO2's OIDC
+  # discovery advertises authenticationendpoint URLs as
+  # https://<VERIFIABLY_PUBLIC_HOST>:9443/... which the browser can't reach.
+  local hostname proxy_port
+  if [[ -n "$VERIFIABLY_HOSTS_PATTERN" && -n "$VERIFIABLY_PUBLIC_DOMAIN" ]]; then
+    local wso2_slug
+    wso2_slug=$(resolve_slug wso2)
+    if [[ -n "$wso2_slug" ]]; then
+      hostname="${wso2_slug}.${VERIFIABLY_PUBLIC_DOMAIN}"
+      proxy_port=443
+    else
+      hostname="$VERIFIABLY_PUBLIC_HOST"
+      proxy_port=""
+    fi
+  else
+    hostname="$VERIFIABLY_PUBLIC_HOST"
+    proxy_port=""
+  fi
+  # Two-pass render: envsubst fills in hostname + proxy_port placeholders;
+  # awk strips the COND_PROXYPORT_* block when proxy_port is empty so the
+  # rendered file is valid TOML in either mode.
+  WSO2_HOSTNAME="$hostname" WSO2_PROXY_PORT="$proxy_port" \
+    envsubst '$WSO2_HOSTNAME $WSO2_PROXY_PORT' < "$tpl" |
+  awk -v keep="${proxy_port:+1}" '
+    /COND_PROXYPORT_OPEN/  { skip = !keep; next }
+    /COND_PROXYPORT_CLOSE/ { skip = 0;     next }
+    !skip { print }
+  ' > "$out"
+  green "  rendered wso2-deployment.toml (hostname=$hostname${proxy_port:+ proxyPort=$proxy_port})"
 }
 
 # render_public_caddyfile generates Caddyfile.public from the resolved

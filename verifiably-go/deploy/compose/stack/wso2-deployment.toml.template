@@ -1,21 +1,26 @@
 [server]
-# Templated by deploy.sh — the hostname line is envsubst'd against
-# VERIFIABLY_PUBLIC_HOST (defined in .env) whenever deploy.sh up runs.
-# Deployment targets: localhost, 172.24.0.1, an EC2 hostname, or a
-# TLS-terminated subdomain like wso2.bootcamp.cdpi.dev. The rendered
-# file is wso2-deployment.toml (gitignored) — the compose file mounts
-# that read-only. Edit this TEMPLATE; never edit the rendered output.
-hostname = "$VERIFIABLY_PUBLIC_HOST"
+# Templated by deploy.sh — the hostname + proxy_port lines are envsubst'd
+# against the resolved public values whenever deploy.sh up runs.
+#
+# In subdomain mode (VERIFIABLY_HOSTS_PATTERN set) the hostname is the
+# WSO2 subdomain (e.g. wso2.bootcamp.cdpi.dev) and proxy_port is 443 so
+# WSO2's OIDC discovery advertises external https URLs that flow through
+# Caddy. In legacy mode the hostname is VERIFIABLY_PUBLIC_HOST and
+# proxy_port is empty (WSO2 advertises its own internal 9443).
+#
+# The rendered file is wso2-deployment.toml (gitignored) — the compose
+# file mounts that read-only. Edit this TEMPLATE; never edit the rendered
+# output.
+hostname = "$WSO2_HOSTNAME"
 node_ip = "127.0.0.1"
 offset = 0
 
-# When fronting WSO2 with a TLS-terminator (Caddy / ALB / nginx),
-# uncomment proxyPort = 443 so OIDC discovery advertises https URLs on
-# the external port rather than WSO2's internal 9443. For direct
-# (no-proxy) access to 9443, leave this commented out — WSO2's
-# self-signed cert will be what the browser sees.
-#[transport.https.properties]
-#proxyPort = 443
+# Conditionally rendered when WSO2_PROXY_PORT is non-empty; the trailing
+# COND_* markers are stripped by render_wso2_deployment_toml's awk pass.
+COND_PROXYPORT_OPEN
+[transport.https.properties]
+proxyPort = $WSO2_PROXY_PORT
+COND_PROXYPORT_CLOSE
 
 [super_admin]
 username = "admin"
