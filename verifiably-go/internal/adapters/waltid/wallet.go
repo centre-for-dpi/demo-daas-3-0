@@ -450,9 +450,18 @@ func (a *Adapter) PresentCredential(ctx context.Context, req backend.PresentCred
 		matched, ok := a.matchPD(authCtx, sess.WalletID, pd)
 		if ok && len(matched) == 0 {
 			wantType, wantFormat := describePD(pd)
+			// Diagnose: report what the wallet actually holds vs the PD
+			// filter so the operator can see whether this is a stale
+			// credential (issued before a config alignment fix), a vct
+			// mismatch (walt.id substituted the catalog vct for ir.Vct),
+			// or genuinely a missing credential. Without this hint the
+			// user is left guessing whether to re-issue, redeploy, or
+			// inspect the catalog.
+			held, _ := a.ListWalletCredentials(authCtx)
+			diag := summariseHeldForDiagnostic(held, wantFormat)
 			return backend.PresentCredentialResult{}, fmt.Errorf(
-				"your wallet has no credential matching this request (verifier asked for %s in %s format); accept a matching offer first, then try again",
-				wantType, wantFormat)
+				"your wallet has no credential matching this request (verifier asked for %s in %s format)%s; accept a matching offer first, then try again",
+				wantType, wantFormat, diag)
 		}
 		if ok {
 			credID = pickBestMatch(matched, req.CredentialID)
@@ -635,7 +644,8 @@ func (a *Adapter) PreviewPresentation(ctx context.Context, req backend.PresentCr
 	}
 	if len(matches) == 0 {
 		preview.Compatible = false
-		preview.IncompatibleReason = incompatibilityMessage(pd, creds, preview.RequestedFormat)
+		preview.IncompatibleReason = incompatibilityMessage(pd, creds, preview.RequestedFormat) +
+			summariseHeldForDiagnostic(creds, preview.RequestedFormat)
 		return preview, nil
 	}
 	for _, row := range matches {
@@ -829,6 +839,56 @@ func incompatibilityMessage(pd map[string]any, held []vctypes.Credential, wantFo
 	return fmt.Sprintf(
 		"your wallet has no credential matching this request (verifier asked for %s in %s format). Accept a matching offer first, then try again.",
 		wantType, wantFormat)
+}
+
+// summariseHeldForDiagnostic produces a short human-readable suffix listing
+// the wallet's actual credential identifiers (vct for SD-JWT, type for JWT)
+// so the "no match" toast tells the operator exactly why walt.id's wallet
+// matcher rejected. Format: ". Wallet holds: vct=foo (vc+sd-jwt), vct=bar
+// (vc+sd-jwt)". Returns "" when the wallet is empty (the original message
+// already covers that case).
+//
+// Triggered by the genuinely-custom-schema vct mismatch reported on
+// 2026-04-29 — the verifier asked for "FarmerCredential" but the held
+// credential carried a different vct, and the operator had no way to see
+// which.
+func summariseHeldForDiagnostic(held []vctypes.Credential, wantFormat string) string {
+	if len(held) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(held))
+	for _, c := range held {
+		// Prefer the most identifying claim per format.
+		switch {
+		case strings.HasPrefix(c.Format, "vc+sd-jwt") || strings.HasPrefix(c.Format, "dc+sd-jwt"):
+			if vct := c.Fields["vct"]; vct != "" {
+				parts = append(parts, fmt.Sprintf("vct=%q (%s)", vct, c.Format))
+				continue
+			}
+		case c.Format == "mso_mdoc":
+			if dt := c.Fields["doctype"]; dt != "" {
+				parts = append(parts, fmt.Sprintf("doctype=%q (%s)", dt, c.Format))
+				continue
+			}
+		}
+		// Fallback: title + format.
+		title := c.Title
+		if title == "" {
+			title = "(unnamed)"
+		}
+		parts = append(parts, fmt.Sprintf("%q (%s)", title, c.Format))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	suffix := ". Wallet holds: " + strings.Join(parts, ", ")
+	// Hint the most common cause when the verifier asked for SD-JWT but
+	// every held credential has a different vct: stale credential issued
+	// before vct alignment landed.
+	if strings.HasPrefix(wantFormat, "vc+sd-jwt") || strings.HasPrefix(wantFormat, "dc+sd-jwt") {
+		suffix += ". If a held vct starts with \"custom-\" the credential was issued before the type/vct alignment fix — re-issue to get the canonical type name baked in."
+	}
+	return suffix
 }
 
 // sanitizeIncompatibleName strips spaces + punctuation so "Open Badge
