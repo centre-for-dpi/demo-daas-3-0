@@ -4,7 +4,10 @@
 // the sub-packages and backends.json.
 package auth
 
-import "context"
+import (
+	"context"
+	"sync"
+)
 
 // Provider describes one configured identity provider.
 type Provider interface {
@@ -64,22 +67,48 @@ type ProviderConfig struct {
 	InsecureSkipVerify bool     `json:"insecureSkipVerify,omitempty"`
 }
 
-// Registry is the set of configured providers.
+// Registry is the set of configured providers. Thread-safe — startup
+// registers from auth-providers.json, but the /auth/custom UI form lets
+// the operator register additional providers at runtime, so concurrent
+// reads (Lookup, Descriptors) and writes (Register) need a mutex.
 type Registry struct {
+	mu    sync.RWMutex
 	items []Provider
 }
 
 // NewRegistry constructs an empty provider registry.
 func NewRegistry() *Registry { return &Registry{} }
 
-// Register adds a provider. Call order determines display order.
-func (r *Registry) Register(p Provider) { r.items = append(r.items, p) }
+// Register adds a provider. Call order determines display order. If a
+// provider with the same ID already exists it is REPLACED — that's how
+// the /auth/custom form lets the operator iteratively tweak a custom
+// provider without restart-thrash.
+func (r *Registry) Register(p Provider) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i, existing := range r.items {
+		if existing.ID() == p.ID() {
+			r.items[i] = p
+			return
+		}
+	}
+	r.items = append(r.items, p)
+}
 
-// All returns all registered providers in insertion order.
-func (r *Registry) All() []Provider { return r.items }
+// All returns all registered providers in insertion order. Returns a
+// snapshot so callers can iterate without holding the lock.
+func (r *Registry) All() []Provider {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]Provider, len(r.items))
+	copy(out, r.items)
+	return out
+}
 
 // Lookup returns the provider with the given ID, or nil.
 func (r *Registry) Lookup(id string) Provider {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	for _, p := range r.items {
 		if p.ID() == id {
 			return p
@@ -97,6 +126,8 @@ type Descriptor struct {
 
 // Descriptors returns templated-render-safe copies of each provider.
 func (r *Registry) Descriptors() []Descriptor {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	out := make([]Descriptor, 0, len(r.items))
 	for _, p := range r.items {
 		out = append(out, Descriptor{ID: p.ID(), Name: p.DisplayName(), Kind: p.Kind()})

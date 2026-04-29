@@ -87,6 +87,7 @@ func main() {
 	mux.HandleFunc("GET /auth", h.Auth)
 	mux.HandleFunc("POST /auth", h.CompleteAuth)
 	mux.HandleFunc("POST /auth/start", h.StartAuth)
+	mux.HandleFunc("POST /auth/custom", h.AddCustomProvider)
 	mux.HandleFunc("GET /auth/callback", h.AuthCallback)
 	mux.HandleFunc("POST /auth/logout", h.Logout)
 	mux.HandleFunc("GET /lang", h.SetLang)

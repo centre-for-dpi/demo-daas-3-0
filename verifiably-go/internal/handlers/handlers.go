@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
@@ -384,6 +385,104 @@ func (h *H) Auth(w http.ResponseWriter, r *http.Request) {
 	}))
 }
 
+// AddCustomProvider handles POST /auth/custom — a runtime "Add OIDC provider"
+// form on the auth page. Lets the operator paste an issuer URL + client
+// credentials and start signing in without restarting verifiably-go or
+// editing config files.
+//
+// Honest about scope: works only with servers that speak OIDC discovery
+// (must serve /.well-known/openid-configuration). The form prose calls
+// this out, and oidc.New() — which the wiring hook calls under the hood —
+// fails fast with a clear error if discovery doesn't return a valid
+// document. SAML, plain OAuth2, LDAP need separate provider types.
+//
+// Re-submitting with the same display name updates the existing entry in
+// place (Registry.Register replaces same-ID providers), so the operator
+// can iterate on a misconfigured provider without restart-thrash.
+func (h *H) AddCustomProvider(w http.ResponseWriter, r *http.Request) {
+	sess := h.Sessions.MustGet(w, r)
+	if sess.Role == "" {
+		h.redirect(w, r, "/")
+		return
+	}
+	if h.AuthReg == nil {
+		h.errorToast(w, r, "Auth registry unavailable")
+		return
+	}
+	_ = r.ParseForm()
+	displayName := strings.TrimSpace(r.FormValue("display_name"))
+	issuer := strings.TrimSpace(r.FormValue("issuer_url"))
+	clientID := strings.TrimSpace(r.FormValue("client_id"))
+	clientSecret := strings.TrimSpace(r.FormValue("client_secret"))
+	scopesRaw := strings.TrimSpace(r.FormValue("scopes"))
+	insecure := r.FormValue("insecure_skip_verify") == "on"
+
+	if displayName == "" || issuer == "" || clientID == "" {
+		h.errorToast(w, r, "Display name, issuer URL, and client ID are required")
+		return
+	}
+	scopes := defaultOIDCScopes
+	if scopesRaw != "" {
+		scopes = nil
+		for _, s := range strings.Split(scopesRaw, ",") {
+			if t := strings.TrimSpace(s); t != "" {
+				scopes = append(scopes, t)
+			}
+		}
+	}
+	id := slugify(displayName)
+	if id == "" {
+		id = "custom"
+	}
+	p, err := oidcBuildProvider(r.Context(), CustomProviderInput{
+		ID:                 id,
+		DisplayName:        displayName,
+		IssuerURL:          issuer,
+		ClientID:           clientID,
+		ClientSecret:       clientSecret,
+		Scopes:             scopes,
+		InsecureSkipVerify: insecure,
+	})
+	if err != nil {
+		// Most common failure mode: the URL doesn't expose
+		// /.well-known/openid-configuration, so coreos/go-oidc returns
+		// a clear "404 Not Found" or "could not parse provider config".
+		// Surface verbatim — that's exactly the diagnostic the operator
+		// needs to fix the URL or accept that this server isn't OIDC.
+		h.errorToast(w, r, "Could not register OIDC provider: "+err.Error())
+		return
+	}
+	h.AuthReg.Register(p)
+	// Re-render the auth page so the new provider tile appears immediately.
+	h.redirect(w, r, "/auth")
+}
+
+// defaultOIDCScopes are what every OIDC provider implicitly accepts.
+// Used when the operator leaves the Scopes field blank on /auth/custom.
+var defaultOIDCScopes = []string{"openid", "profile", "email"}
+
+// slugify lower-cases a display name and replaces non-alphanumerics with
+// hyphens so it's safe for use as a registry ID + URL slug. Empty/all-
+// non-alphanumeric input returns "" — caller falls back to "custom".
+func slugify(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	prevHyphen := true
+	for _, r := range strings.ToLower(s) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+			prevHyphen = false
+		default:
+			if !prevHyphen {
+				b.WriteRune('-')
+				prevHyphen = true
+			}
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
 // CompleteAuth is POST /auth — only reachable when NO OIDC providers are
 // configured (the template hides the form otherwise). Once providers are
 // configured, /auth/start + the provider callback is the only authentication
@@ -523,16 +622,43 @@ func (h *H) Logout(w http.ResponseWriter, r *http.Request) {
 var (
 	oidcNewState        = func() string { return "" }
 	oidcNewPKCEVerifier = func() string { return "" }
+	// oidcBuildProvider is the hook for AddCustomProvider. Returns an
+	// auth.Provider built from the user-supplied OIDC parameters, or an
+	// error if discovery fails (issuer doesn't serve
+	// /.well-known/openid-configuration, network error, etc.). The handler
+	// surfaces that error verbatim as a toast so the operator sees the
+	// real reason — usually "this isn't an OIDC server".
+	oidcBuildProvider = func(_ context.Context, _ CustomProviderInput) (auth.Provider, error) {
+		return nil, fmt.Errorf("oidc helpers not wired")
+	}
 )
 
-// SetOIDCHelpers installs the state + PKCE verifier generators. Must be
-// called before StartAuth handles any request.
-func SetOIDCHelpers(state, pkce func() string) {
+// CustomProviderInput captures the form fields submitted by /auth/custom.
+// Mirrors auth.ProviderConfig but kept package-local so the wiring hook
+// signature doesn't drag the auth package's full config shape into every
+// caller. Display name is what shows on the picker tile.
+type CustomProviderInput struct {
+	ID                 string
+	DisplayName        string
+	IssuerURL          string
+	ClientID           string
+	ClientSecret       string
+	Scopes             []string
+	InsecureSkipVerify bool
+}
+
+// SetOIDCHelpers installs the state, PKCE verifier, and runtime-provider
+// builder. Must be called before StartAuth or AddCustomProvider serve any
+// request.
+func SetOIDCHelpers(state, pkce func() string, build func(context.Context, CustomProviderInput) (auth.Provider, error)) {
 	if state != nil {
 		oidcNewState = state
 	}
 	if pkce != nil {
 		oidcNewPKCEVerifier = pkce
+	}
+	if build != nil {
+		oidcBuildProvider = build
 	}
 }
 

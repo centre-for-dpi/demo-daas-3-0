@@ -16,6 +16,55 @@
           </button>
           {{end}}
         </div>
+
+        {{/* Runtime "add custom provider" form. Lives behind a <details>
+             so it doesn't crowd the picker for the common case. Honest
+             scoping: the only thing that goes in here is an OIDC server
+             with a working /.well-known/openid-configuration endpoint
+             (Keycloak, WSO2 IS, Auth0, Okta, Azure AD, Cognito, Authentik,
+             Zitadel, Dex, Ory Hydra, etc.). Plain OAuth2, SAML, and LDAP
+             servers don't expose discovery and will fail at submit with
+             a "could not parse provider config" toast — that's the right
+             error for the operator to see, not a silent half-broken sign-in. */}}
+        <details style="margin-top:1.5rem">
+          <summary class="caps" style="cursor:pointer;font-size:0.7rem;color:var(--ink-soft)">+ {{t "Add OIDC provider" $.Lang}}</summary>
+          <p style="font-size:0.78rem;color:var(--ink-mute);margin:0.75rem 0 1rem;font-style:italic">
+            {{t "OIDC only — server must serve /.well-known/openid-configuration. Plain OAuth2, SAML, and LDAP need a different integration." $.Lang}}
+          </p>
+          <form hx-post="/auth/custom" hx-target="#main" hx-swap="innerHTML"
+                style="display:flex;flex-direction:column;gap:0.6rem">
+            <label style="display:flex;flex-direction:column;gap:0.25rem">
+              <span class="caps" style="font-size:0.65rem">{{t "Display name" $.Lang}}</span>
+              <input type="text" name="display_name" placeholder="My Keycloak" required
+                     style="padding:0.4rem;border:1px solid var(--line);background:var(--bg);color:var(--ink)">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:0.25rem">
+              <span class="caps" style="font-size:0.65rem">{{t "Issuer URL" $.Lang}}</span>
+              <input type="url" name="issuer_url" placeholder="https://idp.example.com/realms/foo" required
+                     style="padding:0.4rem;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-family:var(--mono)">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:0.25rem">
+              <span class="caps" style="font-size:0.65rem">{{t "Client ID" $.Lang}}</span>
+              <input type="text" name="client_id" required
+                     style="padding:0.4rem;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-family:var(--mono)">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:0.25rem">
+              <span class="caps" style="font-size:0.65rem">{{t "Client secret (optional)" $.Lang}}</span>
+              <input type="password" name="client_secret" autocomplete="off"
+                     style="padding:0.4rem;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-family:var(--mono)">
+            </label>
+            <label style="display:flex;flex-direction:column;gap:0.25rem">
+              <span class="caps" style="font-size:0.65rem">{{t "Scopes (comma-separated, defaults to openid,profile,email)" $.Lang}}</span>
+              <input type="text" name="scopes" placeholder="openid,profile,email"
+                     style="padding:0.4rem;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-family:var(--mono)">
+            </label>
+            <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.78rem;color:var(--ink-soft)">
+              <input type="checkbox" name="insecure_skip_verify">
+              {{t "Skip TLS verification (self-signed certs only)" $.Lang}}
+            </label>
+            <button class="btn" type="submit" style="margin-top:0.4rem">{{t "Register & sign in" $.Lang}}</button>
+          </form>
+        </details>
       {{else}}
         <p class="subtitle" style="margin-bottom:1.25rem">
           <strong>{{t "Demo mode:" $.Lang}}</strong> {{t "no identity providers are configured. Click below to continue." $.Lang}}

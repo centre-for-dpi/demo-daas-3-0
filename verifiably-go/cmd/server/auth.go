@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"os"
@@ -172,8 +173,27 @@ func buildAuthRegistry() *auth.Registry {
 }
 
 // wireAuthHelpers swaps out the indirection hooks used by handlers to get a
-// random state and PKCE verifier. Separated here so handlers/ stays free of
-// imports from the oidc subpackage.
+// random state, PKCE verifier, and runtime custom-provider builder.
+// Separated here so handlers/ stays free of imports from the oidc
+// subpackage.
+//
+// The build hook backing /auth/custom is just oidc.New wrapped to take
+// the handler-package's CustomProviderInput shape — coreos/go-oidc's
+// NewProvider does the OIDC discovery, so any URL that doesn't serve
+// /.well-known/openid-configuration fails fast inside oidc.New() and the
+// handler surfaces the error verbatim as a toast.
 func wireAuthHelpers() {
-	handlers.SetOIDCHelpers(oidc.NewState, oidc.NewPKCEVerifier)
+	build := func(_ context.Context, in handlers.CustomProviderInput) (auth.Provider, error) {
+		return oidc.New(oidc.Config{
+			ID:                 in.ID,
+			DisplayName:        in.DisplayName,
+			Kind:               "OIDC",
+			IssuerURL:          in.IssuerURL,
+			ClientID:           in.ClientID,
+			ClientSecret:       in.ClientSecret,
+			Scopes:             in.Scopes,
+			InsecureSkipVerify: in.InsecureSkipVerify,
+		})
+	}
+	handlers.SetOIDCHelpers(oidc.NewState, oidc.NewPKCEVerifier, build)
 }
