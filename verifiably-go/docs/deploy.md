@@ -121,8 +121,9 @@ The key ones:
 
 | Variable                       | Default       | Purpose                                                                   |
 |--------------------------------|---------------|----------------------------------------------------------------------------|
-| `VERIFIABLY_PUBLIC_HOST`       | `172.24.0.1`  | **The one knob to flip for EC2.** Host the browser uses for every service |
+| `VERIFIABLY_PUBLIC_HOST`       | `172.24.0.1`  | **The one knob to flip for single-host deployments.** Host the browser uses for every service. Leave at default for laptop; set to your EC2 hostname / VPS IP / LAN address for remote |
 | `PUBLIC_HOST`                  | `${VERIFIABLY_PUBLIC_HOST}` | Alias read by the compose file + seed scripts           |
+| `VERIFIABLY_HOSTS_PATTERN`     | _(empty)_     | **Optional per-subdomain mode.** When set, every service URL is `printf "$VERIFIABLY_HOSTS_PATTERN" "<slug>"`. See [Per-subdomain deployment](#per-subdomain-deployment) below |
 | `VERIFIABLY_HOST_PORT`         | `8080`        | Host port mapped to the verifiably-go container                            |
 | `VERIFIABLY_PUBLIC_URL`        | `http://${VERIFIABLY_PUBLIC_HOST}:${VERIFIABLY_HOST_PORT}` | Shown on `deploy.sh run` |
 | `VERIFIABLY_IMAGE`             | `verifiably-go:local` | Image tag for the build                                          |
@@ -161,6 +162,83 @@ Caveats:
 - **TLS**: browsers reaching WSO2IS on `:9443` self-signed will need cert trust. Keycloak on `:8180` is HTTP so unaffected. For a public-facing EC2 you'd typically drop a Caddy / ALB in front and re-point `VERIFIABLY_PUBLIC_HOST` plus the port vars at your TLS terminator.
 - **Firewall**: open `VERIFIABLY_HOST_PORT`, `KEYCLOAK_PORT`, `WSO2_PORT`, `CERTIFY_NGINX_PORT`, `INJIWEB_UI_PUBLIC_PORT`, `ESIGNET_PUBLIC_PORT`, `INJI_VERIFY_UI_PORT` on the instance — every one is visited from the browser.
 - **Re-run `./deploy.sh up <scenario>`** after flipping PUBLIC_HOST so the `repair_injiweb_client_redirect_uri` helper re-registers the eSignet client's redirect URI on the new host. The helper is idempotent and only writes when the list diverges.
+
+## Per-subdomain deployment
+
+If you'd rather run each service on its own subdomain (`walt-issuer.example.com`, `inji-certify.example.com`, ...) instead of one host with eleven different ports, set `VERIFIABLY_HOSTS_PATTERN` in `.env`:
+
+```bash
+VERIFIABLY_HOSTS_PATTERN=https://%s.example.com
+```
+
+The `%s` is the per-service slug. `deploy.sh` substitutes it for each service when it generates `backends.json` and `auth-providers.json`, so a single env var rewires every URL. Empty (default) preserves the legacy `${VERIFIABLY_PUBLIC_HOST}:${PORT}` form, so localhost dev keeps working unchanged.
+
+### What `%s` becomes
+
+deploy.sh writes URLs for these slugs (one per service the stack runs):
+
+| Slug                   | What it is                                  |
+|------------------------|---------------------------------------------|
+| `walt-issuer`          | walt.id issuer-api                          |
+| `walt-wallet`          | walt.id wallet-api                          |
+| `walt-verifier`        | walt.id verifier-api                        |
+| `inji-certify`         | Inji Certify (auth-code stanza, via nginx)  |
+| `inji-certify-preauth` | Inji Certify (pre-auth stanza, via nginx)   |
+| `inji-verify`          | Inji Verify backend                         |
+| `inji-verify-ui`       | Inji Verify SPA                             |
+| `inji-web`             | Inji Web wallet SPA                         |
+| `mimoto`               | Mimoto BFF                                  |
+| `esignet`              | eSignet OIDC UI                             |
+| `keycloak`             | Keycloak IdP                                |
+| `wso2`                 | WSO2 IS IdP                                 |
+| `verifiably`           | verifiably-go itself                        |
+
+So `VERIFIABLY_HOSTS_PATTERN=https://%s.example.com` yields `https://walt-issuer.example.com`, `https://inji-certify.example.com`, and so on for all thirteen.
+
+### What you need to wire (one-time, on the host)
+
+1. **DNS records** — one `A` record per slug pointing at the host running the stack. With thirteen records you cover every service; with a wildcard `*.example.com` record you cover them all in one entry. Use whichever your DNS provider makes easier.
+
+2. **A reverse proxy doing Host-header routing** — the simplest is Caddy because it auto-provisions Let's Encrypt certs:
+
+   ```caddy
+   walt-issuer.example.com   { reverse_proxy issuer-api:7002 }
+   walt-wallet.example.com   { reverse_proxy wallet-api:7001 }
+   walt-verifier.example.com { reverse_proxy verifier-api:7003 }
+   inji-certify.example.com  { reverse_proxy certify-nginx:80 }
+   inji-certify-preauth.example.com { reverse_proxy certify-preauth-nginx:80 }
+   inji-verify.example.com   { reverse_proxy inji-verify-service:8080 }
+   inji-verify-ui.example.com { reverse_proxy inji-verify-ui:80 }
+   inji-web.example.com      { reverse_proxy injiweb:3004 }
+   mimoto.example.com        { reverse_proxy injiweb-mimoto:8099 }
+   esignet.example.com       { reverse_proxy injiweb-esignet:8088 }
+   keycloak.example.com      { reverse_proxy keycloak:8080 }
+   wso2.example.com          { reverse_proxy wso2is:9443 }
+   verifiably.example.com    { reverse_proxy verifiably-go:8080 }
+   ```
+
+   nginx, Traefik, AWS ALB, Cloudflare Tunnel etc. all work too — the requirement is just that they route by Host header to the matching container.
+
+3. **Open ports 80 + 443** on the host firewall (per-service ports stay container-internal — only the proxy is exposed).
+
+### Picking your subdomain scheme
+
+The pattern is printf-style, so you have full control over what each subdomain looks like:
+
+| Pattern                                      | Example URL                                        |
+|----------------------------------------------|----------------------------------------------------|
+| `https://%s.example.com`                     | `https://walt-issuer.example.com`                  |
+| `https://%s.demo.example.com`                | `https://walt-issuer.demo.example.com`             |
+| `https://verifiably-%s.example.com`          | `https://verifiably-walt-issuer.example.com`       |
+| `http://%s.localdev:8080`                    | `http://walt-issuer.localdev:8080`                 |
+
+All work. Just make sure your DNS + reverse-proxy match the pattern.
+
+### Caveats specific to this mode
+
+- **Verifiably-go itself stays backend-agnostic.** The same binary runs in either mode; the URL choice happens at deploy-time when `backends.json` + `auth-providers.json` are generated.
+- **OIDC redirect URIs.** Keycloak and WSO2 only accept callbacks from URLs in their pre-registered list. The `bootstrap-keycloak.sh` and `bootstrap-wso2is.sh` scripts patch the redirect URIs to match `VERIFIABLY_PUBLIC_HOST` today; per-subdomain pattern support there is a follow-up commit. Until that lands, after switching to pattern mode you'll need to manually add `https://verifiably.<your-domain>/auth/callback` to the `vcplatform` client in Keycloak's admin UI and to the `verifiably_go_client` in WSO2's admin console.
+- **eSignet redirect URI.** `repair_injiweb_client_redirect_uri` in `deploy.sh` injects `http://${PUBLIC_HOST}:3004/redirect` into the `wallet-demo-client` row in eSignet's postgres — also pattern-unaware today. Same workaround as above (manual UPDATE after first deploy in pattern mode), or fall back to `VERIFIABLY_PUBLIC_HOST` mode for the eSignet flow.
 
 ## Full reset
 
