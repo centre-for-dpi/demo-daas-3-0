@@ -54,7 +54,43 @@ export VERIFIABLY_ENV_FILE
 : "${PUBLIC_HOST:=$VERIFIABLY_PUBLIC_HOST}"
 : "${VERIFIABLY_ADDR:=:8080}"
 : "${VERIFIABLY_HOST_PORT:=8080}"
-: "${VERIFIABLY_PUBLIC_URL:=http://${VERIFIABLY_PUBLIC_HOST}:$VERIFIABLY_HOST_PORT}"
+# VERIFIABLY_HOSTS_PATTERN — optional printf-style pattern that overrides
+# the per-service "$HOST:$PORT" URL when set. The "%s" placeholder is the
+# service slug (wso2, walt-issuer, walt-wallet, walt-verifier, inji-certify,
+# inji-certify-preauth, inji-verify, inji-verify-ui, inji-web, esignet,
+# mimoto, verifiably). Example for the bootcamp.cdpi.dev fleet:
+#   VERIFIABLY_HOSTS_PATTERN=https://%s.bootcamp.cdpi.dev
+# Empty (the default) preserves the legacy http://$VERIFIABLY_PUBLIC_HOST:$PORT
+# behaviour so localhost / docker-bridge deployments work unchanged. The
+# pattern is consumed by url_for() below; verifiably-go itself stays
+# backend-agnostic — the same binary runs in either mode.
+: "${VERIFIABLY_HOSTS_PATTERN:=}"
+: "${VERIFIABLY_PUBLIC_URL:=$(
+    if [[ -n "$VERIFIABLY_HOSTS_PATTERN" ]]; then
+      printf "$VERIFIABLY_HOSTS_PATTERN" verifiably
+    else
+      echo "http://${VERIFIABLY_PUBLIC_HOST}:$VERIFIABLY_HOST_PORT"
+    fi
+  )}"
+
+# url_for picks between the per-subdomain pattern and the legacy
+# host:port form. Centralising the choice means every service URL
+# below is one helper call and a slug — adding the next deployment
+# style won't require touching backends_for + auth_providers_for +
+# bootstrap-* in lockstep.
+#
+# Args: <slug> <fallback-host> <fallback-port> [path-suffix]
+# Returns: stdout, no trailing slash. path-suffix is appended verbatim
+# when supplied so callers that need a trailing path (e.g. /realms/foo)
+# don't have to handle the conditional themselves.
+url_for() {
+  local slug="$1" host="$2" port="$3" suffix="${4:-}"
+  if [[ -n "$VERIFIABLY_HOSTS_PATTERN" ]]; then
+    printf "${VERIFIABLY_HOSTS_PATTERN}%s" "$slug" "$suffix"
+  else
+    printf "http://%s:%s%s" "$host" "$port" "$suffix"
+  fi
+}
 : "${LIBRETRANSLATE_PORT:=5000}"
 : "${VERIFIABLY_IMAGE:=verifiably-go:local}"
 : "${VERIFIABLY_CONTAINER:=verifiably-go}"
@@ -184,6 +220,28 @@ backends_for() {
   local scenario="$1"
   local out="$SCRIPT_DIR/config/backends.json"
 
+  # Per-service URLs resolved through url_for() so a single env var
+  # (VERIFIABLY_HOSTS_PATTERN) flips between localhost:port and
+  # https://<service>.<domain>. Slugs match the 11 A records the
+  # operator typically configures: wso2, walt-issuer, walt-wallet,
+  # walt-verifier, inji-certify, inji-certify-preauth, inji-verify,
+  # inji-verify-ui, inji-web, esignet, mimoto. Verifiably-go itself
+  # consumes these as opaque URLs — same binary, both modes.
+  local walt_issuer_url   walt_wallet_url   walt_verifier_url
+  local certify_url       certify_preauth_url
+  local inji_verify_svc_url inji_verify_ui_url
+  local injiweb_url       mimoto_url        esignet_url
+  walt_issuer_url=$(url_for walt-issuer "$VERIFIABLY_PUBLIC_HOST" "$WALTID_ISSUER_PORT")
+  walt_wallet_url=$(url_for walt-wallet "$VERIFIABLY_PUBLIC_HOST" "$WALTID_WALLET_PORT")
+  walt_verifier_url=$(url_for walt-verifier "$VERIFIABLY_PUBLIC_HOST" "$WALTID_VERIFIER_PORT")
+  certify_url=$(url_for inji-certify "$VERIFIABLY_PUBLIC_HOST" "$CERTIFY_NGINX_PORT")
+  certify_preauth_url=$(url_for inji-certify-preauth "$VERIFIABLY_PUBLIC_HOST" "$CERTIFY_PREAUTH_PORT")
+  inji_verify_svc_url=$(url_for inji-verify "$VERIFIABLY_PUBLIC_HOST" "$INJI_VERIFY_SERVICE_PORT")
+  inji_verify_ui_url=$(url_for inji-verify-ui "$VERIFIABLY_PUBLIC_HOST" "$INJI_VERIFY_UI_PORT")
+  injiweb_url=$(url_for inji-web "$VERIFIABLY_PUBLIC_HOST" "$INJIWEB_UI_PUBLIC_PORT")
+  mimoto_url=$(url_for mimoto "$VERIFIABLY_PUBLIC_HOST" "$MIMOTO_PORT")
+  esignet_url=$(url_for esignet "$VERIFIABLY_PUBLIC_HOST" "$ESIGNET_PUBLIC_PORT")
+
   # Individual DPG stanzas — kept inline as HEREDOCs so the script is
   # self-contained (no per-scenario template files to manage).
   local waltid_stanza
@@ -216,9 +274,9 @@ backends_for() {
         ]
       },
       "config": {
-        "issuerBaseUrl": "http://${VERIFIABLY_PUBLIC_HOST}:${WALTID_ISSUER_PORT}",
-        "verifierBaseUrl": "http://${VERIFIABLY_PUBLIC_HOST}:${WALTID_VERIFIER_PORT}",
-        "walletBaseUrl": "http://${VERIFIABLY_PUBLIC_HOST}:${WALTID_WALLET_PORT}",
+        "issuerBaseUrl": "${walt_issuer_url}",
+        "verifierBaseUrl": "${walt_verifier_url}",
+        "walletBaseUrl": "${walt_wallet_url}",
         "standardVersion": "draft13",
         "demoAccount": {
           "name": "Verifiably Demo",
@@ -247,7 +305,7 @@ JSON
         "DirectPDF": false,
         "Caveats": "Holder wallet must be reachable by eSignet's redirect.",
         "Redirect": true,
-        "UIURL": "http://${VERIFIABLY_PUBLIC_HOST}:${INJIWEB_UI_PUBLIC_PORT}",
+        "UIURL": "${injiweb_url}",
         "Capabilities": [
           {"Kind": "flow",       "Key": "auth_code",       "Title": "Authorization Code flow",          "Body": "Wallet redirects holder to eSignet for login."},
           {"Kind": "data",       "Key": "identity_lookup", "Title": "Claims from MOSIP Identity Plugin", "Body": "Fills claims via UIN lookup against mock-identity."},
@@ -258,11 +316,11 @@ JSON
       },
       "config": {
         "mode": "auth_code",
-        "baseUrl": "http://${VERIFIABLY_PUBLIC_HOST}:${CERTIFY_NGINX_PORT}",
+        "baseUrl": "${certify_url}",
         "internalBaseUrl": "http://certify-nginx:80",
-        "publicBaseUrl": "http://${VERIFIABLY_PUBLIC_HOST}:${CERTIFY_NGINX_PORT}",
+        "publicBaseUrl": "${certify_url}",
         "offerIssuerUrl": "http://certify-nginx:80",
-        "authorizationServer": "http://${VERIFIABLY_PUBLIC_HOST}:${ESIGNET_PUBLIC_PORT}"
+        "authorizationServer": "${esignet_url}"
       }
     }
 JSON
@@ -298,9 +356,9 @@ JSON
       },
       "config": {
         "mode": "pre_auth",
-        "baseUrl": "http://${VERIFIABLY_PUBLIC_HOST}:${CERTIFY_PREAUTH_PORT}",
+        "baseUrl": "${certify_preauth_url}",
         "internalBaseUrl": "http://inji-certify-preauth:8090",
-        "publicBaseUrl": "http://${VERIFIABLY_PUBLIC_HOST}:${CERTIFY_PREAUTH_PORT}",
+        "publicBaseUrl": "${certify_preauth_url}",
         "offerIssuerUrl": "http://inji-certify-preauth:8090"
       }
     }
@@ -321,7 +379,7 @@ JSON
         "Formats": ["w3c_vcdm_1", "w3c_vcdm_2", "sd_jwt_vc (IETF)"],
         "Caveats": "INJIVER-1131: v0.16.0 cross-device flow can accept a wrong VC as valid — adapter applies a field-match guard.",
         "Redirect": true,
-        "UIURL": "http://${VERIFIABLY_PUBLIC_HOST}:${INJI_VERIFY_UI_PORT}",
+        "UIURL": "${inji_verify_ui_url}",
         "Capabilities": [
           {"Kind": "flow",       "Key": "direct_paste",  "Title": "Paste JSON-LD VC",         "Body": "POST /v1/verify/vc-verification returns SUCCESS/INVALID synchronously."},
           {"Kind": "flow",       "Key": "direct_upload", "Title": "Upload a QR image",        "Body": "Server decodes the QR with gozxing, then verifies the payload."},
@@ -330,7 +388,7 @@ JSON
         ]
       },
       "config": {
-        "baseUrl": "http://${VERIFIABLY_PUBLIC_HOST}:${INJI_VERIFY_SERVICE_PORT}",
+        "baseUrl": "${inji_verify_svc_url}",
         "clientId": "verifiably-demo"
       }
     }
@@ -351,7 +409,7 @@ JSON
         "Formats": ["w3c_vcdm_1", "w3c_vcdm_2"],
         "Caveats": "Tested-compatible with Inji Certify v0.13.1 and Inji Verify v0.17.0 per the v0.16.0 matrix.",
         "Redirect": true,
-        "UIURL": "http://${VERIFIABLY_PUBLIC_HOST}:${INJIWEB_UI_PUBLIC_PORT}",
+        "UIURL": "${injiweb_url}",
         "Capabilities": [
           {"Kind": "flow",       "Key": "browser_hosted", "Title": "Browser-hosted wallet",        "Body": "Credentials live inside the Inji Web SPA."},
           {"Kind": "wallet",     "Key": "opens_tab",      "Title": "Opens in a new tab",            "Body": "Selecting this DPG hands off to the Inji Web app."},
@@ -359,8 +417,8 @@ JSON
         ]
       },
       "config": {
-        "uiUrl": "http://${VERIFIABLY_PUBLIC_HOST}:${INJIWEB_UI_PUBLIC_PORT}",
-        "mimotoUrl": "http://${VERIFIABLY_PUBLIC_HOST}:${MIMOTO_PORT}"
+        "uiUrl": "${injiweb_url}",
+        "mimotoUrl": "${mimoto_url}"
       }
     }
 JSON
@@ -405,10 +463,25 @@ JSON
 auth_providers_for() {
   local scenario="$1"  # kept for signature compatibility; unused here
   local out="$SCRIPT_DIR/config/auth-providers.json"
+  # Resolve IdP URLs through url_for so localhost-port and per-subdomain
+  # both work. Keycloak is a vanilla http URL (the demo container runs
+  # plain HTTP); WSO2 needs https + insecureSkipVerify because its self-
+  # signed cert isn't in any trust store. When VERIFIABLY_HOSTS_PATTERN
+  # supplies the scheme (https://), insecureSkipVerify becomes irrelevant
+  # — the cert is presumably real.
+  local keycloak_issuer wso2_issuer
+  keycloak_issuer="$(url_for keycloak "$VERIFIABLY_PUBLIC_HOST" "$KEYCLOAK_PORT")/realms/${KEYCLOAK_REALM}"
+  if [[ -n "$VERIFIABLY_HOSTS_PATTERN" ]]; then
+    wso2_issuer="$(url_for wso2 "$VERIFIABLY_PUBLIC_HOST" "$WSO2_PORT")/oauth2/token"
+  else
+    # Legacy mode: WSO2 is on https with a self-signed cert.
+    wso2_issuer="https://${VERIFIABLY_PUBLIC_HOST}:${WSO2_PORT}/oauth2/token"
+  fi
+
   # clientId "vcplatform" matches the public client seeded by the shared
   # compose's keycloak-realm.json (realm: vcplatform, client: vcplatform,
   # redirectUris: http://localhost:8080/*). Keep these two in sync.
-  local keycloak='{"id":"keycloak","type":"oidc","displayName":"Keycloak","kind":"OIDC","issuerUrl":"http://'"${VERIFIABLY_PUBLIC_HOST}"':'"${KEYCLOAK_PORT}"'/realms/'"${KEYCLOAK_REALM}"'","clientId":"'"${KEYCLOAK_CLIENT_ID}"'","scopes":["openid","profile","email"]}'
+  local keycloak='{"id":"keycloak","type":"oidc","displayName":"Keycloak","kind":"OIDC","issuerUrl":"'"${keycloak_issuer}"'","clientId":"'"${KEYCLOAK_CLIENT_ID}"'","scopes":["openid","profile","email"]}'
 
   # WSO2IS client_id + client_secret come from config/wso2is.env, written by
   # scripts/bootstrap-wso2is.sh (run automatically by `deploy.sh up` below).
@@ -422,7 +495,7 @@ auth_providers_for() {
     wso2_id="${WSO2_CLIENT_ID:-$wso2_id}"
     wso2_secret="${WSO2_CLIENT_SECRET:-}"
   fi
-  local wso2is='{"id":"wso2is","type":"oidc","displayName":"WSO2 Identity Server","kind":"OIDC","issuerUrl":"https://'"${VERIFIABLY_PUBLIC_HOST}"':'"${WSO2_PORT}"'/oauth2/token","clientId":"'"$wso2_id"'","clientSecret":"'"$wso2_secret"'","scopes":["openid","profile","email"],"insecureSkipVerify":true}'
+  local wso2is='{"id":"wso2is","type":"oidc","displayName":"WSO2 Identity Server","kind":"OIDC","issuerUrl":"'"${wso2_issuer}"'","clientId":"'"$wso2_id"'","clientSecret":"'"$wso2_secret"'","scopes":["openid","profile","email"],"insecureSkipVerify":true}'
   local items=( "$keycloak" "$wso2is" )
   mkdir -p "$(dirname "$out")"
   {
