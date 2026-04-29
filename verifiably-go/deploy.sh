@@ -156,7 +156,21 @@ url_for() {
 WALTID_SERVICES=(
   postgres caddy issuer-api verifier-api wallet-api
 )
-IDP_KEYCLOAK=( keycloak )
+# When VERIFIABLY_KEYCLOAK_EXTERNAL_ISSUER_URL is set, the operator is
+# pointing verifiably-go at an external Keycloak (one they don't host
+# themselves — e.g. an upstream realm shared by another team). In that
+# case we don't run a local keycloak container, don't try to bootstrap
+# its client list (we have no admin creds anyway), and write the
+# external URL + client into auth-providers.json so the picker tile
+# routes through the external server.
+: "${VERIFIABLY_KEYCLOAK_EXTERNAL_ISSUER_URL:=}"
+: "${VERIFIABLY_KEYCLOAK_EXTERNAL_CLIENT_ID:=}"
+: "${VERIFIABLY_KEYCLOAK_EXTERNAL_CLIENT_SECRET:=}"
+if [[ -n "$VERIFIABLY_KEYCLOAK_EXTERNAL_ISSUER_URL" ]]; then
+  IDP_KEYCLOAK=()       # skip local container
+else
+  IDP_KEYCLOAK=( keycloak )
+fi
 IDP_WSO2IS=( wso2is )
 TRANSLATOR_SERVICES=( libretranslate )
 INJI_CORE_SERVICES=(
@@ -502,8 +516,23 @@ auth_providers_for() {
   # signed cert isn't in any trust store. When VERIFIABLY_HOSTS_PATTERN
   # supplies the scheme (https://), insecureSkipVerify becomes irrelevant
   # — the cert is presumably real.
-  local keycloak_issuer wso2_issuer
-  keycloak_issuer="$(url_for keycloak "$VERIFIABLY_PUBLIC_HOST" "$KEYCLOAK_PORT")/realms/${KEYCLOAK_REALM}"
+  local keycloak_issuer wso2_issuer keycloak_client_id keycloak_client_secret_kv
+  if [[ -n "$VERIFIABLY_KEYCLOAK_EXTERNAL_ISSUER_URL" ]]; then
+    # External Keycloak: use the URL + client details the operator
+    # provided. No URL synthesis (the realm path is part of the URL the
+    # operator pasted).
+    keycloak_issuer="$VERIFIABLY_KEYCLOAK_EXTERNAL_ISSUER_URL"
+    keycloak_client_id="${VERIFIABLY_KEYCLOAK_EXTERNAL_CLIENT_ID:-vcplatform}"
+    if [[ -n "$VERIFIABLY_KEYCLOAK_EXTERNAL_CLIENT_SECRET" ]]; then
+      keycloak_client_secret_kv=',"clientSecret":"'"$VERIFIABLY_KEYCLOAK_EXTERNAL_CLIENT_SECRET"'"'
+    else
+      keycloak_client_secret_kv=""
+    fi
+  else
+    keycloak_issuer="$(url_for keycloak "$VERIFIABLY_PUBLIC_HOST" "$KEYCLOAK_PORT")/realms/${KEYCLOAK_REALM}"
+    keycloak_client_id="${KEYCLOAK_CLIENT_ID}"
+    keycloak_client_secret_kv=""
+  fi
   if [[ -n "$VERIFIABLY_HOSTS_PATTERN" ]]; then
     wso2_issuer="$(url_for wso2 "$VERIFIABLY_PUBLIC_HOST" "$WSO2_PORT")/oauth2/token"
   else
@@ -514,7 +543,7 @@ auth_providers_for() {
   # clientId "vcplatform" matches the public client seeded by the shared
   # compose's keycloak-realm.json (realm: vcplatform, client: vcplatform,
   # redirectUris: http://localhost:8080/*). Keep these two in sync.
-  local keycloak='{"id":"keycloak","type":"oidc","displayName":"Keycloak","kind":"OIDC","issuerUrl":"'"${keycloak_issuer}"'","clientId":"'"${KEYCLOAK_CLIENT_ID}"'","scopes":["openid","profile","email"]}'
+  local keycloak='{"id":"keycloak","type":"oidc","displayName":"Keycloak","kind":"OIDC","issuerUrl":"'"${keycloak_issuer}"'","clientId":"'"${keycloak_client_id}"'"'"${keycloak_client_secret_kv}"',"scopes":["openid","profile","email"]}'
 
   # WSO2IS client_id + client_secret come from config/wso2is.env, written by
   # scripts/bootstrap-wso2is.sh (run automatically by `deploy.sh up` below).
@@ -635,16 +664,23 @@ cmd_up() {
   _verifiably_url=$(url_for verifiably "$VERIFIABLY_PUBLIC_HOST" "$VERIFIABLY_HOST_PORT")
   _verifiably_callback="${_verifiably_url}/auth/callback"
 
-  bold "▶ Bootstrapping Keycloak vcplatform client"
-  PUBLIC_HOST="$VERIFIABLY_PUBLIC_HOST" \
-    VERIFIABLY_HOST_PORT="$VERIFIABLY_HOST_PORT" \
-    VERIFIABLY_CALLBACK_URL="$_verifiably_callback" \
-    VERIFIABLY_PUBLIC_URL="$_verifiably_url" \
-    KEYCLOAK_BASE="http://localhost:${KEYCLOAK_PORT}" \
-    KEYCLOAK_REALM="$KEYCLOAK_REALM" \
-    KEYCLOAK_CLIENT_ID="$KEYCLOAK_CLIENT_ID" \
-    "$SCRIPT_DIR/scripts/bootstrap-keycloak.sh" \
-    || red "  Keycloak bootstrap failed (proceeding — you can re-run it manually)"
+  if [[ -n "$VERIFIABLY_KEYCLOAK_EXTERNAL_ISSUER_URL" ]]; then
+    bold "▶ Skipping Keycloak bootstrap (external issuer: $VERIFIABLY_KEYCLOAK_EXTERNAL_ISSUER_URL)"
+    echo "    note: this realm's redirect_uri allow-list must already include"
+    echo "          ${_verifiably_callback}"
+    echo "          — the local bootstrap can't add it (we don't have admin creds)."
+  else
+    bold "▶ Bootstrapping Keycloak vcplatform client"
+    PUBLIC_HOST="$VERIFIABLY_PUBLIC_HOST" \
+      VERIFIABLY_HOST_PORT="$VERIFIABLY_HOST_PORT" \
+      VERIFIABLY_CALLBACK_URL="$_verifiably_callback" \
+      VERIFIABLY_PUBLIC_URL="$_verifiably_url" \
+      KEYCLOAK_BASE="http://localhost:${KEYCLOAK_PORT}" \
+      KEYCLOAK_REALM="$KEYCLOAK_REALM" \
+      KEYCLOAK_CLIENT_ID="$KEYCLOAK_CLIENT_ID" \
+      "$SCRIPT_DIR/scripts/bootstrap-keycloak.sh" \
+      || red "  Keycloak bootstrap failed (proceeding — you can re-run it manually)"
+  fi
 
   bold "▶ Bootstrapping WSO2IS OIDC client"
   PUBLIC_HOST="$VERIFIABLY_PUBLIC_HOST" \
@@ -1054,7 +1090,7 @@ render_public_caddyfile() {
     "inji-web|injiweb-ui:3004|http"
     "mimoto|injiweb-mimoto:8099|http"
     "esignet|injiweb-oidc-ui:3000|http"
-    "keycloak|keycloak:8180|http"
+    "keycloak|keycloak:8180|http"  # auto-skipped when VERIFIABLY_KEYCLOAK_EXTERNAL_ISSUER_URL is set, via the empty-slug branch below
     "wso2|wso2is:9443|https-skipverify"
     "verifiably|verifiably-go:8080|http"
   )
@@ -1074,6 +1110,14 @@ EOF
     local entry name upstream proto slug subdomain
     for entry in "${entries[@]}"; do
       IFS='|' read -r name upstream proto <<<"$entry"
+      # When using an external Keycloak, don't synthesise a Caddy block
+      # for the local keycloak slug — there's no local container to
+      # proxy to, and the operator's external Keycloak handles requests
+      # at its own host (which they don't run through us).
+      if [[ "$name" == "keycloak" && -n "$VERIFIABLY_KEYCLOAK_EXTERNAL_ISSUER_URL" ]]; then
+        printf '# keycloak skipped — external issuer at %s\n\n' "$VERIFIABLY_KEYCLOAK_EXTERNAL_ISSUER_URL"
+        continue
+      fi
       slug=$(resolve_slug "$name")
       if [[ -z "$slug" ]]; then
         printf '# %s skipped — VERIFIABLY_SLUG_%s set empty\n\n' \
