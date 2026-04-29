@@ -27,6 +27,9 @@ func TestSummariseHeldForDiagnostic_SDJWT(t *testing.T) {
 	if !strings.Contains(got, `re-issue to get the canonical type name`) {
 		t.Errorf("expected stale-credential hint for SD-JWT requests, got %q", got)
 	}
+	if !strings.Contains(got, "[DIAG:") {
+		t.Errorf("expected machine-greppable DIAG: prefix so build-confirmation is trivial, got %q", got)
+	}
 }
 
 // TestSummariseHeldForDiagnostic_StaleCustomVCT covers the user-reported
@@ -47,12 +50,15 @@ func TestSummariseHeldForDiagnostic_StaleCustomVCT(t *testing.T) {
 	}
 }
 
-// TestSummariseHeldForDiagnostic_EmptyWalletReturnsEmpty leaves the
-// pre-existing "your wallet has no credential ..." message to handle the
-// genuinely-empty case without piling on diagnostic noise.
-func TestSummariseHeldForDiagnostic_EmptyWalletReturnsEmpty(t *testing.T) {
-	if got := summariseHeldForDiagnostic(nil, "vc+sd-jwt"); got != "" {
-		t.Errorf("expected empty diagnostic when wallet is empty, got %q", got)
+// TestSummariseHeldForDiagnostic_EmptyWalletStillSurfacesDiag — when the
+// wallet is empty we explicitly say so rather than returning "" (which
+// looked indistinguishable from "the new code didn't ship", reported on
+// 2026-04-30 after the user did a full wipe + rebuild but the error
+// message still didn't carry the diagnostic suffix).
+func TestSummariseHeldForDiagnostic_EmptyWalletStillSurfacesDiag(t *testing.T) {
+	got := summariseHeldForDiagnostic(nil, "vc+sd-jwt")
+	if !strings.Contains(got, "wallet=0") {
+		t.Errorf("expected explicit wallet=0 diagnostic, got %q", got)
 	}
 }
 

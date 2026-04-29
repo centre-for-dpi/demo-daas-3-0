@@ -844,17 +844,18 @@ func incompatibilityMessage(pd map[string]any, held []vctypes.Credential, wantFo
 // summariseHeldForDiagnostic produces a short human-readable suffix listing
 // the wallet's actual credential identifiers (vct for SD-JWT, type for JWT)
 // so the "no match" toast tells the operator exactly why walt.id's wallet
-// matcher rejected. Format: ". Wallet holds: vct=foo (vc+sd-jwt), vct=bar
-// (vc+sd-jwt)". Returns "" when the wallet is empty (the original message
-// already covers that case).
+// matcher rejected. Format: " [DIAG: wallet=2 vct=foo (vc+sd-jwt), vct=bar
+// (vc+sd-jwt)]". Returns the explicit "wallet=0" suffix when the wallet is
+// empty so the operator can rule that out — earlier "" returns made the
+// fallback indistinguishable from "code didn't ship", reported on
+// 2026-04-30.
 //
-// Triggered by the genuinely-custom-schema vct mismatch reported on
-// 2026-04-29 — the verifier asked for "FarmerCredential" but the held
-// credential carried a different vct, and the operator had no way to see
-// which.
+// The DIAG: prefix is intentionally machine-greppable so we can quickly
+// confirm whether the user is running the latest build by glancing at
+// their error message.
 func summariseHeldForDiagnostic(held []vctypes.Credential, wantFormat string) string {
 	if len(held) == 0 {
-		return ""
+		return " [DIAG: wallet=0 (empty — but if your picker showed a credential you may be hitting a per-user-wallet routing bug; share /tmp logs)]"
 	}
 	parts := make([]string, 0, len(held))
 	for _, c := range held {
@@ -881,12 +882,12 @@ func summariseHeldForDiagnostic(held []vctypes.Credential, wantFormat string) st
 	if len(parts) == 0 {
 		return ""
 	}
-	suffix := ". Wallet holds: " + strings.Join(parts, ", ")
+	suffix := fmt.Sprintf(" [DIAG: wallet=%d %s]", len(held), strings.Join(parts, ", "))
 	// Hint the most common cause when the verifier asked for SD-JWT but
 	// every held credential has a different vct: stale credential issued
 	// before vct alignment landed.
 	if strings.HasPrefix(wantFormat, "vc+sd-jwt") || strings.HasPrefix(wantFormat, "dc+sd-jwt") {
-		suffix += ". If a held vct starts with \"custom-\" the credential was issued before the type/vct alignment fix — re-issue to get the canonical type name baked in."
+		suffix += " (if a held vct starts with 'custom-' the credential was issued before the type/vct alignment fix — re-issue to get the canonical type name baked in)"
 	}
 	return suffix
 }
