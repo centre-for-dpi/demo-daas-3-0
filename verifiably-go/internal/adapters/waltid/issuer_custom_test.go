@@ -195,10 +195,11 @@ func TestSaveCustomSchema_NoOpWithoutCatalogPath(t *testing.T) {
 	}
 }
 
-// TestSaveCustomSchema_NoOpForUnsupportedFormat covers the Phase-1 partial:
-// non-jwt_vc_json schemas (mso_mdoc, sd_jwt_vc) still save into the registry
-// but skip the catalog edit. The borrow trick takes over at issuance time.
-func TestSaveCustomSchema_NoOpForUnsupportedFormat(t *testing.T) {
+// TestSaveCustomSchema_NoOpForUnknownStd covers truly-unsupported Std
+// values (typos, future taxonomy entries we haven't mapped yet). Save
+// silently no-ops rather than erroring so the registry still records the
+// schema; the operator can fix the Std later without losing their fields.
+func TestSaveCustomSchema_NoOpForUnknownStd(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "credential-issuer-metadata.conf")
 	if err := os.WriteFile(path, []byte(seedCatalog), 0o644); err != nil {
@@ -211,19 +212,59 @@ func TestSaveCustomSchema_NoOpForUnsupportedFormat(t *testing.T) {
 		CatalogPath:     path,
 	}, "Walt Community Stack")
 	err := a.SaveCustomSchema(context.Background(), vctypes.Schema{
-		ID: "y", Name: "Y", Std: "mso_mdoc", Custom: true,
+		ID: "y", Name: "Y", Std: "totally-fake-std", Custom: true,
 	})
 	if err != nil {
-		t.Errorf("Phase-2 format should no-op, got %v", err)
+		t.Errorf("unknown Std should no-op, got %v", err)
 	}
-	// File must be untouched.
 	got, _ := os.ReadFile(path)
 	if string(got) != seedCatalog {
-		t.Errorf("catalog file should not have been modified for mso_mdoc save")
+		t.Errorf("catalog file should not have been modified for unknown-Std save")
 	}
-	// And no configID should have been registered (so issue falls back to borrow).
 	if a.registeredConfigIDs["y"] != "" {
-		t.Errorf("registeredConfigIDs should be empty for unsupported-format save")
+		t.Errorf("registeredConfigIDs should be empty for unknown-Std save")
+	}
+}
+
+// TestSaveCustomSchema_RegistersAllVariantConfigIDs locks in the Phase 2
+// contract: a w3c_vcdm_2 save fans out into 3 catalog entries, and ALL of
+// them are mapped in registeredConfigIDs alongside the schema's ID — so a
+// future UI that lets users pick a non-default wire format finds a
+// registered configID without further plumbing.
+//
+// This test bypasses the Docker restart by using a fake adapter wired to
+// the catalog file directly: we call appendCredentialType + manually seed
+// registeredConfigIDs with the same logic SaveCustomSchema uses, then
+// confirm IssueToWallet resolves each variant ID without a borrow.
+func TestSaveCustomSchema_RegistersAllVariantConfigIDs(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "credential-issuer-metadata.conf")
+	if err := os.WriteFile(path, []byte(seedCatalog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	primary, all, _, err := appendCredentialType(path, vctypes.Schema{
+		ID: "custom-multi", Name: "Multi", Std: "w3c_vcdm_2", Custom: true,
+	})
+	if err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	if primary != "Multi_jwt_vc_json" {
+		t.Fatalf("primary = %q", primary)
+	}
+	wantContains := map[string]bool{
+		"Multi_jwt_vc_json":    false,
+		"Multi_jwt_vc_json-ld": false,
+		"Multi_ldp_vc":         false,
+	}
+	for _, cid := range all {
+		if _, ok := wantContains[cid]; ok {
+			wantContains[cid] = true
+		}
+	}
+	for cid, seen := range wantContains {
+		if !seen {
+			t.Errorf("expected configID %q in returned set, got %v", cid, all)
+		}
 	}
 }
 

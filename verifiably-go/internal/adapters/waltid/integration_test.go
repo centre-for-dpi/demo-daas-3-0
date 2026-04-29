@@ -58,22 +58,75 @@ func runDocker(t *testing.T, timeout time.Duration, args ...string) (string, err
 //  3. Boot waltid/issuer-api:0.18.2 with the temp dir mounted in.
 //  4. Poll /draft13/.well-known/openid-credential-issuer for our configID.
 //
-// If walt.id reaches "Application started" AND advertises our configID,
+// If walt.id reaches "Application started" AND advertises our configIDs,
 // we know parse + load + serve are all working.
+//
+// Sub-tests cover each Std bucket so we exercise every wire-format builder
+// (jwt_vc_json + jwt_vc_json-ld + ldp_vc; vc+sd-jwt; mso_mdoc) — these have
+// genuinely different HOCON shapes (credential_definition.type vs vct vs
+// doctype, did vs jwk vs cose_key binding). A failure in any builder
+// surfaces as a walt.id boot error here, not a production /issuer/schema/build
+// regression.
 func TestIntegration_WaltidParsesAppendedCatalog(t *testing.T) {
 	skipUnlessIntegration(t)
 
+	cases := []struct {
+		name   string
+		schema vctypes.Schema
+	}{
+		{
+			name: "w3c_vcdm_2 fans out to 3 wire formats",
+			schema: vctypes.Schema{
+				ID:     "custom-int-w3c",
+				Name:   "Integration W3C",
+				Desc:   "validates jwt_vc_json + jwt_vc_json-ld + ldp_vc entries",
+				Std:    "w3c_vcdm_2",
+				Custom: true,
+			},
+		},
+		{
+			name: "sd_jwt_vc lands as vc+sd-jwt with vct",
+			schema: vctypes.Schema{
+				ID:     "custom-int-sd",
+				Name:   "Integration SD",
+				Desc:   "validates vc+sd-jwt block",
+				Std:    "sd_jwt_vc (IETF)",
+				Custom: true,
+			},
+		},
+		{
+			name: "mso_mdoc lands with cose_key binding",
+			schema: vctypes.Schema{
+				ID:              "custom-int-md",
+				Name:            "Integration mDoc",
+				Desc:            "validates mso_mdoc block",
+				Std:             "mso_mdoc",
+				Custom:          true,
+				AdditionalTypes: []string{"org.example.test.mDL"},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			runIntegrationCatalogTest(t, tc.schema)
+		})
+	}
+}
+
+// runIntegrationCatalogTest is the per-Std body of
+// TestIntegration_WaltidParsesAppendedCatalog. Each invocation seeds a
+// fresh temp config dir, appends entries for one schema, boots walt.id,
+// and confirms every appended configID surfaces in metadata.
+func runIntegrationCatalogTest(t *testing.T, schema vctypes.Schema) {
+	t.Helper()
 	repoRoot, err := repoRoot()
 	if err != nil {
 		t.Fatalf("locate repo root: %v", err)
 	}
 	baselinePath := filepath.Join(repoRoot, "deploy/compose/stack/issuer-api/config/credential-issuer-metadata.conf")
-	if _, err := os.Stat(baselinePath); err != nil {
-		t.Fatalf("seeded baseline missing at %s: %v", baselinePath, err)
-	}
 	baseline, err := os.ReadFile(baselinePath)
 	if err != nil {
-		t.Fatalf("read baseline: %v", err)
+		t.Fatalf("read baseline %s: %v", baselinePath, err)
 	}
 
 	tmp := t.TempDir()
@@ -81,8 +134,6 @@ func TestIntegration_WaltidParsesAppendedCatalog(t *testing.T) {
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Walt.id needs all three configs to boot. issuer-service.conf and
-	// web.conf use the same env-var substitutions as the live deploy.
 	if err := os.WriteFile(filepath.Join(configDir, "credential-issuer-metadata.conf"), baseline, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -95,20 +146,15 @@ func TestIntegration_WaltidParsesAppendedCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Append a custom entry — this is the unit under test.
-	schema := vctypes.Schema{
-		ID:     "custom-int1",
-		Name:   "Integration Cred",
-		Desc:   "validates HOCON appended entry",
-		Std:    "w3c_vcdm_2",
-		Custom: true,
-	}
-	configID, changed, err := appendCredentialType(filepath.Join(configDir, "credential-issuer-metadata.conf"), schema)
+	_, configIDs, changed, err := appendCredentialType(filepath.Join(configDir, "credential-issuer-metadata.conf"), schema)
 	if err != nil {
 		t.Fatalf("appendCredentialType: %v", err)
 	}
 	if !changed {
 		t.Fatalf("expected changed=true on first append")
+	}
+	if len(configIDs) == 0 {
+		t.Fatalf("expected at least one configID")
 	}
 
 	// Pick a free port to avoid collision with whatever stack the dev has up.
@@ -160,17 +206,25 @@ func TestIntegration_WaltidParsesAppendedCatalog(t *testing.T) {
 			time.Sleep(500 * time.Millisecond)
 			continue
 		}
-		if _, ok := meta.CredentialConfigurationsSupported[configID]; ok {
-			return // success — walt.id parsed our entry and exposes it
+		// Every configID that appendCredentialType wrote must surface in
+		// walt.id's metadata — confirms multi-format fan-out parsed cleanly.
+		var missing []string
+		for _, cid := range configIDs {
+			if _, ok := meta.CredentialConfigurationsSupported[cid]; !ok {
+				missing = append(missing, cid)
+			}
 		}
-		// Walt.id is up but the configID isn't there. Dump what IS there to
-		// make the failure debuggable.
+		if len(missing) == 0 {
+			return // success — walt.id parsed every appended entry
+		}
+		// Walt.id is up but at least one configID isn't there. Dump what
+		// IS there to make the failure debuggable.
 		keys := make([]string, 0, len(meta.CredentialConfigurationsSupported))
 		for k := range meta.CredentialConfigurationsSupported {
 			keys = append(keys, k)
 		}
-		t.Fatalf("walt.id booted but configID %q not in credential_configurations_supported. configs: %v",
-			configID, keys)
+		t.Fatalf("walt.id booted but configIDs %v missing from credential_configurations_supported. present: %v",
+			missing, keys)
 	}
 	logs, _ := runDocker(t, 5*time.Second, "logs", "--tail", "60", containerName)
 	t.Fatalf("walt.id never exposed metadata at %s within 30s: %v\n--container logs--\n%s", url, lastErr, logs)

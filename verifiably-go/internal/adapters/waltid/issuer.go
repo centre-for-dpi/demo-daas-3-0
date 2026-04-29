@@ -429,18 +429,29 @@ func (a *Adapter) SaveCustomSchema(_ context.Context, schema vctypes.Schema) err
 	if !schema.Custom || a.cfg.CatalogPath == "" {
 		return nil
 	}
-	if waltidFormatSuffix(schema.Std) == "" {
+	if len(waltidWireFormatsForStd(schema.Std)) == 0 {
 		return nil
 	}
-	configID, changed, err := appendCredentialType(a.cfg.CatalogPath, schema)
+	primary, allConfigIDs, changed, err := appendCredentialType(a.cfg.CatalogPath, schema)
 	if err != nil {
 		return fmt.Errorf("append catalog entry: %w", err)
 	}
+	// Register the schema's pre-variant ID + every per-format configID
+	// against the same primary. IssueToWallet looks up by Schema.ID; that
+	// can be either the original "custom-..." ID (the default variant) or
+	// a "<TypeName>_<wireFormat>" string after ApplyVariant. Mapping both
+	// to the catalog primary means either path resolves to a registered
+	// configID without a borrow fallback. We map per-format configIDs to
+	// themselves so a future UI that lets users pick a non-default wire
+	// format can swap req.Schema.ID without further plumbing.
 	a.mu.Lock()
 	if a.registeredConfigIDs == nil {
 		a.registeredConfigIDs = map[string]string{}
 	}
-	a.registeredConfigIDs[schema.ID] = configID
+	a.registeredConfigIDs[schema.ID] = primary
+	for _, cid := range allConfigIDs {
+		a.registeredConfigIDs[cid] = cid
+	}
 	a.mu.Unlock()
 	if !changed {
 		return nil
@@ -468,19 +479,34 @@ func (a *Adapter) DeleteCustomSchema(_ context.Context, id string) error {
 		return nil
 	}
 	a.mu.Lock()
-	configID := a.registeredConfigIDs[id]
-	delete(a.registeredConfigIDs, id)
+	primaryConfigID := a.registeredConfigIDs[id]
+	// Drop every key tied to this schema: the schema.ID plus all per-format
+	// configIDs. Iterate a snapshot so we can mutate during traversal.
+	keys := make([]string, 0, len(a.registeredConfigIDs))
+	for k := range a.registeredConfigIDs {
+		keys = append(keys, k)
+	}
 	a.mu.Unlock()
-	if configID == "" {
+	if primaryConfigID == "" {
 		return nil
 	}
-	// Reconstruct a minimal Schema for removeCredentialType; only ID/Name
-	// fields it reads are part of the configID, which we already have.
+	// Recover TypeName + Std from the primary configID so removeCredentialType
+	// strips every wire-format block (jwt_vc_json + jwt_vc_json-ld + ldp_vc
+	// for a w3c_vcdm_2 schema, etc). The wire-format suffix is the part after
+	// the last underscore.
+	typeName, std := parseTypeAndStdFromConfigID(primaryConfigID)
+	a.mu.Lock()
+	for _, k := range keys {
+		if k == id || strings.HasPrefix(k, typeName+"_") {
+			delete(a.registeredConfigIDs, k)
+		}
+	}
+	a.mu.Unlock()
 	if err := removeCredentialType(a.cfg.CatalogPath, vctypes.Schema{
 		ID:              id,
-		Name:            configID, // unused by stripper but harmless
-		AdditionalTypes: []string{strings.TrimSuffix(configID, "_jwt_vc_json")},
-		Std:             "w3c_vcdm_2",
+		Name:            typeName,
+		AdditionalTypes: []string{typeName},
+		Std:             std,
 	}); err != nil {
 		return fmt.Errorf("remove catalog entry: %w", err)
 	}
@@ -489,6 +515,38 @@ func (a *Adapter) DeleteCustomSchema(_ context.Context, id string) error {
 		service = "issuer-api"
 	}
 	return restartContainer(service)
+}
+
+// parseTypeAndStdFromConfigID reverses the configID format. The wire-format
+// suffix (jwt_vc_json, vc+sd-jwt, mso_mdoc, ...) maps back to a Std so
+// removeCredentialType can ask waltidWireFormatsForStd for the full sibling
+// list. Falls back to w3c_vcdm_2 when the suffix is unrecognised — that's
+// the most common Std and removeCredentialType is idempotent against
+// missing entries.
+func parseTypeAndStdFromConfigID(configID string) (typeName, std string) {
+	suffixes := []string{
+		"_jwt_vc_json-ld",
+		"_jwt_vc_json",
+		"_vc+sd-jwt",
+		"_dc+sd-jwt",
+		"_mso_mdoc",
+		"_ldp_vc",
+		"_jwt_vc",
+	}
+	for _, suf := range suffixes {
+		if strings.HasSuffix(configID, suf) {
+			typeName = strings.TrimSuffix(configID, suf)
+			switch suf {
+			case "_vc+sd-jwt", "_dc+sd-jwt":
+				return typeName, "sd_jwt_vc (IETF)"
+			case "_mso_mdoc":
+				return typeName, "mso_mdoc"
+			default:
+				return typeName, "w3c_vcdm_2"
+			}
+		}
+	}
+	return configID, "w3c_vcdm_2"
 }
 
 // PrefillSubjectFields returns empty: walt.id doesn't carry an identity plugin

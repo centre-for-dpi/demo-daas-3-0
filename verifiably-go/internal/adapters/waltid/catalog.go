@@ -3,6 +3,7 @@ package waltid
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 
@@ -16,55 +17,88 @@ import (
 var catalogMu sync.Mutex
 
 // appendCredentialType registers a custom schema in walt.id's HOCON catalog
-// (credential-issuer-metadata.conf) so its configurationId becomes a real
-// member of credential_configurations_supported. Without this, walt.id rejects
-// any configurationId it didn't see at boot — which is why earlier versions
-// of this adapter "borrowed" a known configurationId and signed the user's
-// custom data through it. Once the schema lives in the catalog, the borrow
-// trick is no-op'd in IssueToWallet.
+// (credential-issuer-metadata.conf) so its configurationIds become real
+// members of credential_configurations_supported. Without this, walt.id rejects
+// any configurationId it didn't see at boot — the borrow trick worked around
+// this in Phase 0 by signing under a stock walt.id config; Phase 1+2 makes
+// custom schemas first-class.
 //
-// Phase 1 supports jwt_vc_json only (the catalog format the user explicitly
-// asked us to ship first). Other formats (vc+sd-jwt, mso_mdoc, ldp_vc,
-// jwt_vc_json-ld) will be added in Phase 2 by extending the format switch
-// below — the file-edit path is identical, only the entry block differs.
+// Phase 2 fans out one Save into multiple catalog entries — one per wire
+// format walt.id supports for the schema's Std. A w3c_vcdm_2 schema lands as
+// jwt_vc_json + jwt_vc_json-ld + ldp_vc; an SD-JWT schema lands as vc+sd-jwt;
+// an mdoc schema lands as mso_mdoc. This is what gives operators a "genuinely
+// custom schema usable in every walt.id-supported format" — the original
+// requirement from the catalog-edit redesign.
 //
-// Idempotent: a re-save of the same schema (matching configID + type) is a
-// no-op so multiple deploys don't accumulate duplicate entries. Concurrent
-// callers serialise via catalogMu.
-func appendCredentialType(catalogPath string, schema vctypes.Schema) (configID string, changed bool, err error) {
+// Returns:
+//   primary  — the configID matching the schema's default wire format, what
+//              IssueToWallet reaches for in the common path
+//   all      — every configID written to the catalog (for registeredConfigIDs)
+//   changed  — true if at least one entry was newly written; false on a re-save
+//              of an already-registered schema (idempotent)
+//
+// Concurrent callers serialise via catalogMu.
+func appendCredentialType(catalogPath string, schema vctypes.Schema) (primary string, all []string, changed bool, err error) {
 	catalogMu.Lock()
 	defer catalogMu.Unlock()
 
 	typeName := customSchemaTypeName(schema)
-	configID = customSchemaConfigID(schema)
-	formatSuffix := waltidFormatSuffix(schema.Std)
-	if formatSuffix == "" {
-		return "", false, fmt.Errorf("walt.id catalog: format for Std=%q not yet supported in Phase 1 (jwt_vc_json only)", schema.Std)
+	wireFormats := waltidWireFormatsForStd(schema.Std)
+	if len(wireFormats) == 0 {
+		return "", nil, false, fmt.Errorf("walt.id catalog: no wire formats registered for Std=%q", schema.Std)
 	}
+	primary = typeName + "_" + wireFormats[0]
 
 	data, err := os.ReadFile(catalogPath)
 	if err != nil {
-		return "", false, fmt.Errorf("read catalog: %w", err)
+		return "", nil, false, fmt.Errorf("read catalog: %w", err)
 	}
 	content := string(data)
 
-	if strings.Contains(content, `"`+configID+`"`) {
-		return configID, false, nil
+	// Build the union of new entries — skipping any that already exist.
+	// Only the per-format block form is emitted (no simple-array shorthand):
+	//   - The shorthand `Foo = [VerifiableCredential, Foo],` only ever
+	//     expands to a `Foo_jwt_vc_json` config inside walt.id, duplicating
+	//     the explicit block we already write.
+	//   - Worse, dotted typeNames (e.g. mdoc's `org.iso.18013.5.1.mDL`) get
+	//     parsed by HOCON as nested objects (`org = { iso = { ... } }`),
+	//     breaking walt.id's CredentialTypeConfig deserialiser with
+	//     `Field 'format' is required` because the synthesised entry lacks
+	//     a format key. Live integration test on 2026-04-29 confirmed this.
+	// The block form alone is canonical, deterministic, and works for every
+	// wire format walt.id supports.
+	var blocks []string
+	for _, wf := range wireFormats {
+		configID := typeName + "_" + wf
+		all = append(all, configID)
+		if strings.Contains(content, `"`+configID+`"`) {
+			continue
+		}
+		blocks = append(blocks, buildCredentialTypeEntry(configID, typeName, wf, schema))
+		changed = true
 	}
-
-	simpleEntry := fmt.Sprintf("    %s = [VerifiableCredential, %s],", typeName, typeName)
-	formatEntry := buildJWTVCJsonEntry(configID, typeName, schema)
+	if !changed {
+		return primary, all, false, nil
+	}
 
 	lastBrace := strings.LastIndex(content, "}")
 	if lastBrace == -1 {
-		return "", false, fmt.Errorf("invalid HOCON: no closing brace in %s", catalogPath)
+		return "", nil, false, fmt.Errorf("invalid HOCON: no closing brace in %s", catalogPath)
 	}
 
-	newContent := content[:lastBrace] + "\n" + simpleEntry + "\n\n" + formatEntry + "\n" + content[lastBrace:]
-	if err := os.WriteFile(catalogPath, []byte(newContent), 0o644); err != nil {
-		return "", false, fmt.Errorf("write catalog: %w", err)
+	var insert strings.Builder
+	insert.WriteString("\n")
+	for _, b := range blocks {
+		insert.WriteString("\n")
+		insert.WriteString(b)
+		insert.WriteString("\n")
 	}
-	return configID, true, nil
+	newContent := content[:lastBrace] + insert.String() + content[lastBrace:]
+	if err := os.WriteFile(catalogPath, []byte(newContent), 0o644); err != nil {
+		return "", nil, false, fmt.Errorf("write catalog: %w", err)
+	}
+	sort.Strings(all)
+	return primary, all, true, nil
 }
 
 // customSchemaTypeName returns the catalog/VC-type identifier for a custom
@@ -80,50 +114,63 @@ func customSchemaTypeName(schema vctypes.Schema) string {
 	return sanitizeTypeName(schema.Name)
 }
 
-// customSchemaConfigID returns the catalog key the appended entry uses.
-// Pattern matches walt.id's existing stock entries: "<TypeName>_<formatSuffix>"
-// (e.g. "FarmerCred_jwt_vc_json"). BaseType() in vctypes strips the same
-// suffixes so `Schema.BaseType()` of an issued credential collapses back to
-// the type name.
-func customSchemaConfigID(schema vctypes.Schema) string {
-	return customSchemaTypeName(schema) + "_" + waltidFormatSuffix(schema.Std)
-}
-
-// waltidFormatSuffix maps verifiably-go's Std taxonomy to the walt.id format
-// key used as a configurationId suffix. Empty return means "not yet
-// supported"; appendCredentialType errors so the operator sees a clear
-// message rather than a silent fall-through to the borrow trick.
+// waltidWireFormatsForStd returns the walt.id wire-format keys that should be
+// registered for a given Std. The primary (most-tested in walt.id's E2E
+// suite) wire format is first — appendCredentialType uses [0] as the configID
+// IssueToWallet defaults to.
 //
-// Phase 1 ships jwt_vc_json. Phase 2 will add: "ldp_vc" → "ldp_vc",
-// "jwt_vc_json-ld" → "jwt_vc_json-ld", "sd_jwt_vc (IETF)" → "vc+sd-jwt",
-// "mso_mdoc" → "mso_mdoc".
-func waltidFormatSuffix(std string) string {
+// The list mirrors verifiably-go's existing formatToStd reverse mapping but
+// excludes formats walt.id can issue but the verifier can't match against
+// (jwt_vc, dc+sd-jwt) — the verifier round-trip is what users actually need
+// for a end-to-end demo. Operators who specifically need the legacy/jwt
+// formats can edit the catalog manually; this hook keeps the demo set
+// curated.
+func waltidWireFormatsForStd(std string) []string {
 	switch std {
-	case "w3c_vcdm_2", "jwt_vc", "":
-		return "jwt_vc_json"
+	case "w3c_vcdm_2", "":
+		return []string{"jwt_vc_json", "jwt_vc_json-ld", "ldp_vc"}
+	case "w3c_vcdm_1", "jwt_vc":
+		return []string{"jwt_vc_json"}
+	case "sd_jwt_vc (IETF)":
+		return []string{"vc+sd-jwt"}
+	case "mso_mdoc":
+		return []string{"mso_mdoc"}
+	}
+	return nil
+}
+
+// buildCredentialTypeEntry renders a HOCON block for one wire format. The
+// shape varies because walt.id's CredentialTypeConfig deserialiser keys off
+// different fields per format: JWT/LDP credentials use credential_definition
+// (with @context for LDP variants), SD-JWT uses vct, mdoc uses doctype.
+// Trying to use a single uniform shape produces walt.id boot errors.
+func buildCredentialTypeEntry(configID, typeName, wireFormat string, schema vctypes.Schema) string {
+	switch wireFormat {
+	case "jwt_vc_json", "jwt_vc":
+		return buildJWTVCJsonEntry(configID, typeName, wireFormat, schema)
+	case "jwt_vc_json-ld", "ldp_vc":
+		return buildLinkedDataEntry(configID, typeName, wireFormat, schema)
+	case "vc+sd-jwt", "dc+sd-jwt":
+		return buildSDJWTEntry(configID, typeName, wireFormat, schema)
+	case "mso_mdoc":
+		return buildMDocEntry(configID, typeName, schema)
 	default:
-		return ""
+		// Should never hit — waltidWireFormatsForStd is the only caller and
+		// it lists exactly the formats above. Defensive: fall back to the
+		// JWT shape so a future Std mapping bug surfaces as a parse error
+		// rather than a silent skip.
+		return buildJWTVCJsonEntry(configID, typeName, wireFormat, schema)
 	}
 }
 
-// buildJWTVCJsonEntry renders a HOCON block describing one jwt_vc_json
-// credential configuration. The shape mirrors walt.id's stock entries
-// (KiwiAccessCredential_jwt_vc_json, BirthCertificate_jwt_vc_json) verbatim
-// so walt.id's CredentialTypeConfig deserialiser accepts it without complaint.
-//
-// EdDSA + ES256 are the two algorithms walt.id signs with by default; listing
-// both makes the configuration usable from issuer DIDs of either curve.
-func buildJWTVCJsonEntry(configID, typeName string, schema vctypes.Schema) string {
-	display := strings.TrimSpace(schema.Name)
-	if display == "" {
-		display = typeName
-	}
-	desc := strings.TrimSpace(schema.Desc)
-	if desc == "" || desc == "—" {
-		desc = display
-	}
+// buildJWTVCJsonEntry: the canonical W3C VC + JWT wrapping. Walt.id signs
+// these as JWS + DID-bound holder. EdDSA + ES256 are the two curves walt.id
+// supports out of the box; listing both keeps the configuration usable
+// regardless of which curve the issuer DID was onboarded with.
+func buildJWTVCJsonEntry(configID, typeName, wireFormat string, schema vctypes.Schema) string {
+	display, desc := displayPair(typeName, schema)
 	return fmt.Sprintf(`    "%s" = {
-        format = "jwt_vc_json"
+        format = "%s"
         cryptographic_binding_methods_supported = ["did"]
         credential_signing_alg_values_supported = ["EdDSA", "ES256"]
         credential_definition = {
@@ -138,7 +185,103 @@ func buildJWTVCJsonEntry(configID, typeName string, schema vctypes.Schema) strin
                 text_color = "#000000"
             }
         ]
-    }`, configID, typeName, hoconEscape(display), hoconEscape(desc))
+    }`, configID, wireFormat, typeName, hoconEscape(display), hoconEscape(desc))
+}
+
+// buildLinkedDataEntry covers both jwt_vc_json-ld (JSON-LD payload, JWT
+// envelope) and ldp_vc (JSON-LD with a Linked Data Proof). Both need the
+// @context array because the Kotlin parser wires it through to the VC
+// builder; without it the issued credential has no @context and fails
+// downstream JSON-LD canonicalisation.
+//
+// Heads-up: walt.id 0.18.2's verifier-api can't match ldp_vc presentations
+// (parsedDocument is empty in the wallet), so credentials issued in this
+// format are issue-only end-to-end. The UI surfaces an "issue-only" badge
+// for these — see verifierSupportsFormat.
+func buildLinkedDataEntry(configID, typeName, wireFormat string, schema vctypes.Schema) string {
+	display, desc := displayPair(typeName, schema)
+	return fmt.Sprintf(`    "%s" = {
+        format = "%s"
+        cryptographic_binding_methods_supported = ["did"]
+        credential_signing_alg_values_supported = ["EdDSA", "ES256"]
+        credential_definition = {
+            "@context" = [
+                "https://www.w3.org/2018/credentials/v1",
+                "https://www.w3.org/ns/credentials/examples/v1"
+            ]
+            type = ["VerifiableCredential", "%s"]
+        }
+        display = [
+            {
+                name = "%s"
+                description = "%s"
+                locale = "en-US"
+                background_color = "#FFFFFF"
+                text_color = "#000000"
+            }
+        ]
+    }`, configID, wireFormat, typeName, hoconEscape(display), hoconEscape(desc))
+}
+
+// buildSDJWTEntry covers vc+sd-jwt (the older media type) and dc+sd-jwt
+// (the IETF draft's newer name). SD-JWT VC keys off `vct` (a URL string)
+// not `credential_definition.type`. Walt.id's verifier matches presentations
+// against the exact vct string the issuer advertised, so the URL we synth
+// has to be deterministic and stable across restarts.
+//
+// We use HOCON's ${SERVICE_HOST}/${ISSUER_API_PORT} substitution so the URL
+// adapts when those env vars change between deploys (matches the pattern
+// walt.id's stock identity_credential_vc+sd-jwt entry uses). cose_key isn't
+// supported for SD-JWT VC — bind via JWK only.
+func buildSDJWTEntry(configID, typeName, wireFormat string, _ vctypes.Schema) string {
+	return fmt.Sprintf(`    "%s" = {
+        format = "%s"
+        cryptographic_binding_methods_supported = ["jwk"]
+        credential_signing_alg_values_supported = ["ES256"]
+        vct = "http://${SERVICE_HOST}:${ISSUER_API_PORT}/%s"
+    }`, configID, wireFormat, typeName)
+}
+
+// buildMDocEntry covers mso_mdoc — the ISO 18013-5 mobile document format.
+// Mdoc is keyed by `doctype` (not type or vct), and binds via cose_key
+// (CWT proofs, ES256 only — that's what walt.id's mdoc signer emits). The
+// doctype namespacing convention is an inverted-DNS string; if the operator
+// pinned an AdditionalType we use that verbatim, else we fall back to the
+// sanitized type name so the doctype is at least stable across restarts.
+//
+// Mdoc credentials don't carry display metadata in walt.id's catalog format,
+// so we don't emit a display block here even though the schema has Name/Desc.
+func buildMDocEntry(configID, typeName string, schema vctypes.Schema) string {
+	doctype := strings.TrimSpace(schema.Vct)
+	if doctype == "" && len(schema.AdditionalTypes) > 0 {
+		doctype = strings.TrimSpace(schema.AdditionalTypes[0])
+	}
+	if doctype == "" {
+		doctype = typeName
+	}
+	return fmt.Sprintf(`    "%s" = {
+        format = "mso_mdoc"
+        cryptographic_binding_methods_supported = ["cose_key"]
+        credential_signing_alg_values_supported = ["ES256"]
+        proof_types_supported = { cwt = { proof_signing_alg_values_supported = ["ES256"] } }
+        doctype = "%s"
+    }`, configID, hoconEscape(doctype))
+}
+
+// displayPair derives the human-readable name + description from the
+// schema, falling back to the type name when fields are blank or the
+// builder's "—" placeholder. Centralised so each format builder gets
+// the same fallback behaviour without copy-paste.
+func displayPair(typeName string, schema vctypes.Schema) (display, desc string) {
+	display = strings.TrimSpace(schema.Name)
+	if display == "" {
+		display = typeName
+	}
+	desc = strings.TrimSpace(schema.Desc)
+	if desc == "" || desc == "—" {
+		desc = display
+	}
+	return display, desc
 }
 
 // hoconEscape prepares a free-text string for inclusion in a HOCON quoted
@@ -151,26 +294,24 @@ func hoconEscape(s string) string {
 	return s
 }
 
-// removeCredentialType deletes the catalog entries for a custom schema so a
-// DeleteCustomSchema cleans up the HOCON file as well as the in-memory
-// registry. Called from the Adapter's DeleteCustomSchema hook.
-//
-// Removes both the simple-array form (one line ending in a comma) and the
-// configID block (multi-line, balanced braces). Idempotent.
+// removeCredentialType deletes every catalog entry written for a custom
+// schema — the simple-array form plus all per-format blocks. Idempotent;
+// missing entries are silently skipped so a Phase-1-→-Phase-2 schema
+// (which only has a jwt_vc_json entry) still cleans up correctly.
 func removeCredentialType(catalogPath string, schema vctypes.Schema) error {
 	catalogMu.Lock()
 	defer catalogMu.Unlock()
 
 	typeName := customSchemaTypeName(schema)
-	configID := customSchemaConfigID(schema)
-
 	data, err := os.ReadFile(catalogPath)
 	if err != nil {
 		return fmt.Errorf("read catalog: %w", err)
 	}
 	content := string(data)
 	updated := stripSimpleEntry(content, typeName)
-	updated = stripBlockEntry(updated, configID)
+	for _, wf := range waltidWireFormatsForStd(schema.Std) {
+		updated = stripBlockEntry(updated, typeName+"_"+wf)
+	}
 	if updated == content {
 		return nil
 	}

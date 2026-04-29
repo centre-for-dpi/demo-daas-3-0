@@ -30,7 +30,7 @@ func writeSeed(t *testing.T) string {
 	return path
 }
 
-func TestAppendCredentialType_jwtVcJson(t *testing.T) {
+func TestAppendCredentialType_w3cFansOutAcrossFormats(t *testing.T) {
 	path := writeSeed(t)
 	schema := vctypes.Schema{
 		ID:     "custom-abc123",
@@ -39,23 +39,37 @@ func TestAppendCredentialType_jwtVcJson(t *testing.T) {
 		Std:    "w3c_vcdm_2",
 		Custom: true,
 	}
-	cfgID, changed, err := appendCredentialType(path, schema)
+	primary, all, changed, err := appendCredentialType(path, schema)
 	if err != nil {
 		t.Fatalf("append: %v", err)
 	}
 	if !changed {
 		t.Fatalf("expected changed=true on first save")
 	}
-	want := "FarmerCred_jwt_vc_json"
-	if cfgID != want {
-		t.Fatalf("configID = %q, want %q", cfgID, want)
+	if primary != "FarmerCred_jwt_vc_json" {
+		t.Fatalf("primary configID = %q, want FarmerCred_jwt_vc_json", primary)
+	}
+	wantAll := []string{
+		"FarmerCred_jwt_vc_json",
+		"FarmerCred_jwt_vc_json-ld",
+		"FarmerCred_ldp_vc",
+	}
+	if got := strings.Join(all, ","); got != strings.Join(sortedCopy(wantAll), ",") {
+		t.Errorf("all configIDs = %q, want %q", got, strings.Join(sortedCopy(wantAll), ","))
 	}
 	got, _ := os.ReadFile(path)
 	gotStr := string(got)
+	// Note: no simple-array form. We deliberately don't emit it because
+	// dotted type names (mdoc) break HOCON's flat-key parser and the
+	// shorthand is redundant once we have per-format blocks.
 	for _, frag := range []string{
-		`FarmerCred = [VerifiableCredential, FarmerCred],`,
 		`"FarmerCred_jwt_vc_json" = {`,
 		`format = "jwt_vc_json"`,
+		`"FarmerCred_jwt_vc_json-ld" = {`,
+		`format = "jwt_vc_json-ld"`,
+		`"FarmerCred_ldp_vc" = {`,
+		`format = "ldp_vc"`,
+		`"@context" = [`,
 		`type = ["VerifiableCredential", "FarmerCred"]`,
 		`name = "Farmer Cred"`,
 		`description = "Identity for verified farmers"`,
@@ -64,10 +78,62 @@ func TestAppendCredentialType_jwtVcJson(t *testing.T) {
 			t.Errorf("expected file to contain %q\n--full file--\n%s", frag, gotStr)
 		}
 	}
-	// Outer object must still close cleanly — last non-whitespace char is }.
 	trimmed := strings.TrimRight(gotStr, " \t\r\n")
 	if !strings.HasSuffix(trimmed, "}") {
-		t.Errorf("file does not end with closing brace; got tail %q", trimmed[len(trimmed)-min(50, len(trimmed)):])
+		t.Errorf("file does not end with closing brace")
+	}
+}
+
+func TestAppendCredentialType_sdJWT(t *testing.T) {
+	path := writeSeed(t)
+	primary, all, changed, err := appendCredentialType(path, vctypes.Schema{
+		ID: "custom-sd1", Name: "Health Card", Std: "sd_jwt_vc (IETF)", Custom: true,
+	})
+	if err != nil || !changed {
+		t.Fatalf("append: changed=%v err=%v", changed, err)
+	}
+	if primary != "HealthCard_vc+sd-jwt" {
+		t.Errorf("primary = %q, want HealthCard_vc+sd-jwt", primary)
+	}
+	if len(all) != 1 || all[0] != "HealthCard_vc+sd-jwt" {
+		t.Errorf("all = %v, want [HealthCard_vc+sd-jwt]", all)
+	}
+	got, _ := os.ReadFile(path)
+	for _, frag := range []string{
+		`"HealthCard_vc+sd-jwt" = {`,
+		`format = "vc+sd-jwt"`,
+		`vct = "http://${SERVICE_HOST}:${ISSUER_API_PORT}/HealthCard"`,
+		`cryptographic_binding_methods_supported = ["jwk"]`,
+	} {
+		if !strings.Contains(string(got), frag) {
+			t.Errorf("missing fragment %q\n%s", frag, got)
+		}
+	}
+}
+
+func TestAppendCredentialType_mDoc(t *testing.T) {
+	path := writeSeed(t)
+	primary, _, changed, err := appendCredentialType(path, vctypes.Schema{
+		ID: "custom-md1", Name: "Drivers License", Std: "mso_mdoc", Custom: true,
+		AdditionalTypes: []string{"org.iso.18013.5.1.mDL"},
+	})
+	if err != nil || !changed {
+		t.Fatalf("append: changed=%v err=%v", changed, err)
+	}
+	// AdditionalTypes pins both the catalog TypeName AND the doctype.
+	if primary != "org.iso.18013.5.1.mDL_mso_mdoc" {
+		t.Errorf("primary = %q, want org.iso.18013.5.1.mDL_mso_mdoc", primary)
+	}
+	got, _ := os.ReadFile(path)
+	for _, frag := range []string{
+		`format = "mso_mdoc"`,
+		`doctype = "org.iso.18013.5.1.mDL"`,
+		`cryptographic_binding_methods_supported = ["cose_key"]`,
+		`proof_types_supported = { cwt = { proof_signing_alg_values_supported = ["ES256"] } }`,
+	} {
+		if !strings.Contains(string(got), frag) {
+			t.Errorf("missing fragment %q\n%s", frag, got)
+		}
 	}
 }
 
@@ -76,25 +142,26 @@ func TestAppendCredentialType_idempotent(t *testing.T) {
 	schema := vctypes.Schema{
 		ID: "custom-x", Name: "Foo", Std: "w3c_vcdm_2", Custom: true,
 	}
-	if _, changed, err := appendCredentialType(path, schema); err != nil || !changed {
+	if _, _, changed, err := appendCredentialType(path, schema); err != nil || !changed {
 		t.Fatalf("first append: changed=%v err=%v", changed, err)
 	}
-	if _, changed, err := appendCredentialType(path, schema); err != nil || changed {
+	if _, _, changed, err := appendCredentialType(path, schema); err != nil || changed {
 		t.Fatalf("second append: changed=%v (want false), err=%v", changed, err)
 	}
 	got, _ := os.ReadFile(path)
-	if c := strings.Count(string(got), `"Foo_jwt_vc_json"`); c != 1 {
-		t.Errorf("expected 1 entry, got %d duplicates", c)
+	for _, configID := range []string{"Foo_jwt_vc_json", "Foo_jwt_vc_json-ld", "Foo_ldp_vc"} {
+		if c := strings.Count(string(got), `"`+configID+`"`); c != 1 {
+			t.Errorf("expected 1 entry for %q, got %d", configID, c)
+		}
 	}
 }
 
 func TestAppendCredentialType_unsupportedFormat(t *testing.T) {
 	path := writeSeed(t)
-	schema := vctypes.Schema{
-		ID: "custom-y", Name: "Bar", Std: "mso_mdoc", Custom: true,
-	}
-	if _, _, err := appendCredentialType(path, schema); err == nil {
-		t.Fatalf("expected error for Phase-2 format mso_mdoc")
+	if _, _, _, err := appendCredentialType(path, vctypes.Schema{
+		ID: "custom-y", Name: "Bar", Std: "totally-fake-std", Custom: true,
+	}); err == nil {
+		t.Fatalf("expected error for unknown Std")
 	}
 }
 
@@ -103,7 +170,7 @@ func TestRemoveCredentialType_roundTrip(t *testing.T) {
 	schema := vctypes.Schema{
 		ID: "custom-z", Name: "Baz Bat", Desc: "test", Std: "w3c_vcdm_2", Custom: true,
 	}
-	if _, _, err := appendCredentialType(path, schema); err != nil {
+	if _, _, _, err := appendCredentialType(path, schema); err != nil {
 		t.Fatalf("append: %v", err)
 	}
 	if err := removeCredentialType(path, schema); err != nil {
@@ -111,10 +178,15 @@ func TestRemoveCredentialType_roundTrip(t *testing.T) {
 	}
 	got, _ := os.ReadFile(path)
 	gotStr := string(got)
-	if strings.Contains(gotStr, "BazBat") {
-		t.Errorf("expected BazBat removed, but it survived:\n%s", gotStr)
+	for _, fragment := range []string{
+		"BazBat_jwt_vc_json",
+		"BazBat_jwt_vc_json-ld",
+		"BazBat_ldp_vc",
+	} {
+		if strings.Contains(gotStr, fragment) {
+			t.Errorf("expected %q removed, but it survived\n%s", fragment, gotStr)
+		}
 	}
-	// Seed entries must remain.
 	for _, want := range []string{"BankId", "UniversityDegree"} {
 		if !strings.Contains(gotStr, want) {
 			t.Errorf("expected seed entry %q to survive removal\n%s", want, gotStr)
@@ -127,23 +199,34 @@ func TestRemoveCredentialType_roundTrip(t *testing.T) {
 }
 
 func TestAppendCredentialType_extraTypeOverride(t *testing.T) {
-	// AdditionalTypes (the builder's "Extra Type" field) should pin the
-	// type name verbatim — operators who know the canonical name (e.g.
-	// matching an external schema) can override sanitizeTypeName.
 	path := writeSeed(t)
-	schema := vctypes.Schema{
+	primary, _, _, err := appendCredentialType(path, vctypes.Schema{
 		ID:              "custom-q",
 		Name:            "doesnt matter",
 		AdditionalTypes: []string{"FarmCertificate"},
 		Std:             "w3c_vcdm_2",
 		Custom:          true,
-	}
-	cfgID, _, err := appendCredentialType(path, schema)
+	})
 	if err != nil {
 		t.Fatalf("append: %v", err)
 	}
-	if cfgID != "FarmCertificate_jwt_vc_json" {
-		t.Errorf("configID = %q, want FarmCertificate_jwt_vc_json", cfgID)
+	if primary != "FarmCertificate_jwt_vc_json" {
+		t.Errorf("configID = %q, want FarmCertificate_jwt_vc_json", primary)
 	}
+}
+
+// sortedCopy returns a sorted copy without mutating the input — used to
+// compare slice equality without imposing ordering on callers.
+func sortedCopy(in []string) []string {
+	out := make([]string, len(in))
+	copy(out, in)
+	for i := 0; i < len(out); i++ {
+		for j := i + 1; j < len(out); j++ {
+			if out[j] < out[i] {
+				out[i], out[j] = out[j], out[i]
+			}
+		}
+	}
+	return out
 }
 
