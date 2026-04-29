@@ -638,7 +638,7 @@ func (a *Adapter) IssueToWallet(ctx context.Context, req backend.IssueRequest) (
 			return backend.IssueToWalletResult{}, err
 		}
 		ir.MdocData = mdocData
-	case "sd_jwt_vc (IETF)":
+	case "sd_jwt_vc (IETF)", "sd_jwt_vc":
 		// SD-JWT VC issuance expects credentialData with TOP-LEVEL claim
 		// keys (no VCDM @context / type / credentialSubject wrapping).
 		// Walt.id's SDMap matches these same top-level keys to decide
@@ -805,11 +805,18 @@ func formatToStd(format string) string {
 
 // issuePathFor returns the /openid4vc/{format}/issue endpoint for a standard.
 // walt.id routes jwt/sdjwt/mdoc into distinct paths in v0.18.2.
+//
+// Accepts both the canonical "sd_jwt_vc (IETF)" form (used internally and
+// in walt.id's metadata) and the bare "sd_jwt_vc" the schema-builder
+// dropdown emits — the canonicalStd shim in handlers/schema.go normalises
+// at the boundary, but in-memory schemas saved before that shim landed
+// (or from older sessions) still flow through here, so the alias guards
+// against a regression.
 func issuePathFor(std string) (string, error) {
 	switch std {
 	case "w3c_vcdm_1", "w3c_vcdm_2", "jwt_vc":
 		return "/openid4vc/jwt/issue", nil
-	case "sd_jwt_vc (IETF)":
+	case "sd_jwt_vc (IETF)", "sd_jwt_vc":
 		return "/openid4vc/sdjwt/issue", nil
 	case "mso_mdoc":
 		return "/openid4vc/mdoc/issue", nil

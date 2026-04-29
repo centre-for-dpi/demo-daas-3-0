@@ -131,7 +131,13 @@ func waltidWireFormatsForStd(std string) []string {
 		return []string{"jwt_vc_json", "jwt_vc_json-ld", "ldp_vc"}
 	case "w3c_vcdm_1", "jwt_vc":
 		return []string{"jwt_vc_json"}
-	case "sd_jwt_vc (IETF)":
+	// Accept both spellings for SD-JWT VC. The schema-builder dropdown emits
+	// the bare "sd_jwt_vc" (parens + spaces in <option value=> are awkward);
+	// the canonical form used in walt.id metadata + adapter switches is the
+	// parenthesised one. The canonicalStd shim normalises at the form
+	// boundary, but accepting both here also covers in-memory schemas saved
+	// before that shim shipped.
+	case "sd_jwt_vc (IETF)", "sd_jwt_vc":
 		return []string{"vc+sd-jwt"}
 	case "mso_mdoc":
 		return []string{"mso_mdoc"}

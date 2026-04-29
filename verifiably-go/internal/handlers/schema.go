@@ -318,12 +318,28 @@ func (h *H) DeleteSchema(w http.ResponseWriter, r *http.Request) {
 	h.renderFragments(w, r, data, "fragment_schema_browser_body", "fragment_schema_continue_oob")
 }
 
+// canonicalStd normalises the schema-builder dropdown's `std` form value to
+// the canonical Std taxonomy used by adapters (vctypes.Schema.Std). The
+// dropdown emits short keys like "sd_jwt_vc" because parentheses + spaces
+// in <option value=...> are awkward, but adapters key off the longer form
+// "sd_jwt_vc (IETF)" used in walt.id's metadata. Mismatches surface as
+// "unsupported schema standard" errors at issue time — observed for the
+// SD-JWT path on 2026-04-29.
+func canonicalStd(raw string) string {
+	switch strings.TrimSpace(raw) {
+	case "sd_jwt_vc", "sd_jwt_vc (IETF)":
+		return "sd_jwt_vc (IETF)"
+	default:
+		return strings.TrimSpace(raw)
+	}
+}
+
 func extractBuilderData(r *http.Request) builderData {
 	d := builderData{
 		Name:      r.FormValue("name"),
 		Desc:      r.FormValue("desc"),
 		ExtraType: r.FormValue("extra_type"),
-		Std:       r.FormValue("std"),
+		Std:       canonicalStd(r.FormValue("std")),
 	}
 	if d.Std == "" {
 		d.Std = "w3c_vcdm_2"

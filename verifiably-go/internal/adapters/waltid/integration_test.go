@@ -95,6 +95,20 @@ func TestIntegration_WaltidParsesAppendedCatalog(t *testing.T) {
 			},
 		},
 		{
+			// Guards against the bare "sd_jwt_vc" form the schema-builder
+			// dropdown used to send before the canonicalStd shim landed —
+			// sessions saved with the bare form must still issue cleanly,
+			// so waltidWireFormatsForStd accepts both spellings.
+			name: "sd_jwt_vc bare alias still resolves",
+			schema: vctypes.Schema{
+				ID:     "custom-int-sd-bare",
+				Name:   "Integration SD Bare",
+				Desc:   "validates legacy bare sd_jwt_vc spelling",
+				Std:    "sd_jwt_vc",
+				Custom: true,
+			},
+		},
+		{
 			name: "mso_mdoc lands with cose_key binding",
 			schema: vctypes.Schema{
 				ID:              "custom-int-md",
