@@ -583,9 +583,21 @@ cmd_up() {
   # bootstrap scripts then propagate that value into the IdPs' client
   # configs, so a host change followed by `./deploy.sh up all` is enough
   # to make Keycloak + WSO2 accept the new callback URL.
+  # Resolve verifiably-go's browser-facing callback URL through url_for so
+  # the bootstrap scripts add the right entry in either mode:
+  #   legacy mode  → http://<host>:<port>/auth/callback
+  #   pattern mode → https://verifiably.<domain>/auth/callback (and the
+  #                  legacy entry is also added so browsers hitting the
+  #                  old URL via /etc/hosts still work).
+  local _verifiably_url _verifiably_callback
+  _verifiably_url=$(url_for verifiably "$VERIFIABLY_PUBLIC_HOST" "$VERIFIABLY_HOST_PORT")
+  _verifiably_callback="${_verifiably_url}/auth/callback"
+
   bold "▶ Bootstrapping Keycloak vcplatform client"
   PUBLIC_HOST="$VERIFIABLY_PUBLIC_HOST" \
     VERIFIABLY_HOST_PORT="$VERIFIABLY_HOST_PORT" \
+    VERIFIABLY_CALLBACK_URL="$_verifiably_callback" \
+    VERIFIABLY_PUBLIC_URL="$_verifiably_url" \
     KEYCLOAK_BASE="http://localhost:${KEYCLOAK_PORT}" \
     KEYCLOAK_REALM="$KEYCLOAK_REALM" \
     KEYCLOAK_CLIENT_ID="$KEYCLOAK_CLIENT_ID" \
@@ -593,7 +605,10 @@ cmd_up() {
     || red "  Keycloak bootstrap failed (proceeding — you can re-run it manually)"
 
   bold "▶ Bootstrapping WSO2IS OIDC client"
-  "$SCRIPT_DIR/scripts/bootstrap-wso2is.sh" || red "  WSO2IS bootstrap failed (proceeding — you can re-run it manually)"
+  PUBLIC_HOST="$VERIFIABLY_PUBLIC_HOST" \
+    VERIFIABLY_HOST_PORT="$VERIFIABLY_HOST_PORT" \
+    VERIFIABLY_CALLBACK_URL="$_verifiably_callback" \
+    "$SCRIPT_DIR/scripts/bootstrap-wso2is.sh" || red "  WSO2IS bootstrap failed (proceeding — you can re-run it manually)"
   # Re-generate auth-providers.json now that wso2is.env exists, so the
   # provider list picks up the fresh client_secret.
   auth_providers_for "$scenario"

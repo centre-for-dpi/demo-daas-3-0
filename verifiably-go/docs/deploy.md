@@ -284,8 +284,14 @@ All work. Just make sure your DNS + reverse-proxy match the pattern.
 ### Caveats specific to this mode
 
 - **Verifiably-go itself stays backend-agnostic.** The same binary runs in either mode; the URL choice happens at deploy-time when `backends.json` + `auth-providers.json` are generated.
-- **OIDC redirect URIs.** Keycloak and WSO2 only accept callbacks from URLs in their pre-registered list. The `bootstrap-keycloak.sh` and `bootstrap-wso2is.sh` scripts patch the redirect URIs to match `VERIFIABLY_PUBLIC_HOST` today; per-subdomain pattern support there is a follow-up commit. Until that lands, after switching to pattern mode you'll need to manually add `https://verifiably.<your-domain>/auth/callback` to the `vcplatform` client in Keycloak's admin UI and to the `verifiably_go_client` in WSO2's admin console.
-- **eSignet redirect URI.** `repair_injiweb_client_redirect_uri` in `deploy.sh` injects `http://${PUBLIC_HOST}:3004/redirect` into the `wallet-demo-client` row in eSignet's postgres — also pattern-unaware today. Same workaround as above (manual UPDATE after first deploy in pattern mode), or fall back to `VERIFIABLY_PUBLIC_HOST` mode for the eSignet flow.
+- **OIDC redirect URIs auto-configure.** `bootstrap-keycloak.sh` and `bootstrap-wso2is.sh` consume `VERIFIABLY_CALLBACK_URL` (set automatically by `deploy.sh` via `url_for`), so the pattern-mode callback (`https://verifiably.<your-domain>/auth/callback`) lands in both clients' allow-lists alongside the legacy localhost entries. Re-running `./deploy.sh up <scenario>` after a domain change is enough — both bootstraps are idempotent and additive (set-union, not replace), so a host change doesn't strand stale entries.
+- **eSignet redirect URI.** `repair_injiweb_client_redirect_uri` in `deploy.sh` injects `http://${PUBLIC_HOST}:3004/redirect` into the `wallet-demo-client` row in eSignet's postgres — still pattern-unaware. After first deploy in pattern mode, manually run:
+  ```sql
+  UPDATE client_detail
+  SET redirect_uris = redirect_uris || ARRAY['https://inji-web.<your-domain>/redirect']
+  WHERE id = 'wallet-demo-client';
+  ```
+  inside `injiweb-postgres`, or fall back to `VERIFIABLY_PUBLIC_HOST` mode for the eSignet-fronted Inji Web flow specifically.
 
 ## Full reset
 

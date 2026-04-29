@@ -30,10 +30,27 @@ set -euo pipefail
 # all three stay acceptable callbacks.
 : "${PUBLIC_HOST:=localhost}"
 : "${VERIFIABLY_HOST_PORT:=8080}"
+# VERIFIABLY_CALLBACK_URL is set by deploy.sh through url_for() so it
+# carries the right callback for either deployment mode:
+#   legacy mode  → http://<PUBLIC_HOST>:<port>/auth/callback
+#   pattern mode → https://verifiably.<domain>/auth/callback
+# Empty when the script is invoked standalone — we still register the
+# three legacy callbacks below in that case so the existing localhost /
+# laptop dev workflow stays intact.
+: "${VERIFIABLY_CALLBACK_URL:=}"
 _callback_local="http://localhost:${VERIFIABLY_HOST_PORT}/auth/callback"
 _callback_public="http://${PUBLIC_HOST}:${VERIFIABLY_HOST_PORT}/auth/callback"
 _callback_bridge="http://172.24.0.1:${VERIFIABLY_HOST_PORT}/auth/callback"
-: "${REDIRECT_URIS_JSON:=[\"$_callback_local\",\"$_callback_public\",\"$_callback_bridge\"]}"
+# Build the JSON array. WSO2 accepts arbitrary additional entries via
+# set-union on its end (collapsed into a regexp value); duplicating the
+# same callback when legacy and pattern coincide is harmless.
+if [[ -n "$VERIFIABLY_CALLBACK_URL" && \
+      "$VERIFIABLY_CALLBACK_URL" != "$_callback_public" && \
+      "$VERIFIABLY_CALLBACK_URL" != "$_callback_local" ]]; then
+  : "${REDIRECT_URIS_JSON:=[\"$_callback_local\",\"$_callback_public\",\"$_callback_bridge\",\"$VERIFIABLY_CALLBACK_URL\"]}"
+else
+  : "${REDIRECT_URIS_JSON:=[\"$_callback_local\",\"$_callback_public\",\"$_callback_bridge\"]}"
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT="$SCRIPT_DIR/../config/wso2is.env"

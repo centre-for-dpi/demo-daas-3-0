@@ -47,6 +47,15 @@ set -euo pipefail
 : "${KEYCLOAK_ADMIN_PASS:=admin}"
 : "${VERIFIABLY_HOST_PORT:=8080}"
 : "${PUBLIC_HOST:=${VERIFIABLY_PUBLIC_HOST:-}}"
+# VERIFIABLY_CALLBACK_URL is the browser-facing /auth/callback URL the
+# OIDC flow returns to. Set by deploy.sh through url_for() so it picks up
+# either:
+#   legacy mode  → http://<PUBLIC_HOST>:<port>/auth/callback
+#   pattern mode → https://verifiably.<domain>/auth/callback
+# If unset (e.g. running this script standalone), we synthesise the
+# legacy form below — keeps the old "PUBLIC_HOST is the only knob"
+# UX working for users who haven't switched to subdomain mode.
+: "${VERIFIABLY_CALLBACK_URL:=}"
 
 if [[ -z "$PUBLIC_HOST" ]]; then
   echo "  bootstrap-keycloak: PUBLIC_HOST / VERIFIABLY_PUBLIC_HOST unset — abort"
@@ -114,13 +123,18 @@ CURRENT=$(curl -sS -H "Authorization: Bearer $TOKEN" \
   "$KEYCLOAK_BASE/admin/realms/$KEYCLOAK_REALM/clients/$CLIENT_UUID")
 
 UPDATED=$(PUBLIC_HOST="$PUBLIC_HOST" VERIFIABLY_HOST_PORT="$VERIFIABLY_HOST_PORT" \
+  VERIFIABLY_CALLBACK_URL="$VERIFIABLY_CALLBACK_URL" \
   python3 -c '
 import json, os, sys
+from urllib.parse import urlparse
 host = os.environ["PUBLIC_HOST"]
 port = os.environ["VERIFIABLY_HOST_PORT"]
+callback = os.environ.get("VERIFIABLY_CALLBACK_URL", "").strip()
 
 client = json.load(sys.stdin)
 
+# Legacy entries — present in every deploy so a fallback /etc/hosts
+# entry pointed at the old host:port still completes a login.
 want_redirect = {
     f"http://{host}:{port}/*",
     f"https://{host}/*",
@@ -131,6 +145,18 @@ want_origins = {
     f"https://{host}",
     f"http://localhost:{port}",
 }
+
+# Pattern-mode entries — derived from VERIFIABLY_CALLBACK_URL when set.
+# Adds both the exact /* path-wildcard (Keycloak treats * as a path
+# component, NOT a hostname wildcard, so the literal subdomain has to
+# appear) and the bare origin for webOrigins. No-op when the callback
+# is just the legacy form (entries collapse into want_redirect by union).
+if callback:
+    p = urlparse(callback)
+    if p.scheme and p.netloc:
+        origin = f"{p.scheme}://{p.netloc}"
+        want_redirect.add(f"{origin}/*")
+        want_origins.add(origin)
 
 existing_redirect = set(client.get("redirectUris") or [])
 existing_origins  = set(client.get("webOrigins") or [])
@@ -146,4 +172,4 @@ curl -sS -X PUT -H "Authorization: Bearer $TOKEN" \
   "$KEYCLOAK_BASE/admin/realms/$KEYCLOAK_REALM/clients/$CLIENT_UUID" \
   -d "$UPDATED" > /dev/null
 
-echo "  $KEYCLOAK_CLIENT_ID redirectUris now include http://$PUBLIC_HOST:$VERIFIABLY_HOST_PORT/* + https://$PUBLIC_HOST/*"
+echo "  $KEYCLOAK_CLIENT_ID redirectUris now include http://$PUBLIC_HOST:$VERIFIABLY_HOST_PORT/* + https://$PUBLIC_HOST/*${VERIFIABLY_CALLBACK_URL:+ + ${VERIFIABLY_CALLBACK_URL%/auth/callback}/*}"
