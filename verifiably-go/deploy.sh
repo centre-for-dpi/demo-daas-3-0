@@ -1177,10 +1177,25 @@ render_wso2_deployment_toml() {
 _wso2_callback_regex() {
   local -a hosts=("localhost" "$VERIFIABLY_PUBLIC_HOST")
   if [[ -n "$VERIFIABLY_HOSTS_PATTERN" && -n "$VERIFIABLY_PUBLIC_DOMAIN" ]]; then
+    # verifiably.<domain> — the OAuth client redirect_uri (where WSO2
+    # ultimately sends users after the OIDC dance).
     local v_slug
     v_slug=$(resolve_slug verifiably)
     if [[ -n "$v_slug" ]]; then
       hosts+=("${v_slug}.${VERIFIABLY_PUBLIC_DOMAIN}")
+    fi
+    # wso2.<domain> — WSO2's INTERNAL callback chain. During self-
+    # registration the `callback` param points at WSO2's own
+    # authenticationendpoint/login.do (so signup → back-to-login →
+    # complete OAuth). Without whitelisting WSO2's external hostname
+    # the validator rejects, even though the redirect doesn't leave
+    # WSO2. Verified via http_access log:
+    #   POST /accountrecoveryendpoint/processregistration.do
+    #   referer: ?callback=https://wso2.bootcamp.cdpi.dev/authenticationendpoint/login.do?...
+    local w_slug
+    w_slug=$(resolve_slug wso2)
+    if [[ -n "$w_slug" ]]; then
+      hosts+=("${w_slug}.${VERIFIABLY_PUBLIC_DOMAIN}")
     fi
   fi
   local escaped joined=""
