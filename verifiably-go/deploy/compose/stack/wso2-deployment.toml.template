@@ -75,16 +75,16 @@ verification_email_validity = "1440"
 # at vc.bootcamp.cdpi.dev). Pinning an explicit whitelist with each host
 # regex-escaped (so dots stay literal) makes the validator pass.
 # $WSO2_CALLBACK_REGEX is rendered by deploy.sh's _wso2_callback_regex.
-callback_regex = "$WSO2_CALLBACK_REGEX"
+callback_regex = '$WSO2_CALLBACK_REGEX'
 
 # Same regex gates account-recovery password reset / username recovery
 # callbacks. Without it the "Forgot password" / "Forgot username" flows
 # hit the same rejection.
 [identity_mgt.recovery_notification_password]
-callback_regex = "$WSO2_CALLBACK_REGEX"
+callback_regex = '$WSO2_CALLBACK_REGEX'
 
 [identity_mgt.recovery_notification_username]
-callback_regex = "$WSO2_CALLBACK_REGEX"
+callback_regex = '$WSO2_CALLBACK_REGEX'
 
 [identity_mgt.password_reset_by_admin]
 enable_emailing = false
