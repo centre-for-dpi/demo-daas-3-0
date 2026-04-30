@@ -622,6 +622,11 @@ cmd_up() {
     render_public_caddyfile
   fi
 
+  # walt.id issuer-api + verifier-api baseUrls — must match the host
+  # the wallet sees, otherwise every OID4VP request bakes localhost into
+  # client_id / presentation_definition_uri and the wallet 500s.
+  render_waltid_service_confs
+
   bold "▶ Starting DPG services via docker compose"
   local -a services
   readarray -t services < <(scenario_services "$scenario")
@@ -640,6 +645,16 @@ cmd_up() {
   if [[ -n "$VERIFIABLY_HOSTS_PATTERN" ]]; then
     compose "${profile_args[@]}" up -d caddy-public
   fi
+  # If the walt.id service confs changed (subdomain ↔ legacy switch, or
+  # subdomain swap), the running issuer-api + verifier-api containers
+  # are still serving with the old baseUrl baked into ApplicationConfig.
+  # Restart them so the new conf is picked up. Idempotent — same baseUrl
+  # → same restarted-with-same-state outcome.
+  for svc in issuer-api verifier-api; do
+    if compose ps --services 2>/dev/null | grep -qx "$svc"; then
+      compose restart "$svc" >/dev/null 2>&1 || true
+    fi
+  done
 
   bold "▶ Waiting for services to be reachable"
   wait_for_services "$scenario"
@@ -1023,6 +1038,42 @@ stop_container() {
 # wso2-deployment.toml, which the compose file mounts read-only into
 # the wso2is container. Keeps the committed template portable while the
 # rendered file (gitignored) always matches the operator's .env.
+# render_waltid_service_confs writes the issuer-api + verifier-api
+# baseUrl conf files at deploy time. The committed templates use the
+# legacy localhost:port form which walt.id then bakes into every OID4VP
+# request URL (verifier client_id, presentation_definition_uri,
+# response_uri) and every credential offer URI (issuer offer URI). That
+# breaks the moment the wallet sits on a different host than the verifier
+# — including subdomain mode, where the wallet receives e.g.
+#   client_id=http://localhost:7003/openid4vc/verify
+# but localhost:7003 from inside the wallet container is the wallet
+# itself, not the verifier. Result: every verification + every wallet-
+# claim path 500s with "Could not find request parameters or object in
+# given parameters" or similar.
+#
+# In legacy mode we keep the localhost:port form (matches docker-internal
+# DNS where the wallet-api can reach :7003 via Caddy on the same network).
+# In subdomain mode we substitute the public subdomain so the wallet
+# resolves the URL externally through Caddy + DNS.
+#
+# Restarts both services after rewriting because they only read these
+# files at boot.
+render_waltid_service_confs() {
+  local issuer_conf="$SCRIPT_DIR/deploy/compose/stack/issuer-api/config/issuer-service.conf"
+  local verifier_conf="$SCRIPT_DIR/deploy/compose/stack/verifier-api/config/verifier-service.conf"
+  local issuer_url verifier_url
+  if [[ -n "$VERIFIABLY_HOSTS_PATTERN" ]]; then
+    issuer_url=$(url_for walt-issuer "$VERIFIABLY_PUBLIC_HOST" "$WALTID_ISSUER_PORT")
+    verifier_url=$(url_for walt-verifier "$VERIFIABLY_PUBLIC_HOST" "$WALTID_VERIFIER_PORT")
+  else
+    issuer_url="http://localhost:${WALTID_ISSUER_PORT:-7002}"
+    verifier_url="http://localhost:${WALTID_VERIFIER_PORT:-7003}"
+  fi
+  printf 'baseUrl = "%s"\n' "$issuer_url"   > "$issuer_conf"
+  printf 'baseUrl = "%s"\n' "$verifier_url" > "$verifier_conf"
+  green "  rendered walt.id service confs (issuer=$issuer_url, verifier=$verifier_url)"
+}
+
 render_wso2_deployment_toml() {
   local tpl="$SCRIPT_DIR/deploy/compose/stack/wso2-deployment.toml.template"
   local out="$SCRIPT_DIR/deploy/compose/stack/wso2-deployment.toml"
