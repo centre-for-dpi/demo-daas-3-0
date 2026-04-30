@@ -237,10 +237,19 @@ services:
       # The jwk-set-uri is proxied through our oidc-ui nginx which
       # rewrites /.well-known/jwks.json to esignet's internal path, so
       # that URL stays at the bare domain root.
-      - mosip_certify_authorization_url=http://${PUBLIC_HOST:-172.24.0.1}:${ESIGNET_PUBLIC_PORT:-3005}
-      - mosip_certify_authn_issuer_uri=http://${PUBLIC_HOST:-172.24.0.1}:${ESIGNET_PUBLIC_PORT:-3005}/v1/esignet
-      - mosip_certify_authn_jwk_set_uri=http://${PUBLIC_HOST:-172.24.0.1}:${ESIGNET_PUBLIC_PORT:-3005}/.well-known/jwks.json
-      - mosip_certify_oauth_issuer=http://${PUBLIC_HOST:-172.24.0.1}:${ESIGNET_PUBLIC_PORT:-3005}/v1/esignet
+      # ESIGNET_BASE_URL is the public form of eSignet that ends up in
+      # Inji Certify's well-known credential-issuer document under
+      # authorization_servers. The SPA reads that, fetches that URL's
+      # /.well-known/openid-configuration, and redirects users to its
+      # authorization_endpoint. So this URL MUST be browser-reachable.
+      # Subdomain mode → https://esignet.<domain> (Caddy fronts 443).
+      # Legacy mode  → http://<PUBLIC_HOST>:<ESIGNET_PUBLIC_PORT>.
+      # deploy.sh exports ESIGNET_BASE_URL through url_for; the fallback
+      # below covers the standalone-compose case.
+      - mosip_certify_authorization_url=${ESIGNET_BASE_URL:-http://${PUBLIC_HOST:-172.24.0.1}:${ESIGNET_PUBLIC_PORT:-3005}}
+      - mosip_certify_authn_issuer_uri=${ESIGNET_BASE_URL:-http://${PUBLIC_HOST:-172.24.0.1}:${ESIGNET_PUBLIC_PORT:-3005}}/v1/esignet
+      - mosip_certify_authn_jwk_set_uri=${ESIGNET_BASE_URL:-http://${PUBLIC_HOST:-172.24.0.1}:${ESIGNET_PUBLIC_PORT:-3005}}/.well-known/jwks.json
+      - mosip_certify_oauth_issuer=${ESIGNET_BASE_URL:-http://${PUBLIC_HOST:-172.24.0.1}:${ESIGNET_PUBLIC_PORT:-3005}}/v1/esignet
     volumes:
       - ./inji/certify/certify-default.properties:/home/mosip/config/certify-default.properties
       - ./inji/certify/certify-csvdp-farmer.properties:/home/mosip/config/certify-csvdp-farmer.properties
@@ -737,7 +746,7 @@ services:
       #   - Mimoto inside waltid_default: http://172.24.0.1:3005 →
       #     bridge gateway (host) → docker port forward → same target
       # Same URL, works in both contexts, no /etc/hosts edits needed.
-      MOSIP_ESIGNET_DOMAIN_URL: http://${PUBLIC_HOST:-172.24.0.1}:${ESIGNET_PUBLIC_PORT:-3005}
+      MOSIP_ESIGNET_DOMAIN_URL: ${ESIGNET_BASE_URL:-http://${PUBLIC_HOST:-172.24.0.1}:${ESIGNET_PUBLIC_PORT:-3005}}
       # Persist esignet's kernel keymanager PKCS12 keystore into a named
       # volume instead of the container's writable layer. Without this
       # override, esignet uses the local profile default of

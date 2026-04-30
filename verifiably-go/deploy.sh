@@ -662,6 +662,14 @@ cmd_up() {
     local _injiweb_root_url
     _injiweb_root_url=$(url_for inji-web "$VERIFIABLY_PUBLIC_HOST" "$INJIWEB_UI_PUBLIC_PORT")
     export MIMOTO_URL="${_injiweb_root_url}/v1/mimoto"
+    # ESIGNET_BASE_URL ends up in Inji Certify's well-known credential-
+    # issuer document under authorization_servers, AND in eSignet's own
+    # MOSIP_ESIGNET_DOMAIN_URL (which it advertises in its /.well-known/
+    # openid-configuration). Both paths feed the SPA's /authorize redirect
+    # URL — without the override the SPA was sending users to
+    # http://<PUBLIC_HOST>:3005/authorize which isn't externally reachable
+    # in subdomain mode (only Caddy on 443).
+    export ESIGNET_BASE_URL=$(url_for esignet "$VERIFIABLY_PUBLIC_HOST" "$ESIGNET_PUBLIC_PORT")
   fi
 
   bold "▶ Starting DPG services via docker compose"
