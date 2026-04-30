@@ -1122,17 +1122,54 @@ render_wso2_deployment_toml() {
     hostname="$VERIFIABLY_PUBLIC_HOST"
     proxy_port=""
   fi
-  # Two-pass render: envsubst fills in hostname + proxy_port placeholders;
-  # awk strips the COND_PROXYPORT_* block when proxy_port is empty so the
-  # rendered file is valid TOML in either mode.
+  # WSO2_CALLBACK_REGEX gates self-registration + account-recovery callback
+  # validation. Default whitelist: localhost (laptop dev), the legacy
+  # public host (port-per-service mode), and — when in subdomain mode —
+  # the verifiably subdomain too. Each literal is regex-escaped so '.'
+  # in hostnames doesn't become a wildcard. Anchored loosely (".*" tail)
+  # so callbacks with query parameters or trailing paths still match.
+  local callback_regex
+  callback_regex=$(_wso2_callback_regex)
+  # Two-pass render: envsubst fills in hostname + proxy_port + callback_regex
+  # placeholders; awk strips the COND_PROXYPORT_* block when proxy_port is
+  # empty so the rendered file is valid TOML in either mode.
   WSO2_HOSTNAME="$hostname" WSO2_PROXY_PORT="$proxy_port" \
-    envsubst '$WSO2_HOSTNAME $WSO2_PROXY_PORT' < "$tpl" |
+    WSO2_CALLBACK_REGEX="$callback_regex" \
+    envsubst '$WSO2_HOSTNAME $WSO2_PROXY_PORT $WSO2_CALLBACK_REGEX' < "$tpl" |
   awk -v keep="${proxy_port:+1}" '
     /COND_PROXYPORT_OPEN/  { skip = !keep; next }
     /COND_PROXYPORT_CLOSE/ { skip = 0;     next }
     !skip { print }
   ' > "$out"
   green "  rendered wso2-deployment.toml (hostname=$hostname${proxy_port:+ proxyPort=$proxy_port})"
+}
+
+# _wso2_callback_regex emits the regex that wso2-deployment.toml's
+# self-registration / recovery callback validators use. Always allows
+# localhost + the legacy VERIFIABLY_PUBLIC_HOST; adds the verifiably
+# subdomain when in subdomain mode. Each literal is regex-escaped so
+# dots in hostnames stay literal. Format mirrors WSO2's expectations:
+# a single regex string, no anchors needed (WSO2 wraps it in a full
+# match itself).
+_wso2_callback_regex() {
+  local -a hosts=("localhost" "$VERIFIABLY_PUBLIC_HOST")
+  if [[ -n "$VERIFIABLY_HOSTS_PATTERN" && -n "$VERIFIABLY_PUBLIC_DOMAIN" ]]; then
+    local v_slug
+    v_slug=$(resolve_slug verifiably)
+    if [[ -n "$v_slug" ]]; then
+      hosts+=("${v_slug}.${VERIFIABLY_PUBLIC_DOMAIN}")
+    fi
+  fi
+  local escaped joined=""
+  for h in "${hosts[@]}"; do
+    [[ -z "$h" ]] && continue
+    # Escape regex specials in the host literal. We escape: . \ ^ $ + ? ( ) [ ] { } | * /
+    escaped=$(printf '%s' "$h" | sed -e 's/[][\\.*^$+?(){}|/]/\\&/g')
+    [[ -n "$joined" ]] && joined+="|"
+    joined+="$escaped"
+  done
+  # Allow http or https + any port + any path/query suffix.
+  printf 'https?://(%s)(:[0-9]+)?/.*' "$joined"
 }
 
 # render_public_caddyfile generates Caddyfile.public from the resolved
