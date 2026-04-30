@@ -68,23 +68,27 @@ allow_self_registration = true
 lock_on_creation = false
 enable_recaptcha = false
 verification_email_validity = "1440"
-# WSO2 IS 7 validates the `callback` parameter on /processregistration.do
-# against this regex. Default ".*" looks permissive but WSO2's runtime
-# concatenates it with extra prefix-matching that strips many legitimate
-# URLs (the user-reported "Configured callback URL format does not match"
-# at vc.bootcamp.cdpi.dev). Pinning an explicit whitelist with each host
-# regex-escaped (so dots stay literal) makes the validator pass.
-# $WSO2_CALLBACK_REGEX is rendered by deploy.sh's _wso2_callback_regex.
-callback_regex = '$WSO2_CALLBACK_REGEX'
+# WSO2 IS 7 deployment.toml-to-runtime mapping (verified against the
+# Jinja2 templates under /repository/resources/conf/templates/) maps
+# this key to <CallbackRegex> in identity.xml, which is what
+# /processregistration.do validates the `callback` query parameter
+# against. The KEY NAME IS callback_url (counter-intuitive — the
+# documentation in some places calls it callback_regex, but WSO2 IS 7's
+# Jinja templates only consume callback_url). Setting callback_regex
+# instead silently fell through to the default — that was the source of
+# user-reported "Configured callback URL format does not match" at
+# vc.bootcamp.cdpi.dev/auth/callback.
+#
+# Single quotes (TOML literal string) prevent the parser from rejecting
+# regex \. escapes as invalid string-escape sequences.
+callback_url = '$WSO2_CALLBACK_REGEX'
 
-# Same regex gates account-recovery password reset / username recovery
-# callbacks. Without it the "Forgot password" / "Forgot username" flows
-# hit the same rejection.
-[identity_mgt.recovery_notification_password]
-callback_regex = '$WSO2_CALLBACK_REGEX'
-
-[identity_mgt.recovery_notification_username]
-callback_regex = '$WSO2_CALLBACK_REGEX'
+# Same regex gates account-recovery (password reset, username recovery,
+# email verification). WSO2 IS 7 collapses these under a single
+# [identity_mgt.recovery] block — not two separate password/username
+# blocks. Same toml-to-runtime mapping verified.
+[identity_mgt.recovery]
+callback_url = '$WSO2_CALLBACK_REGEX'
 
 [identity_mgt.password_reset_by_admin]
 enable_emailing = false
