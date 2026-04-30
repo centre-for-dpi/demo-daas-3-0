@@ -682,11 +682,35 @@ services:
         condition: service_healthy
     ports:
       - "8083:8082"     # 8082 is already taken by inji-verify-service
+    # Skip the upstream configure_start.sh — its `if profile != "local"`
+    # check matches `default,local` literally and runs an unzip+install
+    # branch that renames `client/` to `hsm-client/` on first boot, then
+    # fails with "Directory not empty" on every restart because the
+    # rename leaves stale state in the writable layer. We can't drop the
+    # `default` profile (Spring needs it for properties like
+    # `mosip.kernel.keygenerator.symmetric-algorithm-name`), so instead
+    # bypass the script and run the JAR directly. The HSM install is
+    # unnecessary anyway — `local` profile uses the software keystore at
+    # /home/mosip/keystore/mock_local.p12.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        exec java -jar
+        -Dloader.path=$${loader_path_env}
+        -Dspring.cloud.config.label=$${spring_config_label_env}
+        -Dspring.profiles.active=$${active_profile_env}
+        -Dspring.cloud.config.uri=$${spring_config_url_env}
+        mock-identity-system.jar
     environment:
       container_user: mosip
       active_profile_env: default,local
       download_hsm_client: "false"
       enable_esignet_artifactory: "false"
+      # Same JDK 11.0.16 + cgroupv2 NPE that hits eSignet and Mimoto on
+      # this host: ProcessorMetrics → CgroupV2Subsystem.getInstance NPE
+      # crashes Spring Boot during context init. Disable container-aware
+      # resource probing so the metrics binders fall back to host APIs.
+      JAVA_TOOL_OPTIONS: "-XX:-UseContainerSupport"
       SPRING_DATASOURCE_URL: jdbc:postgresql://injiweb-postgres:5432/mosip_mockidentitysystem
       # Connect as the Postgres superuser the init scripts created tables
       # under. The upstream esignet_init.sql doesn't seed per-app roles,
