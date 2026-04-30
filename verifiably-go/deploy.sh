@@ -649,6 +649,21 @@ cmd_up() {
   _verifiably_root_url=$(url_for verifiably "$VERIFIABLY_PUBLIC_HOST" "$VERIFIABLY_HOST_PORT")
   export SIGNUP_REDIRECT_URL="${_verifiably_root_url}/auth"
 
+  # MIMOTO_URL is read by the Inji Web React SPA via env.config.js at
+  # runtime. The SPA POSTs to ${MIMOTO_URL}/issuers etc. — but this
+  # routes through the SPA's own host (injiweb-ui's nginx proxies
+  # /v1/mimoto/* to mimoto:8099 internally, keeping requests same-origin
+  # to avoid CORS). So MIMOTO_URL is the INJI-WEB subdomain, not the
+  # mimoto subdomain. In subdomain mode the SPA can also hit
+  # mimoto.<domain> directly via Caddy if CORS is set up — but the
+  # inji-web-→-internal-mimoto path is what upstream uses and what the
+  # nginx config supports out of the box.
+  if [[ -n "$VERIFIABLY_HOSTS_PATTERN" ]]; then
+    local _injiweb_root_url
+    _injiweb_root_url=$(url_for inji-web "$VERIFIABLY_PUBLIC_HOST" "$INJIWEB_UI_PUBLIC_PORT")
+    export MIMOTO_URL="${_injiweb_root_url}/v1/mimoto"
+  fi
+
   bold "▶ Starting DPG services via docker compose"
   local -a services
   readarray -t services < <(scenario_services "$scenario")

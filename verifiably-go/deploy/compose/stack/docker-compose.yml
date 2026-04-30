@@ -919,7 +919,15 @@ services:
       - "${INJIWEB_UI_PUBLIC_PORT:-3004}:3004"
     environment:
       DEFAULT_LANG: en
-      MIMOTO_URL: http://${PUBLIC_HOST:-localhost}:${INJIWEB_UI_PUBLIC_PORT:-3004}/v1/mimoto
+      # MIMOTO_URL is what the React SPA reads from /env.config.js at
+      # runtime to know where to call for the issuer list, OID4VCI offer
+      # resolution, etc. In legacy mode this is the public host:port; in
+      # subdomain mode deploy.sh exports MIMOTO_URL to the mimoto
+      # subdomain (e.g. https://mimoto.bootcamp.cdpi.dev/v1/mimoto)
+      # before compose-up so requests hit Caddy → injiweb-mimoto on the
+      # right path. Without the override, the SPA hits :3004 which isn't
+      # exposed externally in subdomain mode and shows "No issuers found".
+      MIMOTO_URL: ${MIMOTO_URL:-http://${PUBLIC_HOST:-localhost}:${INJIWEB_UI_PUBLIC_PORT:-3004}/v1/mimoto}
       IGNORED_ISSUER_IDS: MockMdl
     volumes:
       # The UI container reads the issuer list directly from these JSON
