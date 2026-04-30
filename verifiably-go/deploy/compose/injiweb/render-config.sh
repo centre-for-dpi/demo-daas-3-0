@@ -29,7 +29,39 @@ fi
 : "${PUBLIC_HOST:=172.24.0.1}"
 : "${ESIGNET_PUBLIC_PORT:=3005}"
 : "${INJIWEB_UI_PUBLIC_PORT:=3004}"
-export PUBLIC_HOST ESIGNET_PUBLIC_PORT INJIWEB_UI_PUBLIC_PORT
+: "${VERIFIABLY_HOSTS_PATTERN:=}"
+: "${VERIFIABLY_PUBLIC_DOMAIN:=}"
+
+# resolve_subdomain mirrors deploy.sh's resolve_slug — VERIFIABLY_SLUG_<NAME>
+# overrides take precedence so the operator's custom labels (e.g.
+# VERIFIABLY_SLUG_INJI_WEB=wallet → wallet.<domain>) flow through here too.
+resolve_subdomain() {
+    local default="$1"
+    local upper var
+    upper=$(printf '%s' "$default" | tr '[:lower:]-' '[:upper:]_')
+    var="VERIFIABLY_SLUG_${upper}"
+    if [[ -v "$var" ]] && [[ -n "${!var}" ]]; then
+        printf '%s' "${!var}"
+    else
+        printf '%s' "$default"
+    fi
+}
+
+# In subdomain mode the inji-web redirect_uri + esignet token endpoint
+# point at the public subdomains (no port — Caddy fronts both on 443).
+# In legacy mode they're the host:port form, unchanged from before.
+# Without this fix Mimoto returns "No issuers found" because it can't
+# reach the eSignet token endpoint at the legacy URL when the user is
+# browsing via a public domain.
+if [[ -n "$VERIFIABLY_HOSTS_PATTERN" && -n "$VERIFIABLY_PUBLIC_DOMAIN" ]]; then
+    INJIWEB_REDIRECT_URI="https://$(resolve_subdomain inji-web).${VERIFIABLY_PUBLIC_DOMAIN}/redirect"
+    ESIGNET_TOKEN_URL="https://$(resolve_subdomain esignet).${VERIFIABLY_PUBLIC_DOMAIN}/v1/esignet/oauth/v2/token"
+else
+    INJIWEB_REDIRECT_URI="http://${PUBLIC_HOST}:${INJIWEB_UI_PUBLIC_PORT}/redirect"
+    ESIGNET_TOKEN_URL="http://${PUBLIC_HOST}:${ESIGNET_PUBLIC_PORT}/v1/esignet/oauth/v2/token"
+fi
+export PUBLIC_HOST ESIGNET_PUBLIC_PORT INJIWEB_UI_PUBLIC_PORT \
+       INJIWEB_REDIRECT_URI ESIGNET_TOKEN_URL
 
 TEMPLATE=config/mimoto-issuers-config.json.template
 OUTPUT=config/mimoto-issuers-config.json
@@ -44,10 +76,9 @@ if ! command -v envsubst >/dev/null; then
     exit 1
 fi
 
-envsubst '${PUBLIC_HOST} ${ESIGNET_PUBLIC_PORT} ${INJIWEB_UI_PUBLIC_PORT}' \
+envsubst '${PUBLIC_HOST} ${ESIGNET_PUBLIC_PORT} ${INJIWEB_UI_PUBLIC_PORT} ${INJIWEB_REDIRECT_URI} ${ESIGNET_TOKEN_URL}' \
     < "$TEMPLATE" > "$OUTPUT"
 
 echo "rendered $OUTPUT with:"
-echo "  PUBLIC_HOST=$PUBLIC_HOST"
-echo "  ESIGNET_PUBLIC_PORT=$ESIGNET_PUBLIC_PORT"
-echo "  INJIWEB_UI_PUBLIC_PORT=$INJIWEB_UI_PUBLIC_PORT"
+echo "  INJIWEB_REDIRECT_URI=$INJIWEB_REDIRECT_URI"
+echo "  ESIGNET_TOKEN_URL=$ESIGNET_TOKEN_URL"

@@ -603,6 +603,17 @@ cmd_up() {
       cp "$cert_src" "$cert_dst"
       green "  seeded $cert_dst from $cert_src"
     fi
+    # Render mimoto-issuers-config.json with the right URLs for the
+    # current mode. Without this Mimoto's redirect_uri /
+    # authorization_audience point at the legacy host:port form, and
+    # subdomain-mode users see "No issuers found" + the eSignet token
+    # exchange fails because the audience claim doesn't match what
+    # eSignet advertises in its discovery document.
+    bold "▶ Rendering mimoto-issuers-config.json"
+    ( cd "$SCRIPT_DIR/deploy/compose/injiweb" && \
+      VERIFIABLY_HOSTS_PATTERN="$VERIFIABLY_HOSTS_PATTERN" \
+      VERIFIABLY_PUBLIC_DOMAIN="$VERIFIABLY_PUBLIC_DOMAIN" \
+      ./render-config.sh ) || red "  mimoto config render failed (proceeding)"
   fi
 
   # Render per-deployment configs the containers will mount. WSO2's
@@ -626,6 +637,17 @@ cmd_up() {
   # the wallet sees, otherwise every OID4VP request bakes localhost into
   # client_id / presentation_definition_uri and the wallet 500s.
   render_waltid_service_confs
+
+  # WSO2's accountrecoveryendpoint signup-success page is patched at
+  # container start with a meta-refresh redirect; the URL it points at
+  # is SIGNUP_REDIRECT_URL. Resolved through url_for so subdomain mode
+  # ends up at https://vc.<domain>/auth instead of the legacy
+  # host:port form. Without this the user signs up via WSO2 then the
+  # browser tries to navigate to a port that isn't published externally
+  # in subdomain mode.
+  local _verifiably_root_url
+  _verifiably_root_url=$(url_for verifiably "$VERIFIABLY_PUBLIC_HOST" "$VERIFIABLY_HOST_PORT")
+  export SIGNUP_REDIRECT_URL="${_verifiably_root_url}/auth"
 
   bold "▶ Starting DPG services via docker compose"
   local -a services

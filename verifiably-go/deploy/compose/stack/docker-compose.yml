@@ -134,7 +134,12 @@ services:
       # once the WAR is extracted, and injects a meta-refresh tag
       # pointing at this URL. Re-rendered on every ./deploy.sh up so
       # a host change propagates to the redirect target.
-      SIGNUP_REDIRECT_URL: "http://${VERIFIABLY_PUBLIC_HOST:-172.24.0.1}:${VERIFIABLY_HOST_PORT:-8080}/auth"
+      # Resolved by deploy.sh (subdomain mode → https://vc.<domain>/auth,
+      # legacy mode → http://<host>:<port>/auth) and exported into the
+      # compose env. The default fallback below covers the standalone
+      # case where someone runs `docker compose up wso2is` without
+      # deploy.sh exporting it.
+      SIGNUP_REDIRECT_URL: "${SIGNUP_REDIRECT_URL:-http://${VERIFIABLY_PUBLIC_HOST:-172.24.0.1}:${VERIFIABLY_HOST_PORT:-8080}/auth}"
     # Mount our patched deployment.toml so WSO2 advertises the public
     # hostname + proxy port in its OIDC metadata. Without this, the
     # container uses its baked-in config whose hostname doesn't match
