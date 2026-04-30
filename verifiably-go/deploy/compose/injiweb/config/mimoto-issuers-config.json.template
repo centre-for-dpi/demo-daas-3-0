@@ -23,9 +23,9 @@
       "proxy_token_endpoint": "${ESIGNET_TOKEN_URL}",
       "client_alias": "wallet-demo-client",
       "qr_code_type": "EmbeddedVC",
-      "credential_issuer_host": "http://certify-nginx",
+      "credential_issuer_host": "http://certify-nginx/v1/certify",
       "enabled": "true",
-      "wellknown_endpoint": "http://certify-nginx/.well-known/openid-credential-issuer?client=mimoto"
+      "wellknown_endpoint": "http://certify-nginx/v1/certify/.well-known/openid-credential-issuer?client=mimoto"
     },
     {
       "issuer_id": "MockMdl",
@@ -50,9 +50,9 @@
       "proxy_token_endpoint": "${ESIGNET_TOKEN_URL}",
       "client_alias": "wallet-demo-client",
       "qr_code_type": "EmbeddedVC",
-      "credential_issuer_host": "http://certify-nginx",
+      "credential_issuer_host": "http://certify-nginx/v1/certify",
       "enabled": "true",
-      "wellknown_endpoint": "http://certify-nginx/.well-known/openid-credential-issuer?client=mimoto"
+      "wellknown_endpoint": "http://certify-nginx/v1/certify/.well-known/openid-credential-issuer?client=mimoto"
     }
   ]
 }
