@@ -1085,35 +1085,43 @@ stop_container() {
 # rendered file (gitignored) always matches the operator's .env.
 # render_waltid_service_confs writes the issuer-api + verifier-api
 # baseUrl conf files at deploy time. The committed templates use the
-# legacy localhost:port form which walt.id then bakes into every OID4VP
-# request URL (verifier client_id, presentation_definition_uri,
-# response_uri) and every credential offer URI (issuer offer URI). That
-# breaks the moment the wallet sits on a different host than the verifier
-# — including subdomain mode, where the wallet receives e.g.
-#   client_id=http://localhost:7003/openid4vc/verify
-# but localhost:7003 from inside the wallet container is the wallet
-# itself, not the verifier. Result: every verification + every wallet-
+# Phase-1.2 HOCON env-substitution form `${SERVICE_HOST}:${ISSUER_API_PORT}`
+# (resp. VERIFIER_API_PORT) so the same files back both compose and
+# the Helm chart's ConfigMap. walt.id resolves those at startup against
+# whatever the env (compose or k8s Deployment) supplies for SERVICE_HOST
+# and *_API_PORT.
+#
+# In subdomain mode that committed form is wrong: walt.id bakes the
+# resolved baseUrl into every OID4VP request URL (verifier client_id,
+# presentation_definition_uri, response_uri) and every credential offer
+# URI (issuer offer URI). With SERVICE_HOST=localhost, the wallet-api
+# container receives e.g. client_id=http://localhost:7003/openid4vc/verify
+# and "localhost:7003" from inside its own network namespace is the
+# wallet, not the verifier. Result: every verification + every wallet-
 # claim path 500s with "Could not find request parameters or object in
 # given parameters" or similar.
 #
-# In legacy mode we keep the localhost:port form (matches docker-internal
-# DNS where the wallet-api can reach :7003 via Caddy on the same network).
-# In subdomain mode we substitute the public subdomain so the wallet
-# resolves the URL externally through Caddy + DNS.
+# So in subdomain mode we overwrite the committed file with the public
+# subdomain URL (resolved through url_for + Caddy + DNS). In legacy mode
+# we leave the committed `${VAR}` form untouched — walt.id's HOCON
+# substitution against compose's env (SERVICE_HOST=localhost,
+# *_API_PORT) produces the same `http://localhost:<port>` literal that
+# the previous override wrote, and the wallet-api container reaches
+# host:port via the docker-compose extra_hosts: "localhost:host-gateway"
+# entry. Skipping the write in legacy mode keeps the committed file
+# pristine across `up` runs (no working-tree noise).
 #
 # Restarts both services after rewriting because they only read these
 # files at boot.
 render_waltid_service_confs() {
+  if [[ -z "$VERIFIABLY_HOSTS_PATTERN" ]]; then
+    return 0
+  fi
   local issuer_conf="$SCRIPT_DIR/deploy/k8s/config/issuer/issuer-service.conf"
   local verifier_conf="$SCRIPT_DIR/deploy/k8s/config/verifier/verifier-service.conf"
   local issuer_url verifier_url
-  if [[ -n "$VERIFIABLY_HOSTS_PATTERN" ]]; then
-    issuer_url=$(url_for walt-issuer "$VERIFIABLY_PUBLIC_HOST" "$WALTID_ISSUER_PORT")
-    verifier_url=$(url_for walt-verifier "$VERIFIABLY_PUBLIC_HOST" "$WALTID_VERIFIER_PORT")
-  else
-    issuer_url="http://localhost:${WALTID_ISSUER_PORT:-7002}"
-    verifier_url="http://localhost:${WALTID_VERIFIER_PORT:-7003}"
-  fi
+  issuer_url=$(url_for walt-issuer "$VERIFIABLY_PUBLIC_HOST" "$WALTID_ISSUER_PORT")
+  verifier_url=$(url_for walt-verifier "$VERIFIABLY_PUBLIC_HOST" "$WALTID_VERIFIER_PORT")
   printf 'baseUrl = "%s"\n' "$issuer_url"   > "$issuer_conf"
   printf 'baseUrl = "%s"\n' "$verifier_url" > "$verifier_conf"
   green "  rendered walt.id service confs (issuer=$issuer_url, verifier=$verifier_url)"
