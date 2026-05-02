@@ -1,3 +1,10 @@
+# Files Docker should not copy into the build context.
+#
+# Critical: the Dockerfile does `COPY deploy ./docs-src/deploy` to ship the
+# deploy/ docs into the in-app browser. Without these exclusions, every
+# Terraform provider cache (~150–200 MiB each) under deploy/k8s/terraform/
+# lands in the image, ballooning it from ~50 MiB to ~1.2 GiB.
+
 .git
 .gitignore
 .dockerignore
@@ -5,3 +12,35 @@ Dockerfile
 node_modules
 e2e
 *.tar.gz
+
+# Local-build artefacts that don't belong in the image.
+# `server` is the macOS binary from `go build ./cmd/server` at the repo
+# root — a darwin/arm64 executable that wouldn't run in the container
+# anyway.
+server
+*.test
+coverage.out
+
+# Terraform state, plan artefacts, and provider caches.
+**/.terraform
+**/.terraform.lock.hcl
+**/*.tfstate
+**/*.tfstate.backup
+**/*.tfplan
+deploy/k8s/terraform/.tfstate
+deploy/k8s/terraform/**/.tfstate
+
+# Helm dependency archives — the umbrella chart pulls these in via
+# `helm dep build`; in the image they're redundant copies.
+**/charts/*.tgz
+deploy/k8s/helm/**/charts/*.tgz
+
+# Local secrets and runtime config.
+.env
+.env.local
+*.kubeconfig
+
+# Editor / OS noise.
+.DS_Store
+.idea/
+.vscode/

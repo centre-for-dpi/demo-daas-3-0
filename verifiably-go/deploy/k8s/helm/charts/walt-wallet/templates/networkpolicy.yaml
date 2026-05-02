@@ -1,0 +1,35 @@
+{{- if .Values.wallet.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "walt-wallet.fullname" . }}
+  labels: {{- include "walt-wallet.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "walt-wallet.selectorLabels" . | nindent 6 }}
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        {{- toYaml .Values.wallet.networkPolicy.allowFrom | nindent 8 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.wallet.service.port }}
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels: { k8s-app: kube-dns }
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Outbound HTTPS — DPG calls, OCSP/CRL, OIDC discovery, etc.
+    - to: [{ ipBlock: { cidr: 0.0.0.0/0 } }]
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80
+{{- end }}

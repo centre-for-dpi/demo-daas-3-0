@@ -1,0 +1,26 @@
+{{- if .Values.cnpg.enabled }}
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ .Values.cnpg.name }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: waltid
+spec:
+  instances: {{ .Values.cnpg.instances }}
+  storage:
+    size: {{ .Values.cnpg.storage.size | quote }}
+    {{- with .Values.cnpg.storage.storageClass }}
+    storageClass: {{ . | quote }}
+    {{- end }}
+  bootstrap:
+    initdb:
+      database: {{ .Values.cnpg.database | quote }}
+      owner:    {{ .Values.cnpg.owner    | quote }}
+  {{- if .Values.cnpg.superuserSecret }}
+  superuserSecret:
+    name: {{ .Values.cnpg.superuserSecret | quote }}
+  {{- end }}
+  monitoring:
+    enablePodMonitor: true
+{{- end }}

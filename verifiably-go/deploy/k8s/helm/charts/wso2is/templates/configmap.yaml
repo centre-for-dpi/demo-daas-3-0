@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "wso2is.fullname" . }}-config
+  labels: {{- include "wso2is.labels" . | nindent 4 }}
+data:
+  # WSO2 IS deployment.toml — minimal subset; full template was in
+  # deploy/compose/stack/wso2-deployment.toml.template. Public hostname +
+  # proxy port substituted from values at chart-render time.
+  deployment.toml: |
+    [server]
+    hostname = {{ include "wso2is.host" . | default "localhost" | quote }}
+    [transport.https.properties]
+    proxyPort = "443"
+    [super_admin]
+    username = {{ .Values.wso2is.adminUser | quote }}
+    create_admin_account = true
+
+  # Background patcher — see compose entry. Injects a meta-refresh into the
+  # accountrecoveryendpoint signup-success JSP so users return to verifiably-go.
+  patch-signup-redirect.sh: |
+    #!/bin/bash
+    set -eu
+    JSP="/home/wso2carbon/wso2is-7.0.0/repository/deployment/server/webapps/accountrecoveryendpoint/recoveryflowcomplete.jsp"
+    until [ -f "$JSP" ]; do sleep 5; done
+    if ! grep -q "verifiably-redirect" "$JSP"; then
+      sed -i '/<head>/a <meta http-equiv="refresh" content="3; url='"${SIGNUP_REDIRECT_URL:-/}"'" id="verifiably-redirect">' "$JSP"
+    fi

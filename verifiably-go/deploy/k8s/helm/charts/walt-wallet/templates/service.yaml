@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "walt-wallet.fullname" . }}
+  labels: {{- include "walt-wallet.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.wallet.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector: {{- include "walt-wallet.selectorLabels" . | nindent 4 }}

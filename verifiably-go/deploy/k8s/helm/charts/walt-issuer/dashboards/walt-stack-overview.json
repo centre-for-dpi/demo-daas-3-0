@@ -1,0 +1,45 @@
+{
+  "title": "Walt.id Stack — Overview",
+  "uid": "walt-stack-overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["waltid", "verifiably"],
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Request rate (per service)",
+      "targets": [
+        {
+          "expr": "sum by (job) (rate(http_server_requests_seconds_count{namespace=\"waltid\"}[5m]))",
+          "legendFormat": "{{job}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "p99 latency",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, job) (rate(http_server_requests_seconds_bucket{namespace=\"waltid\"}[5m])))",
+          "legendFormat": "{{job}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "5xx error rate",
+      "targets": [
+        {
+          "expr": "sum by (job) (rate(http_server_requests_seconds_count{namespace=\"waltid\",status=~\"5..\"}[5m]))",
+          "legendFormat": "{{job}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 }
+    }
+  ]
+}

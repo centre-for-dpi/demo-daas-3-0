@@ -1,0 +1,53 @@
+# Production-leaning overrides — apply on top of values.yaml.
+global:
+  clusterIssuer: letsencrypt
+
+cnpg:
+  instances: 3
+  storage:
+    size: 50Gi
+
+walt-issuer:
+  issuer:
+    replicas: 3
+    hpa:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 8
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 2
+
+walt-verifier:
+  verifier:
+    replicas: 3
+    hpa:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 12
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 2
+
+# wallet stays at replicas: 1 until Phase 6.2 verifies horizontal-scale safety.
+walt-wallet:
+  wallet:
+    persistence:
+      size: 50Gi
+
+verifiably-go:
+  app:
+    replicas: 3
+    hpa:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 10
+    podDisruptionBudget:
+      minAvailable: 2
+
+keycloak:
+  keycloak:
+    auth:
+      existingSecret: keycloak-admin
+    postgresql:
+      enabled: false                # use the platform CNPG cluster

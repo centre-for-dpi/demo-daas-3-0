@@ -1,0 +1,21 @@
+{{- if .Values.wallet.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "walt-wallet.fullname" . }}
+  labels: {{- include "walt-wallet.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "walt-wallet.fullname" . }}
+  minReplicas: {{ .Values.wallet.hpa.minReplicas }}
+  maxReplicas: {{ .Values.wallet.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.wallet.hpa.targetCPUUtilizationPercentage }}
+{{- end }}

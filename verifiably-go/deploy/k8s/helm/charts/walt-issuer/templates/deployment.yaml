@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "walt-issuer.fullname" . }}
+  labels: {{- include "walt-issuer.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.issuer.hpa.enabled }}
+  replicas: {{ .Values.issuer.replicas }}
+  {{- end }}
+  selector:
+    matchLabels: {{- include "walt-issuer.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "walt-issuer.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Re-roll on config changes.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "walt-issuer.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.issuer.serviceAccount.automountServiceAccountToken }}
+      securityContext: {{- toYaml .Values.issuer.podSecurityContext | nindent 8 }}
+      containers:
+        - name: issuer
+          image: "{{ .Values.issuer.image.repository }}:{{ .Values.issuer.image.tag }}"
+          imagePullPolicy: {{ .Values.issuer.image.pullPolicy }}
+          securityContext: {{- toYaml .Values.issuer.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.issuer.service.port }}
+              protocol: TCP
+          env:
+            # Walt.id HOCON consumes ${VAR} substitutions at config-load time.
+            - name: SERVICE_HOST
+              value: {{ include "walt-issuer.ingressHost" . | default "localhost" | quote }}
+            - name: ISSUER_API_PORT
+              value: {{ .Values.issuer.service.port | quote }}
+          {{- if .Values.issuer.signingKey.existingSecret }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.issuer.signingKey.existingSecret }}
+          {{- end }}
+          livenessProbe:  {{- toYaml .Values.issuer.livenessProbe  | nindent 12 }}
+          readinessProbe: {{- toYaml .Values.issuer.readinessProbe | nindent 12 }}
+          resources: {{- toYaml .Values.issuer.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /waltid-issuer-api/config
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "walt-issuer.fullname" . }}-config

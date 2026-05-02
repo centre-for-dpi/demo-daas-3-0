@@ -1,0 +1,16 @@
+{{- if .Values.wallet.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "walt-wallet.fullname" . }}
+  labels:
+    {{- include "walt-wallet.labels" . | nindent 4 }}
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels: {{- include "walt-wallet.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: http
+      path: {{ .Values.wallet.serviceMonitor.path }}
+      interval: {{ .Values.wallet.serviceMonitor.interval }}
+{{- end }}

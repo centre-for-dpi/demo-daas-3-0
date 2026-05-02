@@ -1,0 +1,11 @@
+{{- if .Values.app.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "verifiably-go.fullname" . }}
+  labels: {{- include "verifiably-go.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.app.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels: {{- include "verifiably-go.selectorLabels" . | nindent 6 }}
+{{- end }}

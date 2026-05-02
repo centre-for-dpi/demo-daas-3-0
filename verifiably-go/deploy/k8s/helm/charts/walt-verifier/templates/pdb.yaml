@@ -1,0 +1,11 @@
+{{- if .Values.verifier.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "walt-verifier.fullname" . }}
+  labels: {{- include "walt-verifier.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.verifier.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels: {{- include "walt-verifier.selectorLabels" . | nindent 6 }}
+{{- end }}

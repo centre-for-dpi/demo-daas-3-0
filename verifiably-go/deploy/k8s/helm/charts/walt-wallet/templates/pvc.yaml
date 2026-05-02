@@ -1,0 +1,15 @@
+{{- if .Values.wallet.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "walt-wallet.fullname" . }}-data
+  labels: {{- include "walt-wallet.labels" . | nindent 4 }}
+spec:
+  accessModes: [ {{ .Values.wallet.persistence.accessMode | quote }} ]
+  resources:
+    requests:
+      storage: {{ .Values.wallet.persistence.size | quote }}
+  {{- with .Values.wallet.persistence.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+{{- end }}

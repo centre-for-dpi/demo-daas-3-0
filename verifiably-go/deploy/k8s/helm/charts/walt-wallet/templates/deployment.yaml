@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "walt-wallet.fullname" . }}
+  labels: {{- include "walt-wallet.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.wallet.hpa.enabled }}
+  replicas: {{ .Values.wallet.replicas }}
+  {{- end }}
+  strategy:
+    # Wallet holds DB connections + key state; Recreate avoids old/new
+    # pods racing on encrypted data during rollouts.
+    type: Recreate
+  selector:
+    matchLabels: {{- include "walt-wallet.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "walt-wallet.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "walt-wallet.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.wallet.serviceAccount.automountServiceAccountToken }}
+      securityContext: {{- toYaml .Values.wallet.podSecurityContext | nindent 8 }}
+      containers:
+        - name: wallet
+          image: "{{ .Values.wallet.image.repository }}:{{ .Values.wallet.image.tag }}"
+          imagePullPolicy: {{ .Values.wallet.image.pullPolicy }}
+          securityContext: {{- toYaml .Values.wallet.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.wallet.service.port }}
+              protocol: TCP
+          env:
+            - name: SERVICE_HOST
+              value: {{ include "walt-wallet.ingressHost" . | default "localhost" | quote }}
+            - name: WALLET_BACKEND_PORT
+              value: {{ .Values.wallet.service.port | quote }}
+            # DB connection — username/database from values, password via Secret ref.
+            - name: POSTGRES_DB_HOST
+              value: {{ .Values.wallet.db.host | quote }}
+            - name: POSTGRES_DB_PORT
+              value: {{ .Values.wallet.db.port | quote }}
+            - name: DB_NAME
+              value: {{ .Values.wallet.db.database | quote }}
+            - name: DB_USERNAME
+              value: {{ .Values.wallet.db.username | quote }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.wallet.db.passwordSecret.name | quote }}
+                  key:  {{ .Values.wallet.db.passwordSecret.key  | quote }}
+            # Auth crypto — encryptionKey, signKey from ESO-managed Secret.
+            {{- if .Values.wallet.auth.secrets.existingSecret }}
+            - name: WALLET_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.wallet.auth.secrets.existingSecret | quote }}
+                  key: WALLET_ENCRYPTION_KEY
+            - name: WALLET_SIGN_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.wallet.auth.secrets.existingSecret | quote }}
+                  key: WALLET_SIGN_KEY
+            {{- end }}
+            - name: WALLET_TOKEN_LIFETIME_DAYS
+              value: {{ .Values.wallet.auth.tokenLifetimeDays | quote }}
+            # OIDC — placeholders so the file parses even when feature is off.
+            - name: WALLET_OIDC_PUBLIC_BASE_URL
+              value: {{ .Values.wallet.oidc.publicBaseUrl | quote }}
+            - name: WALLET_OIDC_PROVIDER_NAME
+              value: {{ .Values.wallet.oidc.providerName | quote }}
+            - name: WALLET_OIDC_REALM_URL
+              value: {{ .Values.wallet.oidc.realmUrl | quote }}
+            - name: WALLET_OIDC_CLIENT_ID
+              value: {{ .Values.wallet.oidc.clientId | quote }}
+            {{- if .Values.wallet.oidc.clientSecretSecret.name }}
+            - name: WALLET_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.wallet.oidc.clientSecretSecret.name | quote }}
+                  key:  {{ .Values.wallet.oidc.clientSecretSecret.key  | quote }}
+            {{- else }}
+            - name: WALLET_OIDC_CLIENT_SECRET
+              value: "disabled"
+            {{- end }}
+            # Trust registry — empty defaults keep the feature dormant.
+            - name: WALLET_TRUST_ISSUERS_BASE_URL
+              value: {{ .Values.wallet.trust.issuers.baseUrl | quote }}
+            - name: WALLET_TRUST_ISSUERS_TRUST_PATH
+              value: {{ .Values.wallet.trust.issuers.trustPath | quote }}
+            - name: WALLET_TRUST_ISSUERS_GOVERNANCE_PATH
+              value: {{ .Values.wallet.trust.issuers.governancePath | quote }}
+            - name: WALLET_TRUST_VERIFIERS_BASE_URL
+              value: {{ .Values.wallet.trust.verifiers.baseUrl | quote }}
+            - name: WALLET_TRUST_VERIFIERS_TRUST_PATH
+              value: {{ .Values.wallet.trust.verifiers.trustPath | quote }}
+            - name: WALLET_TRUST_VERIFIERS_GOVERNANCE_PATH
+              value: {{ .Values.wallet.trust.verifiers.governancePath | quote }}
+          livenessProbe:  {{- toYaml .Values.wallet.livenessProbe  | nindent 12 }}
+          readinessProbe: {{- toYaml .Values.wallet.readinessProbe | nindent 12 }}
+          resources: {{- toYaml .Values.wallet.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /waltid-wallet-api/config
+              readOnly: true
+            - name: data
+              mountPath: /waltid-wallet-api/data
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "walt-wallet.fullname" . }}-config
+        {{- if .Values.wallet.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "walt-wallet.fullname" . }}-data
+        {{- else }}
+        - name: data
+          emptyDir: {}
+        {{- end }}

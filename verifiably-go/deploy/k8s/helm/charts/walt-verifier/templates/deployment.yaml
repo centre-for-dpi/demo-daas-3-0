@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "walt-verifier.fullname" . }}
+  labels: {{- include "walt-verifier.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.verifier.hpa.enabled }}
+  replicas: {{ .Values.verifier.replicas }}
+  {{- end }}
+  selector:
+    matchLabels: {{- include "walt-verifier.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "walt-verifier.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Re-roll on config changes.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "walt-verifier.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.verifier.serviceAccount.automountServiceAccountToken }}
+      securityContext: {{- toYaml .Values.verifier.podSecurityContext | nindent 8 }}
+      containers:
+        - name: issuer
+          image: "{{ .Values.verifier.image.repository }}:{{ .Values.verifier.image.tag }}"
+          imagePullPolicy: {{ .Values.verifier.image.pullPolicy }}
+          securityContext: {{- toYaml .Values.verifier.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.verifier.service.port }}
+              protocol: TCP
+          env:
+            # Walt.id HOCON consumes ${VAR} substitutions at config-load time.
+            - name: SERVICE_HOST
+              value: {{ include "walt-verifier.ingressHost" . | default "localhost" | quote }}
+            - name: VERIFIER_API_PORT
+              value: {{ .Values.verifier.service.port | quote }}
+          {{- if .Values.verifier.signingKey.existingSecret }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.verifier.signingKey.existingSecret }}
+          {{- end }}
+          livenessProbe:  {{- toYaml .Values.verifier.livenessProbe  | nindent 12 }}
+          readinessProbe: {{- toYaml .Values.verifier.readinessProbe | nindent 12 }}
+          resources: {{- toYaml .Values.verifier.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /waltid-verifier-api/config
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "walt-verifier.fullname" . }}-config

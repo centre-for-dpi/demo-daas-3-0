@@ -1,0 +1,8 @@
+apiVersion: v2
+name: wso2is
+description: WSO2 Identity Server 7.0 — IdP option #2. Written from scratch (no upstream chart).
+type: application
+version: 0.1.0
+appVersion: "7.0.0"
+# TODO(Phase 4.5): StatefulSet + initContainer JSP patcher + Job for client
+# bootstrap (replacing scripts/bootstrap-wso2is.sh).

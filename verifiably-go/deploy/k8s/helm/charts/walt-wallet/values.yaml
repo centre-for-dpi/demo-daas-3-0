@@ -1,0 +1,119 @@
+# Schema mirrors docs/k8s/values-schema.md (wallet-api section).
+wallet:
+  image:
+    repository: waltid/wallet-api
+    tag: "0.18.2"
+    pullPolicy: IfNotPresent
+  service:
+    port: 7001
+
+  baseUrl: ""
+
+  ingress:
+    enabled: true
+    className: nginx
+    host: ""
+    annotations:
+      cert-manager.io/cluster-issuer: selfsigned
+    tls: true
+
+  # Stateful, single-replica until Phase 6.2 verifies horizontal-scale safety.
+  replicas: 1
+  hpa:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 70
+
+  podDisruptionBudget:
+    enabled: false                  # not meaningful at replicas=1
+    minAvailable: 1
+
+  resources:
+    requests: { cpu: 200m, memory: 512Mi }
+    limits:   { memory: 1Gi }
+
+  livenessProbe:
+    httpGet: { path: /swagger/index.html, port: http }
+    initialDelaySeconds: 60
+    periodSeconds: 15
+  readinessProbe:
+    httpGet: { path: /swagger/index.html, port: http }
+    initialDelaySeconds: 20
+    periodSeconds: 10
+
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile: { type: RuntimeDefault }
+
+  containerSecurityContext:
+    readOnlyRootFilesystem: false   # walt.id wallet writes to /waltid-wallet-api/data
+    allowPrivilegeEscalation: false
+    capabilities: { drop: ["ALL"] }
+
+  serviceAccount:
+    create: true
+    automountServiceAccountToken: false
+
+  serviceMonitor:
+    enabled: false
+    path: /metrics
+    interval: 30s
+
+  networkPolicy:
+    enabled: true
+    allowFrom:
+      - namespaceSelector:
+          matchLabels: { kubernetes.io/metadata.name: ingress-nginx }
+      - podSelector:
+          matchLabels: { app.kubernetes.io/name: verifiably-go }
+
+  # Persistent storage for /waltid-wallet-api/data.
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClass: ""
+    accessMode: ReadWriteOnce
+
+  # Database — defaults wired to a CNPG cluster named 'waltid-wallet-pg'.
+  # Phase 4.6 umbrella creates the Cluster resource.
+  db:
+    host: "waltid-wallet-pg-rw"
+    port: 5432
+    database: "waltid"
+    username: "waltid"
+    passwordSecret:
+      name: "wallet-db"
+      key: "DB_PASSWORD"
+
+  # Crypto — externalized in Phase 1.2. Phase 7.1 swaps the inline JWK for
+  # Vault Transit. The default Secret name 'wallet-auth' is created by ESO
+  # in the workloads module pulling from Vault.
+  auth:
+    audClaim: ""
+    issClaim: ""
+    tokenLifetimeDays: 7
+    secrets:
+      existingSecret: "wallet-auth"
+
+  # OIDC login — kept disabled by default. See deploy/k8s/config/wallet/logins.conf.
+  oidc:
+    enabled: false
+    publicBaseUrl: ""
+    providerName: "keycloak"
+    realmUrl: ""
+    clientId: "waltid_backend"
+    clientSecretSecret:
+      name: ""
+      key: "client-secret"
+
+  trust:
+    issuers:   { baseUrl: "", trustPath: "", governancePath: "" }
+    verifiers: { baseUrl: "", trustPath: "", governancePath: "" }
+
+global:
+  domain: ""
+  clusterIssuer: selfsigned

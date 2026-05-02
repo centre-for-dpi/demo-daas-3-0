@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "libretranslate.fullname" . }}
+  labels: {{- include "libretranslate.labels" . | nindent 4 }}
+automountServiceAccountToken: {{ .Values.libretranslate.serviceAccount.automountServiceAccountToken }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "libretranslate.fullname" . }}
+  labels: {{- include "libretranslate.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.libretranslate.service.port }}
+      targetPort: http
+  selector: {{- include "libretranslate.selectorLabels" . | nindent 4 }}
+---
+{{- if .Values.libretranslate.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "libretranslate.fullname" . }}-data
+  labels: {{- include "libretranslate.labels" . | nindent 4 }}
+spec:
+  accessModes: [{{ .Values.libretranslate.persistence.accessMode | quote }}]
+  resources: { requests: { storage: {{ .Values.libretranslate.persistence.size | quote }} } }
+  {{- with .Values.libretranslate.persistence.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+---
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "libretranslate.fullname" . }}
+  labels: {{- include "libretranslate.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.libretranslate.replicas }}
+  selector:
+    matchLabels: {{- include "libretranslate.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "libretranslate.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "libretranslate.fullname" . }}
+      automountServiceAccountToken: {{ .Values.libretranslate.serviceAccount.automountServiceAccountToken }}
+      securityContext: {{- toYaml .Values.libretranslate.podSecurityContext | nindent 8 }}
+      containers:
+        - name: libretranslate
+          image: "{{ .Values.libretranslate.image.repository }}:{{ .Values.libretranslate.image.tag }}"
+          imagePullPolicy: {{ .Values.libretranslate.image.pullPolicy }}
+          securityContext: {{- toYaml .Values.libretranslate.containerSecurityContext | nindent 12 }}
+          env:
+            - name: LT_LOAD_ONLY
+              value: {{ .Values.libretranslate.loadOnly | quote }}
+          ports:
+            - { name: http, containerPort: 5000, protocol: TCP }
+          livenessProbe:  {{- toYaml .Values.libretranslate.livenessProbe  | nindent 12 }}
+          readinessProbe: {{- toYaml .Values.libretranslate.readinessProbe | nindent 12 }}
+          resources: {{- toYaml .Values.libretranslate.resources | nindent 12 }}
+          volumeMounts:
+            - { name: data, mountPath: /home/libretranslate/.local }
+      volumes:
+        - name: data
+          {{- if .Values.libretranslate.persistence.enabled }}
+          persistentVolumeClaim: { claimName: {{ include "libretranslate.fullname" . }}-data }
+          {{- else }}
+          emptyDir: {}
+          {{- end }}

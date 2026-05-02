@@ -1,0 +1,11 @@
+{{- if .Values.issuer.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "walt-issuer.fullname" . }}
+  labels: {{- include "walt-issuer.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.issuer.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels: {{- include "walt-issuer.selectorLabels" . | nindent 6 }}
+{{- end }}

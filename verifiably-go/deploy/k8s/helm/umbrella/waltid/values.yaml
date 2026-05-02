@@ -1,0 +1,78 @@
+# Umbrella values — single knob for the whole waltid scenario.
+# Override per-environment via --values or --set in the workloads module.
+global:
+  domain: ""                        # required — e.g. verifiably.example.com
+  clusterIssuer: selfsigned         # selfsigned | letsencrypt
+
+# CloudNativePG cluster providing Postgres for walt-wallet (and any other
+# component that opts in). Single instance for dev, 3-instance HA for prod.
+cnpg:
+  enabled: true
+  name: waltid-wallet-pg
+  instances: 1
+  storage:
+    size: 10Gi
+    storageClass: ""
+  database: waltid
+  owner: waltid
+  # Bootstrap creds — when empty, CNPG auto-generates a Secret (read by
+  # walt-wallet via wallet.db.passwordSecret).
+  superuserSecret: ""
+
+walt-issuer:
+  enabled: true
+  global:
+    domain: ""
+  issuer:
+    baseUrl: ""                     # populated from global.domain by templates below
+
+walt-verifier:
+  enabled: true
+  global:
+    domain: ""
+  verifier:
+    baseUrl: ""
+
+walt-wallet:
+  enabled: true
+  global:
+    domain: ""
+  wallet:
+    baseUrl: ""
+    db:
+      host: waltid-wallet-pg-rw
+      database: waltid
+      username: waltid
+      passwordSecret:
+        name: wallet-db
+        key: DB_PASSWORD
+
+verifiably-go:
+  enabled: true
+  global:
+    domain: ""
+  app:
+    baseUrl: ""
+    image:
+      # Local-kind verification: load the image with `kind load docker-image
+      # verifiably-go:local --name verifiably-dev` then leave pullPolicy=Never
+      # so the kubelet doesn't try to pull from a registry. Replace with
+      # ghcr.io/<your-org>/verifiably-go and a real signed tag for prod.
+      repository: verifiably-go
+      tag: "local"
+      pullPolicy: Never
+
+keycloak:
+  enabled: true
+  global:
+    domain: ""
+
+wso2is:
+  enabled: false                    # off by default — Keycloak-first
+  global:
+    domain: ""
+
+libretranslate:
+  enabled: true
+  global:
+    domain: ""

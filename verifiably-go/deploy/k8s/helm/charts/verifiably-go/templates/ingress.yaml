@@ -1,0 +1,35 @@
+{{- if .Values.app.ingress.enabled }}
+{{- $host := include "verifiably-go.ingressHost" . }}
+{{- if not $host }}
+{{- fail "app.ingress.host or app.baseUrl or global.domain must be set" }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "verifiably-go.fullname" . }}
+  labels: {{- include "verifiably-go.labels" . | nindent 4 }}
+  annotations:
+    {{- with .Values.app.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- if .Values.global.clusterIssuer }}
+    cert-manager.io/cluster-issuer: {{ .Values.global.clusterIssuer | quote }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.app.ingress.className }}
+  {{- if .Values.app.ingress.tls }}
+  tls:
+    - hosts: [{{ $host | quote }}]
+      secretName: {{ include "verifiably-go.fullname" . }}-tls
+  {{- end }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "verifiably-go.fullname" . }}
+                port: { name: http }
+{{- end }}

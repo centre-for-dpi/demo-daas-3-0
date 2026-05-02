@@ -1,0 +1,51 @@
+# Wrapper around bitnami/keycloak. Run `helm dep update` before install.
+keycloak:
+  enabled: true
+
+  auth:
+    adminUser: admin
+    # Bitnami chart picks `existingSecret` if set; otherwise generates a
+    # random password. In production, ESO populates this secret from Vault.
+    existingSecret: ""
+    passwordSecretKey: admin-password
+
+  # Production mode (start, not start-dev). Backed by Bitnami's bundled
+  # PostgreSQL; in production you'd disable this and point at a CNPG cluster.
+  production: true
+  proxy: edge
+
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hostname: ""                    # set to keycloak.<domain> by umbrella chart
+    annotations:
+      cert-manager.io/cluster-issuer: selfsigned
+    tls: true
+
+  # Realm import — points at our ConfigMap-mounted realm JSON.
+  extraStartupArgs: "--import-realm"
+  extraVolumes:
+    - name: realm-import
+      configMap: { name: keycloak-realm-import }
+  extraVolumeMounts:
+    - name: realm-import
+      mountPath: /opt/bitnami/keycloak/data/import
+      readOnly: true
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      namespace: monitoring
+
+  postgresql:
+    enabled: true                   # demo only — swap to CNPG in prod values
+
+# Realm content — set by umbrella chart from the existing keycloak-realm.json.
+realm:
+  name: vcplatform
+  json: ""
+
+global:
+  domain: ""
+  clusterIssuer: selfsigned

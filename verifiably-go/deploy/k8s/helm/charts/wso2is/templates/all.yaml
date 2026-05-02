@@ -1,0 +1,120 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "wso2is.fullname" . }}
+  labels: {{- include "wso2is.labels" . | nindent 4 }}
+automountServiceAccountToken: {{ .Values.wso2is.serviceAccount.automountServiceAccountToken }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "wso2is.fullname" . }}
+  labels: {{- include "wso2is.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: https
+      port: {{ .Values.wso2is.service.port }}
+      targetPort: https
+  selector: {{- include "wso2is.selectorLabels" . | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "wso2is.fullname" . }}
+  labels: {{- include "wso2is.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "wso2is.fullname" . }}
+  replicas: {{ .Values.wso2is.replicas }}
+  selector:
+    matchLabels: {{- include "wso2is.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "wso2is.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "wso2is.fullname" . }}
+      automountServiceAccountToken: {{ .Values.wso2is.serviceAccount.automountServiceAccountToken }}
+      securityContext: {{- toYaml .Values.wso2is.podSecurityContext | nindent 8 }}
+      containers:
+        - name: wso2is
+          image: "{{ .Values.wso2is.image.repository }}:{{ .Values.wso2is.image.tag }}"
+          imagePullPolicy: {{ .Values.wso2is.image.pullPolicy }}
+          securityContext: {{- toYaml .Values.wso2is.containerSecurityContext | nindent 12 }}
+          # WSO2 IS 7.0 launcher is wso2server.sh; we wrap it with the
+          # signup-redirect patcher (mirrors the compose entrypoint).
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              cp /tmp/cm/patch-signup-redirect.sh /tmp/patch-signup-redirect.sh && chmod +x /tmp/patch-signup-redirect.sh
+              SIGNUP_REDIRECT_URL='{{ .Values.wso2is.signupRedirectUrl }}' /tmp/patch-signup-redirect.sh > /tmp/patch.log 2>&1 &
+              exec /home/wso2carbon/wso2is-7.0.0/bin/wso2server.sh
+          env:
+            - name: JAVA_OPTS
+              value: {{ .Values.wso2is.javaOpts | quote }}
+            {{- if .Values.wso2is.adminPasswordSecret.name }}
+            - name: WSO2_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.wso2is.adminPasswordSecret.name | quote }}
+                  key:  {{ .Values.wso2is.adminPasswordSecret.key | quote }}
+            {{- end }}
+          ports:
+            - { name: https, containerPort: 9443, protocol: TCP }
+          livenessProbe:  {{- toYaml .Values.wso2is.livenessProbe  | nindent 12 }}
+          readinessProbe: {{- toYaml .Values.wso2is.readinessProbe | nindent 12 }}
+          resources: {{- toYaml .Values.wso2is.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /home/wso2carbon/wso2is-7.0.0/repository/conf/deployment.toml
+              subPath: deployment.toml
+            - name: config
+              mountPath: /tmp/cm
+            - name: data
+              mountPath: /home/wso2carbon/wso2is-7.0.0/repository/database
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "wso2is.fullname" . }}-config
+            defaultMode: 0755
+  {{- if .Values.wso2is.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ ReadWriteOnce ]
+        resources: { requests: { storage: {{ .Values.wso2is.persistence.size | quote }} } }
+        {{- with .Values.wso2is.persistence.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+  {{- end }}
+---
+{{- if .Values.wso2is.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "wso2is.fullname" . }}
+  labels: {{- include "wso2is.labels" . | nindent 4 }}
+  annotations:
+    {{- with .Values.wso2is.ingress.annotations }}{{- toYaml . | nindent 4 }}{{- end }}
+    {{- if .Values.global.clusterIssuer }}
+    cert-manager.io/cluster-issuer: {{ .Values.global.clusterIssuer | quote }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.wso2is.ingress.className }}
+  {{- if .Values.wso2is.ingress.tls }}
+  tls:
+    - hosts: [ {{ include "wso2is.host" . | quote }} ]
+      secretName: {{ include "wso2is.fullname" . }}-tls
+  {{- end }}
+  rules:
+    - host: {{ include "wso2is.host" . | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "wso2is.fullname" . }}
+                port: { name: https }
+{{- end }}

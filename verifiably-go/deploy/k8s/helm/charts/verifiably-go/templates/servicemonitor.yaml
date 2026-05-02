@@ -1,0 +1,16 @@
+{{- if .Values.app.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "verifiably-go.fullname" . }}
+  labels:
+    {{- include "verifiably-go.labels" . | nindent 4 }}
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels: {{- include "verifiably-go.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: http
+      path: {{ .Values.app.serviceMonitor.path }}
+      interval: {{ .Values.app.serviceMonitor.interval }}
+{{- end }}

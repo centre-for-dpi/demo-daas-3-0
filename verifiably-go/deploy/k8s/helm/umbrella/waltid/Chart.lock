@@ -1,0 +1,24 @@
+dependencies:
+- name: walt-issuer
+  repository: file://../../charts/walt-issuer
+  version: 0.1.0
+- name: walt-verifier
+  repository: file://../../charts/walt-verifier
+  version: 0.1.0
+- name: walt-wallet
+  repository: file://../../charts/walt-wallet
+  version: 0.1.0
+- name: verifiably-go
+  repository: file://../../charts/verifiably-go
+  version: 0.1.0
+- name: keycloak
+  repository: file://../../charts/keycloak
+  version: 0.1.0
+- name: wso2is
+  repository: file://../../charts/wso2is
+  version: 0.1.0
+- name: libretranslate
+  repository: file://../../charts/libretranslate
+  version: 0.1.0
+digest: sha256:c8c48d85811900fafe8381bcb5cb30d1ee36781b6bb5707b02fbb53d83b6931c
+generated: "2026-04-30T09:30:50.329261-05:00"

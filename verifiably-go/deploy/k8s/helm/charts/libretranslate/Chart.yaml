@@ -1,0 +1,7 @@
+apiVersion: v2
+name: libretranslate
+description: LibreTranslate API for in-app i18n.
+type: application
+version: 0.1.0
+appVersion: "1.6"
+# TODO(Phase 4.5): Deployment + PVC for /home/libretranslate/.local model cache.

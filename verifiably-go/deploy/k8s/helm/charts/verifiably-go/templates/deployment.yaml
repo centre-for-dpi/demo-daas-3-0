@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "verifiably-go.fullname" . }}
+  labels: {{- include "verifiably-go.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.app.hpa.enabled }}
+  replicas: {{ .Values.app.replicas }}
+  {{- end }}
+  selector:
+    matchLabels: {{- include "verifiably-go.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "verifiably-go.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "verifiably-go.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.app.serviceAccount.automountServiceAccountToken }}
+      securityContext: {{- toYaml .Values.app.podSecurityContext | nindent 8 }}
+      containers:
+        - name: verifiably
+          image: "{{ .Values.app.image.repository }}:{{ .Values.app.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.app.image.pullPolicy }}
+          securityContext: {{- toYaml .Values.app.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.app.service.port }}
+              protocol: TCP
+          env:
+            - name: VERIFIABLY_ADDR
+              value: ":{{ .Values.app.service.port }}"
+            - name: VERIFIABLY_PUBLIC_URL
+              value: {{ default (printf "https://%s" (include "verifiably-go.ingressHost" .)) .Values.app.baseUrl | quote }}
+            - name: VERIFIABLY_BACKENDS_FILE
+              value: /app/config-runtime/backends.json
+            - name: VERIFIABLY_AUTH_PROVIDERS_FILE
+              value: /app/config-runtime/auth-providers.json
+            - name: VERIFIABLY_DEBUG_MOCK_MARKERS
+              value: {{ .Values.app.env.debugMockMarkers | quote }}
+            {{- if .Values.app.logJson }}
+            - name: VERIFIABLY_LOG_JSON
+              value: "1"
+            {{- end }}
+            # The Go binary's adapter selector — `registry` reads backends.json.
+            - name: VERIFIABLY_ADAPTER
+              value: "registry"
+          livenessProbe:  {{- toYaml .Values.app.livenessProbe  | nindent 12 }}
+          readinessProbe: {{- toYaml .Values.app.readinessProbe | nindent 12 }}
+          resources: {{- toYaml .Values.app.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /app/config-runtime
+              readOnly: true
+            # Writable scratch — distroless has no /tmp, but our app writes
+            # nothing today; keep this here to be ready if it ever does.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "verifiably-go.fullname" . }}-config
+        - name: tmp
+          emptyDir: {}

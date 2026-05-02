@@ -60,7 +60,7 @@ OUT="$SCRIPT_DIR/../config/wso2is.env"
 # ready. Probe the admin API itself with a generous timeout — it returns
 # 200 only after WSO2 is genuinely usable, so this is also a usability
 # signal, not just a TCP-ready signal.
-echo "waiting for WSO2IS at $WSO2_BASE…"
+echo "waiting for WSO2IS at ${WSO2_BASE}…"
 for i in $(seq 1 240); do
   if curl -sfk -o /dev/null "$WSO2_BASE/api/server/v1/applications?limit=1" \
        -u "$WSO2_ADMIN_USER:$WSO2_ADMIN_PASS"; then

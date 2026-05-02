@@ -1,0 +1,243 @@
+#!/usr/bin/env bash
+# k8s-deploy.sh — single-click Kubernetes deploy mirroring deploy.sh UX.
+#
+# Sub-commands:
+#   up <waltid> [--target=local|onprem|aws]  bring up cluster + platform + workloads
+#   run <waltid>                             rebuild image, kubectl rollout restart
+#   down [<waltid>]                          tear down workloads (keep cluster)
+#   reset                                    destroy everything including the cluster
+#   status                                   pod / ingress / cert state
+#   logs <service>                           tail logs for a service
+#   sync-config                              copy deploy/k8s/config/* into chart files/
+#
+# Defaults: target=local. Scenario currently must be `waltid`.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+K8S_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT_DIR="$(cd "$K8S_DIR/../.." && pwd)"
+TF_DIR="$K8S_DIR/terraform"
+HELM_DIR="$K8S_DIR/helm"
+
+# --- output helpers (mirror deploy.sh) ---
+if [[ -t 1 ]]; then
+  bold(){ printf '\033[1m%s\033[0m\n' "$*"; }
+  red(){  printf '\033[31m%s\033[0m\n' "$*"; }
+  grn(){  printf '\033[32m%s\033[0m\n' "$*"; }
+  yel(){  printf '\033[33m%s\033[0m\n' "$*"; }
+  cyn(){  printf '\033[36m%s\033[0m\n' "$*"; }
+else
+  bold(){ echo "$*"; }; red(){ echo "$*"; }; grn(){ echo "$*"; }; yel(){ echo "$*"; }; cyn(){ echo "$*"; }
+fi
+
+usage() {
+  cat <<'USAGE'
+Usage: k8s-deploy.sh <command> [args]
+
+Commands:
+  up <waltid> [--target=local|onprem|aws]   provision + deploy
+  run <waltid>                              rebuild verifiably-go image, restart pod
+  down [<waltid>]                           destroy workloads (keep cluster)
+  reset                                     destroy cluster + everything
+  status                                    print pods, ingress, cert state
+  logs <service>                            tail logs (e.g. walt-issuer)
+  sync-config                               sync deploy/k8s/config/* into chart files/
+
+Default target: local. Defaults to scenario waltid when omitted.
+USAGE
+}
+
+require() {
+  for c in "$@"; do
+    command -v "$c" >/dev/null || { red "missing dependency: $c"; exit 127; }
+  done
+}
+
+# Parse `--target=X` (anywhere in args). Sets TARGET; default = local.
+parse_target() {
+  TARGET=local
+  for arg in "$@"; do
+    case "$arg" in
+      --target=*) TARGET="${arg#--target=}" ;;
+    esac
+  done
+  case "$TARGET" in
+    local|onprem|aws) ;;
+    *) red "unknown target: $TARGET"; exit 2;;
+  esac
+}
+
+bootstrap_dir() {
+  case "$TARGET" in
+    local)  echo "$TF_DIR/bootstrap/local-kind" ;;
+    onprem) echo "$TF_DIR/bootstrap/onprem-k3s" ;;
+    aws)    echo "$TF_DIR/bootstrap/aws-eks" ;;
+  esac
+}
+
+# Sync the canonical .conf files from deploy/k8s/config/* into each
+# chart's files/ dir. Charts use their local files/ at render time.
+sync_config() {
+  bold "▶ Syncing walt.id configs into chart files/"
+  for svc in issuer verifier wallet; do
+    local src="$K8S_DIR/config/$svc"
+    local dst="$HELM_DIR/charts/walt-$svc/config"
+    [[ -d "$src" ]] || { red "missing $src"; exit 1; }
+    mkdir -p "$dst"
+    cp "$src"/*.conf "$dst/"
+    grn "  walt-$svc/config ← $(ls "$dst" | wc -l | tr -d ' ') file(s)"
+  done
+}
+
+KUBECONFIG_PATH=""
+LB_MODE=""
+
+# Read kubeconfig + lb_mode from the bootstrap module's outputs.
+load_bootstrap_outputs() {
+  local d
+  d="$(bootstrap_dir)"
+  pushd "$d" >/dev/null
+  KUBECONFIG_PATH=$(terraform output -raw kubeconfig_path 2>/dev/null || true)
+  LB_MODE=$(terraform output -raw lb_mode 2>/dev/null || echo metallb)
+  popd >/dev/null
+}
+
+cmd_up() {
+  local scenario="${1:-}"
+  shift || true
+  [[ "$scenario" == "waltid" ]] || { red "only 'waltid' scenario supported today"; exit 2; }
+  parse_target "$@"
+
+  require terraform helm kubectl
+  if [[ "$TARGET" == "local" ]]; then
+    require kind docker
+    docker info >/dev/null 2>&1 || { red "docker daemon not running"; exit 1; }
+  fi
+
+  sync_config
+
+  # 1. Cluster.
+  local bd; bd="$(bootstrap_dir)"
+  bold "▶ [1/3] terraform apply $(basename "$bd")"
+  pushd "$bd" >/dev/null
+  terraform init -upgrade
+  terraform apply -auto-approve
+  popd >/dev/null
+
+  load_bootstrap_outputs
+  [[ -n "$KUBECONFIG_PATH" && -f "$KUBECONFIG_PATH" ]] || { red "no kubeconfig from bootstrap"; exit 1; }
+  export KUBECONFIG="$KUBECONFIG_PATH"
+  grn "  kubeconfig: $KUBECONFIG_PATH"
+  grn "  lb_mode:    $LB_MODE"
+
+  # 2. Platform layer.
+  bold "▶ [2/3] terraform apply platform/"
+  pushd "$TF_DIR/platform" >/dev/null
+  terraform init -upgrade
+  terraform apply -auto-approve \
+    -var "kubeconfig_path=$KUBECONFIG_PATH" \
+    -var "domain=verifiably.local" \
+    -var "cluster_issuer_email=ops@verifiably.local" \
+    -var "lb_mode=$LB_MODE" \
+    -var "metallb_already_installed=$([[ "$TARGET" == "local" ]] && echo true || echo false)"
+  popd >/dev/null
+
+  # 3. Workloads.
+  bold "▶ [3/3] terraform apply workloads/"
+  pushd "$TF_DIR/workloads" >/dev/null
+  terraform init -upgrade
+  terraform apply -auto-approve \
+    -var "kubeconfig_path=$KUBECONFIG_PATH" \
+    -var "domain=verifiably.local" \
+    -var "lb_mode=$LB_MODE"
+  popd >/dev/null
+
+  bold "▶ Waiting for waltid pods Ready..."
+  kubectl -n waltid wait --for=condition=Ready pods --all --timeout=10m || yel "  (some pods still pending — check with: $0 status)"
+
+  cmd_status
+}
+
+cmd_run() {
+  local scenario="${1:-waltid}"
+  [[ "$scenario" == "waltid" ]] || { red "only waltid supported"; exit 2; }
+  require docker make kubectl
+
+  bold "▶ Rebuilding verifiably-go image"
+  ( cd "$ROOT_DIR" && make image image-push )
+
+  load_bootstrap_outputs
+  [[ -n "$KUBECONFIG_PATH" ]] || { red "no kubeconfig — run 'up' first"; exit 1; }
+  export KUBECONFIG="$KUBECONFIG_PATH"
+
+  bold "▶ Rolling verifiably-go deployment"
+  kubectl -n waltid rollout restart deploy -l app.kubernetes.io/name=verifiably-go
+  kubectl -n waltid rollout status   deploy -l app.kubernetes.io/name=verifiably-go --timeout=5m
+}
+
+cmd_down() {
+  load_bootstrap_outputs
+  [[ -n "$KUBECONFIG_PATH" ]] || { red "no kubeconfig"; exit 1; }
+  export KUBECONFIG="$KUBECONFIG_PATH"
+  bold "▶ Destroying workloads (keeps cluster + platform)"
+  pushd "$TF_DIR/workloads" >/dev/null
+  terraform destroy -auto-approve \
+    -var "kubeconfig_path=$KUBECONFIG_PATH" \
+    -var "domain=verifiably.local"
+  popd >/dev/null
+}
+
+cmd_reset() {
+  bold "▶ FULL RESET — destroying workloads, platform, cluster"
+  parse_target "$@"
+  load_bootstrap_outputs
+  if [[ -n "$KUBECONFIG_PATH" ]]; then
+    pushd "$TF_DIR/workloads" >/dev/null
+    terraform destroy -auto-approve -var "kubeconfig_path=$KUBECONFIG_PATH" -var domain=verifiably.local || true
+    popd >/dev/null
+    pushd "$TF_DIR/platform" >/dev/null
+    terraform destroy -auto-approve -var "kubeconfig_path=$KUBECONFIG_PATH" -var domain=verifiably.local -var cluster_issuer_email=ops@verifiably.local || true
+    popd >/dev/null
+  fi
+  pushd "$(bootstrap_dir)" >/dev/null
+  terraform destroy -auto-approve || true
+  popd >/dev/null
+  grn "Reset complete."
+}
+
+cmd_status() {
+  load_bootstrap_outputs
+  [[ -n "$KUBECONFIG_PATH" ]] || { red "no kubeconfig"; exit 1; }
+  export KUBECONFIG="$KUBECONFIG_PATH"
+  bold "▶ Pods (waltid)"
+  kubectl -n waltid get pods -o wide || true
+  bold "▶ Ingress"
+  kubectl -n waltid get ingress -o wide || true
+  bold "▶ Certificates"
+  kubectl -n waltid get certificate || true
+  bold "▶ External LoadBalancer"
+  kubectl -n ingress-nginx get svc ingress-nginx-controller || true
+}
+
+cmd_logs() {
+  local svc="${1:-}"
+  [[ -n "$svc" ]] || { red "usage: $0 logs <service>"; exit 2; }
+  load_bootstrap_outputs
+  export KUBECONFIG="$KUBECONFIG_PATH"
+  kubectl -n waltid logs -f -l "app.kubernetes.io/name=$svc" --max-log-requests=10 --tail=100
+}
+
+# --- main dispatch ---
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  up)            cmd_up "$@" ;;
+  run)           cmd_run "$@" ;;
+  down)          cmd_down "$@" ;;
+  reset)         cmd_reset "$@" ;;
+  status)        cmd_status ;;
+  logs)          cmd_logs "$@" ;;
+  sync-config)   sync_config ;;
+  ""|help|-h|--help) usage ;;
+  *) red "unknown command: $cmd"; usage; exit 2 ;;
+esac

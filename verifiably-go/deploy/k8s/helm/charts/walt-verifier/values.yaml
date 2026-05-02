@@ -1,0 +1,78 @@
+# Schema mirrors docs/k8s/values-schema.md (verifier-api section).
+verifier:
+  image:
+    repository: waltid/verifier-api
+    tag: "0.18.2"
+    pullPolicy: IfNotPresent
+  service:
+    port: 7003
+
+  baseUrl: ""
+
+  ingress:
+    enabled: true
+    className: nginx
+    host: ""
+    annotations:
+      cert-manager.io/cluster-issuer: selfsigned
+    tls: true
+
+  replicas: 2
+  hpa:
+    enabled: true                   # verifier is stateless — scale freely
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 70
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { memory: 512Mi }
+
+  livenessProbe:
+    httpGet: { path: /swagger/index.html, port: http }
+    initialDelaySeconds: 30
+    periodSeconds: 10
+  readinessProbe:
+    httpGet: { path: /swagger/index.html, port: http }
+    initialDelaySeconds: 10
+    periodSeconds: 5
+
+  signingKey:
+    existingSecret: ""
+
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile: { type: RuntimeDefault }
+
+  containerSecurityContext:
+    readOnlyRootFilesystem: false
+    allowPrivilegeEscalation: false
+    capabilities: { drop: ["ALL"] }
+
+  serviceAccount:
+    create: true
+    automountServiceAccountToken: false
+
+  serviceMonitor:
+    enabled: false
+    path: /metrics
+    interval: 30s
+
+  networkPolicy:
+    enabled: true
+    allowFrom:
+      - namespaceSelector:
+          matchLabels: { kubernetes.io/metadata.name: ingress-nginx }
+      - podSelector:
+          matchLabels: { app.kubernetes.io/name: verifiably-go }
+
+global:
+  domain: ""
+  clusterIssuer: selfsigned

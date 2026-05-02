@@ -1,0 +1,16 @@
+{{- if .Values.issuer.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "walt-issuer.fullname" . }}
+  labels:
+    {{- include "walt-issuer.labels" . | nindent 4 }}
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels: {{- include "walt-issuer.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: http
+      path: {{ .Values.issuer.serviceMonitor.path }}
+      interval: {{ .Values.issuer.serviceMonitor.interval }}
+{{- end }}

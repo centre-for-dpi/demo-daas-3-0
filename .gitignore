@@ -50,3 +50,21 @@ verifiably-go/cmd/inji-preauth-proxy/inji-preauth-proxy
 # Python bytecode cache from testdata/bulk-issuance helpers
 __pycache__/
 *.pyc
+
+# Compiled verifiably-go binary from a top-level `go build ./cmd/server` —
+# the canonical output lives under cmd/inji-preauth-proxy/ when the user
+# wants a checked-in artifact; this one is just a local convenience.
+verifiably-go/server
+
+# Terraform state and provider caches under deploy/k8s/. Provider binaries
+# are >150 MiB each and are reproduced by `terraform init`; tfstate may
+# contain cluster credentials and kubeconfigs that must never reach git.
+# .terraform.lock.hcl IS committed — that pins versions for reproducible
+# `init` runs.
+verifiably-go/deploy/k8s/**/.terraform/
+verifiably-go/deploy/k8s/**/*.tfstate
+verifiably-go/deploy/k8s/**/*.tfstate.backup
+verifiably-go/deploy/k8s/**/*.tfplan
+# Script-local terraform output dirs (kubeconfig, rendered kind config).
+verifiably-go/deploy/k8s/terraform/.tfstate/
+verifiably-go/deploy/k8s/terraform/bootstrap/local-kind/.tfstate/

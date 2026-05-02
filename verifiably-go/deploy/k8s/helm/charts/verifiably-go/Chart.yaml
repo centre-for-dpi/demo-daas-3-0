@@ -1,0 +1,7 @@
+apiVersion: v2
+name: verifiably-go
+description: Verifiably-go front-end app (Go + HTMX).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+# TODO(Phase 4.4): templates/, backends.json + auth-providers.json ConfigMap, ingress, etc.

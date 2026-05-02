@@ -1,0 +1,14 @@
+{{- if .Values.issuer.serviceMonitor.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "walt-issuer.fullname" . }}-dashboards
+  labels:
+    {{- include "walt-issuer.labels" . | nindent 4 }}
+    grafana_dashboard: "1"
+data:
+{{- range $path, $_ := .Files.Glob "dashboards/*.json" }}
+  {{ base $path }}: |
+{{ $.Files.Get $path | indent 4 }}
+{{- end }}
+{{- end }}

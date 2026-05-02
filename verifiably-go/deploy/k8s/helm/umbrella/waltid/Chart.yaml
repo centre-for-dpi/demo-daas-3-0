@@ -1,0 +1,36 @@
+apiVersion: v2
+name: waltid
+description: Verifiably-go waltid scenario — umbrella chart aggregating walt.id + IdP + translator + the Go app + a CNPG Postgres cluster.
+type: application
+version: 0.1.0
+appVersion: "0.18.2"
+
+dependencies:
+  - name: walt-issuer
+    version: 0.1.0
+    repository: file://../../charts/walt-issuer
+    condition: walt-issuer.enabled
+  - name: walt-verifier
+    version: 0.1.0
+    repository: file://../../charts/walt-verifier
+    condition: walt-verifier.enabled
+  - name: walt-wallet
+    version: 0.1.0
+    repository: file://../../charts/walt-wallet
+    condition: walt-wallet.enabled
+  - name: verifiably-go
+    version: 0.1.0
+    repository: file://../../charts/verifiably-go
+    condition: verifiably-go.enabled
+  - name: keycloak
+    version: 0.1.0
+    repository: file://../../charts/keycloak
+    condition: keycloak.enabled
+  - name: wso2is
+    version: 0.1.0
+    repository: file://../../charts/wso2is
+    condition: wso2is.enabled
+  - name: libretranslate
+    version: 0.1.0
+    repository: file://../../charts/libretranslate
+    condition: libretranslate.enabled

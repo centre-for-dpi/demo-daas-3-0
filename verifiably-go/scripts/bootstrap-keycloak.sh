@@ -68,7 +68,7 @@ fi
 # while imports are still running). On slow VPS instances Keycloak's
 # Quarkus runtime + H2 schema migration can take several minutes after
 # the TCP port goes ready, so we wait up to 8 minutes.
-echo "waiting for Keycloak master realm at $KEYCLOAK_BASE…"
+echo "waiting for Keycloak master realm at ${KEYCLOAK_BASE}…"
 for i in $(seq 1 240); do
   if curl -sf -o /dev/null "$KEYCLOAK_BASE/realms/master/.well-known/openid-configuration"; then
     echo "  master realm reachable"

@@ -1,0 +1,87 @@
+# verifiably-go front-end chart.
+app:
+  image:
+    repository: ghcr.io/REPLACE_ME/verifiably-go
+    tag: ""                         # empty → chart appVersion
+    pullPolicy: IfNotPresent
+  service:
+    port: 8080
+
+  baseUrl: ""                       # https://app.example.com
+
+  ingress:
+    enabled: true
+    className: nginx
+    host: ""
+    annotations:
+      cert-manager.io/cluster-issuer: selfsigned
+    tls: true
+
+  replicas: 2
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { memory: 256Mi }
+
+  livenessProbe:
+    httpGet: { path: /healthz, port: http }
+    initialDelaySeconds: 10
+    periodSeconds: 10
+  readinessProbe:
+    httpGet: { path: /readyz, port: http }
+    initialDelaySeconds: 5
+    periodSeconds: 5
+
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532                # distroless nonroot
+    runAsGroup: 65532
+    fsGroup: 65532
+    seccompProfile: { type: RuntimeDefault }
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities: { drop: ["ALL"] }
+
+  serviceAccount:
+    create: true
+    automountServiceAccountToken: false
+
+  serviceMonitor:
+    enabled: false
+
+  networkPolicy:
+    enabled: true
+    allowFrom:
+      - namespaceSelector:
+          matchLabels: { kubernetes.io/metadata.name: ingress-nginx }
+
+  # Logging — JSON to stdout when LOG_JSON=1.
+  logJson: true
+
+  env:
+    debugMockMarkers: "0"
+
+# ConfigMap-backed runtime config. Both maps are dropped into the container
+# as JSON files at the paths the binary already reads (set via env in
+# Dockerfile: VERIFIABLY_BACKENDS_FILE / VERIFIABLY_AUTH_PROVIDERS_FILE).
+backends: {}
+# verifiably-go's binary parses auth-providers.json as []ProviderConfig, so
+# the rendered ConfigMap must be a JSON array. An empty default is `[]`,
+# not `{}`; toJson on a Helm map would render `{}` and the app would crash
+# at startup with "cannot unmarshal object into Go value of type
+# []auth.ProviderConfig".
+authProviders: []
+
+global:
+  domain: ""
+  clusterIssuer: selfsigned

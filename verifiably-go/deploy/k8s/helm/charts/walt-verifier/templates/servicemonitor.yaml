@@ -1,0 +1,16 @@
+{{- if .Values.verifier.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "walt-verifier.fullname" . }}
+  labels:
+    {{- include "walt-verifier.labels" . | nindent 4 }}
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels: {{- include "walt-verifier.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: http
+      path: {{ .Values.verifier.serviceMonitor.path }}
+      interval: {{ .Values.verifier.serviceMonitor.interval }}
+{{- end }}

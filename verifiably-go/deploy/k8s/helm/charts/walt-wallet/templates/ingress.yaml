@@ -1,0 +1,35 @@
+{{- if .Values.wallet.ingress.enabled }}
+{{- $host := include "walt-wallet.ingressHost" . }}
+{{- if not $host }}
+{{- fail "wallet.ingress.host or wallet.baseUrl or global.domain must be set" }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "walt-wallet.fullname" . }}
+  labels: {{- include "walt-wallet.labels" . | nindent 4 }}
+  annotations:
+    {{- with .Values.wallet.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- if .Values.global.clusterIssuer }}
+    cert-manager.io/cluster-issuer: {{ .Values.global.clusterIssuer | quote }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.wallet.ingress.className }}
+  {{- if .Values.wallet.ingress.tls }}
+  tls:
+    - hosts: [{{ $host | quote }}]
+      secretName: {{ include "walt-wallet.fullname" . }}-tls
+  {{- end }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "walt-wallet.fullname" . }}
+                port: { name: http }
+{{- end }}

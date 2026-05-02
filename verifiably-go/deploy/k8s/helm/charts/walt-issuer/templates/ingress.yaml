@@ -1,0 +1,35 @@
+{{- if .Values.issuer.ingress.enabled }}
+{{- $host := include "walt-issuer.ingressHost" . }}
+{{- if not $host }}
+{{- fail "issuer.ingress.host or issuer.baseUrl or global.domain must be set" }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "walt-issuer.fullname" . }}
+  labels: {{- include "walt-issuer.labels" . | nindent 4 }}
+  annotations:
+    {{- with .Values.issuer.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- if .Values.global.clusterIssuer }}
+    cert-manager.io/cluster-issuer: {{ .Values.global.clusterIssuer | quote }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.issuer.ingress.className }}
+  {{- if .Values.issuer.ingress.tls }}
+  tls:
+    - hosts: [{{ $host | quote }}]
+      secretName: {{ include "walt-issuer.fullname" . }}-tls
+  {{- end }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "walt-issuer.fullname" . }}
+                port: { name: http }
+{{- end }}

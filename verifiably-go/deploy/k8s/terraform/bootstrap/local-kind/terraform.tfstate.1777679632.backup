@@ -1,0 +1,76 @@
+{
+  "version": 4,
+  "terraform_version": "1.15.0",
+  "serial": 4,
+  "lineage": "cb645260-cbc3-ed95-9163-c3bcbde92d19",
+  "outputs": {
+    "cluster_name": {
+      "value": "verifiably-dev",
+      "type": "string"
+    },
+    "host_http_url": {
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    "host_https_url": {
+      "value": "https://localhost:8443",
+      "type": "string"
+    },
+    "kubeconfig_path": {
+      "value": "/Users/antoine/codeplay/cdpi_projects/demo-daas-3-0/verifiably-go/deploy/k8s/terraform/.tfstate/verifiably-dev.kubeconfig",
+      "type": "string"
+    },
+    "lb_mode": {
+      "value": "metallb",
+      "type": "string"
+    }
+  },
+  "resources": [
+    {
+      "mode": "managed",
+      "type": "null_resource",
+      "name": "kind_cluster",
+      "provider": "provider[\"registry.terraform.io/hashicorp/null\"]",
+      "instances": [
+        {
+          "status": "tainted",
+          "schema_version": 0,
+          "attributes": {
+            "id": "5524775121646722869",
+            "triggers": {
+              "cluster_name": "verifiably-dev",
+              "config_hash": "599accf9e38c473a29780e54cb68c3392bdcda3378d3b8db1227a9ae17da4bf3",
+              "node_image": "kindest/node:v1.30.4"
+            }
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0,
+          "dependencies": [
+            "local_file.kind_config",
+            "null_resource.kubeconfig_dir"
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "null_resource",
+      "name": "kubeconfig_dir",
+      "provider": "provider[\"registry.terraform.io/hashicorp/null\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "8971399012571650568",
+            "triggers": {
+              "dir": "/Users/antoine/codeplay/cdpi_projects/demo-daas-3-0/verifiably-go/deploy/k8s/terraform/.tfstate"
+            }
+          },
+          "sensitive_attributes": [],
+          "identity_schema_version": 0
+        }
+      ]
+    }
+  ],
+  "check_results": null
+}

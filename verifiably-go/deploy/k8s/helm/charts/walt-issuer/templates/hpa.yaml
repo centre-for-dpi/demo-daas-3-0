@@ -1,0 +1,21 @@
+{{- if .Values.issuer.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "walt-issuer.fullname" . }}
+  labels: {{- include "walt-issuer.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "walt-issuer.fullname" . }}
+  minReplicas: {{ .Values.issuer.hpa.minReplicas }}
+  maxReplicas: {{ .Values.issuer.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.issuer.hpa.targetCPUUtilizationPercentage }}
+{{- end }}

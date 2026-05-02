@@ -1,0 +1,11 @@
+{{- if .Values.realm.json }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realm-import
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+data:
+  vcplatform-realm.json: |-
+{{ .Values.realm.json | indent 4 }}
+{{- end }}

@@ -16,6 +16,7 @@ import (
 	"html/template"
 	"io/fs"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -29,6 +30,17 @@ import (
 )
 
 func main() {
+	// Structured JSON logs to stdout when running in a container (auto-detected
+	// via VERIFIABLY_LOG_JSON=1). Default keeps the dev-friendly text format
+	// for `go run`. Pipe to slog and route the legacy `log` package through
+	// it so existing log.Printf calls also emit JSON.
+	if os.Getenv("VERIFIABLY_LOG_JSON") == "1" {
+		h := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
+		slog.SetDefault(slog.New(h))
+		log.SetFlags(0)
+		log.SetOutput(slogWriter{})
+	}
+
 	addr := os.Getenv("VERIFIABLY_ADDR")
 	if addr == "" {
 		addr = ":8080"
@@ -69,6 +81,18 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
+
+	// Liveness + readiness for K8s probes. /healthz: always 200 once the
+	// process is up. /readyz: same today; if a future startup step is
+	// async, gate it on a sync.Once-set ready flag instead.
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ready"))
+	})
 
 	// Static files
 	staticFS := http.FileServer(http.Dir("static"))
@@ -173,6 +197,15 @@ func main() {
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// slogWriter routes legacy `log` package output through slog so JSON mode
+// captures every existing log.Printf call without rewriting them.
+type slogWriter struct{}
+
+func (slogWriter) Write(p []byte) (int, error) {
+	slog.Info(strings.TrimRight(string(p), "\n"))
+	return len(p), nil
 }
 
 // loadTemplates walks templates/ and parses every *.html file into a single tree

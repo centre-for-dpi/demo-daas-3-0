@@ -1,0 +1,67 @@
+wso2is:
+  image:
+    repository: wso2/wso2is
+    tag: "7.0.0"
+    pullPolicy: IfNotPresent
+  service:
+    port: 9443
+
+  baseUrl: ""
+  ingress:
+    enabled: true
+    className: nginx
+    host: ""
+    annotations:
+      cert-manager.io/cluster-issuer: selfsigned
+      nginx.ingress.kubernetes.io/backend-protocol: HTTPS
+    tls: true
+
+  replicas: 1                       # single-node — clustering left to ops
+  javaOpts: "-Xms512m -Xmx1024m"
+
+  # Admin credentials Secret. Job-bootstrapped on first install (Phase 4.5
+  # follow-up); demo default in values for convenience.
+  adminUser: "admin"
+  adminPasswordSecret:
+    name: ""                        # if empty, falls back to demo `admin`
+    key: "password"
+
+  # signup-redirect URL — written into the JSP success-page by the patcher
+  # initContainer. Defaults to the verifiably-go app's auth callback.
+  signupRedirectUrl: ""
+
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits:   { memory: 2Gi }
+
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: ""
+
+  livenessProbe:
+    tcpSocket: { port: https }
+    initialDelaySeconds: 120
+    periodSeconds: 30
+  readinessProbe:
+    tcpSocket: { port: https }
+    initialDelaySeconds: 60
+    periodSeconds: 15
+
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 802
+    runAsGroup: 802
+    fsGroup: 802
+  containerSecurityContext:
+    readOnlyRootFilesystem: false
+    allowPrivilegeEscalation: false
+    capabilities: { drop: ["ALL"] }
+
+  serviceAccount:
+    create: true
+    automountServiceAccountToken: false
+
+global:
+  domain: ""
+  clusterIssuer: selfsigned

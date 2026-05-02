@@ -1,0 +1,21 @@
+{{- if .Values.verifier.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "walt-verifier.fullname" . }}
+  labels: {{- include "walt-verifier.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "walt-verifier.fullname" . }}
+  minReplicas: {{ .Values.verifier.hpa.minReplicas }}
+  maxReplicas: {{ .Values.verifier.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.verifier.hpa.targetCPUUtilizationPercentage }}
+{{- end }}
