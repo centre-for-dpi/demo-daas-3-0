@@ -1024,7 +1024,7 @@ start_container() {
   # under the user's home; world-write doesn't expose anything new. Also
   # mounts /var/run/docker.sock as group-readable so isContainerRunning
   # / restartContainer work without root inside the container.
-  local catalog_dir="$SCRIPT_DIR/deploy/compose/stack/issuer-api/config"
+  local catalog_dir="$SCRIPT_DIR/deploy/k8s/config/issuer"
   if [[ -d "$catalog_dir" ]]; then
     chmod 0777 "$catalog_dir" 2>/dev/null || true
     chmod 0666 "$catalog_dir"/*.conf 2>/dev/null || true
@@ -1049,7 +1049,7 @@ start_container() {
     -p "${VERIFIABLY_HOST_PORT}:8080" \
     -v "$SCRIPT_DIR/config/backends.docker.json:/app/config/backends.json:ro" \
     -v "$SCRIPT_DIR/config/auth-providers.docker.json:/app/config/auth-providers.json:ro" \
-    -v "$SCRIPT_DIR/deploy/compose/stack/issuer-api/config:/app/issuer-api-config" \
+    -v "$SCRIPT_DIR/deploy/k8s/config/issuer:/app/issuer-api-config" \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v "${VERIFIABLY_CONTAINER}-locales:/app/locales" \
     -e VERIFIABLY_ADAPTER=registry \
@@ -1104,8 +1104,8 @@ stop_container() {
 # Restarts both services after rewriting because they only read these
 # files at boot.
 render_waltid_service_confs() {
-  local issuer_conf="$SCRIPT_DIR/deploy/compose/stack/issuer-api/config/issuer-service.conf"
-  local verifier_conf="$SCRIPT_DIR/deploy/compose/stack/verifier-api/config/verifier-service.conf"
+  local issuer_conf="$SCRIPT_DIR/deploy/k8s/config/issuer/issuer-service.conf"
+  local verifier_conf="$SCRIPT_DIR/deploy/k8s/config/verifier/verifier-service.conf"
   local issuer_url verifier_url
   if [[ -n "$VERIFIABLY_HOSTS_PATTERN" ]]; then
     issuer_url=$(url_for walt-issuer "$VERIFIABLY_PUBLIC_HOST" "$WALTID_ISSUER_PORT")
