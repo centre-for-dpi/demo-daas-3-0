@@ -170,7 +170,7 @@ func (a *Adapter) RequestPresentation(ctx context.Context, req backend.Presentat
 	body := verifyBody{
 		RequestCredentials: []map[string]any{entry},
 		VPPolicies:         buildVPPolicies(),
-		VCPolicies:         buildVCPolicies(req.Policies, req.WebhookURL),
+		VCPolicies:         buildVCPolicies(req.Policies, req.WebhookURL, format),
 	}
 	raw, err := a.verifier.DoRaw(ctx, "POST", "/openid4vc/verify", jsonReader(body), "application/json", nil)
 	if err != nil {
@@ -395,28 +395,48 @@ func buildVPPolicies() []any {
 // args. Unknown policy names are dropped.
 //
 // "status-list" maps to walt.id's `credential-status` policy
-// (id/walt/policies/policies/StatusPolicy with @SerialName
-// "credential-status"). That single policy covers BOTH formats:
-// StatusPolicyImplementation.processListW3C handles credentialStatus
-// pointing at a W3C BitstringStatusListCredential, and processIETF
-// handles status.status_list pointing at an IETF Token Status List
-// JWT. Without it walt.id never fetches the published list, so a
-// revoked credential reads as valid.
+// (id/walt/policies/policies/StatusPolicy, @SerialName "credential-status").
+// That policy needs `args` shaped as a sealed StatusPolicyArgument with
+// a `discriminator` tag: "w3c" for VCDM 2.0 (BitstringStatusListEntry
+// against credentialStatus) or "ietf" for SD-JWT (IETF Token Status
+// List against status.status_list). Sending the policy as a bare string
+// returns "args required"; sending the wrong discriminator throws
+// during evaluation when the credential's actual status entry doesn't
+// match the configured shape.
 //
-// The legacy `revoked-status-list` (RevocationPolicy class) is also
-// present in v0.18.2 but only handles VCDM 1.0 RevocationList2020 — not
-// what we publish — so we deliberately don't send it. `not-revoked-
-// token-status-list` is NOT a registered policy in v0.18.2; sending it
-// returns 400 "No policy found by name" before any credential is
-// evaluated.
-func buildVCPolicies(selected []string, webhookURL string) []any {
+// We pick the discriminator from the requested wire format: SD-JWT
+// formats → "ietf", everything else → "w3c". value=0 is the expected
+// active state under both specs (1 means revoked).
+//
+// `revoked-status-list` (RevocationPolicy) handles legacy VCDM 1.0
+// RevocationList2020 — not what we publish — so we don't send it.
+// `not-revoked-token-status-list` is NOT registered in v0.18.2;
+// sending it returns 400 "No policy found by name".
+func buildVCPolicies(selected []string, webhookURL, format string) []any {
 	out := []any{}
+	isIETF := format == "vc+sd-jwt" || format == "dc+sd-jwt"
 	for _, p := range selected {
 		switch p {
 		case "signature", "expired", "not-before":
 			out = append(out, p)
 		case "status-list":
-			out = append(out, "credential-status")
+			args := map[string]any{"value": 0}
+			if isIETF {
+				args["discriminator"] = "ietf"
+			} else {
+				args["discriminator"] = "w3c"
+				// W3C BSL 2023 entry carries a `statusPurpose` and a `type`.
+				// Match what we put on the credential body in
+				// buildCredentialData (statusPurpose=revocation,
+				// type=BitstringStatusListEntry); walt.id rejects mismatched
+				// shapes during entry extraction.
+				args["purpose"] = "revocation"
+				args["type"] = "BitstringStatusListEntry"
+			}
+			out = append(out, map[string]any{
+				"policy": "credential-status",
+				"args":   args,
+			})
 		case "webhook":
 			url := strings.TrimSpace(webhookURL)
 			if url == "" {
