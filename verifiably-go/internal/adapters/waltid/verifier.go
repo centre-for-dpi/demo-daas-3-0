@@ -393,12 +393,24 @@ func buildVPPolicies() []any {
 // vc_policies list shape. String entries are first-class policies; the
 // "webhook" option becomes an object policy with the operator's URL in
 // args. Unknown policy names are dropped.
+//
+// "status-list" expands into BOTH walt.id status policies because we
+// don't know up-front whether the presented credential is a W3C VC
+// (checked by `revoked-status-list` against credentialStatus) or an
+// SD-JWT (checked by `not-revoked-token-status-list` against
+// status.status_list). Walt.id ignores a policy whose target field
+// isn't in the credential, so listing both is safe — only the matching
+// one runs per credential. Without listing them at all walt.id never
+// fetches the published status list, and a revoked credential reads as
+// valid because no policy ever evaluated the bit.
 func buildVCPolicies(selected []string, webhookURL string) []any {
 	out := []any{}
 	for _, p := range selected {
 		switch p {
 		case "signature", "expired", "not-before":
 			out = append(out, p)
+		case "status-list":
+			out = append(out, "revoked-status-list", "not-revoked-token-status-list")
 		case "webhook":
 			url := strings.TrimSpace(webhookURL)
 			if url == "" {

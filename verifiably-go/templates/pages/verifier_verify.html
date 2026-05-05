@@ -57,6 +57,10 @@
             <input type="checkbox" name="policy" value="not-before" checked>
             Not Before — credential isn't being used before it's valid
           </label>
+          <label style="display:inline-flex;align-items:center;gap:0.35rem">
+            <input type="checkbox" name="policy" value="status-list" checked>
+            Status — credential isn't revoked (W3C bitstring / IETF token status list)
+          </label>
           <label style="display:inline-flex;align-items:center;gap:0.35rem;flex-wrap:wrap">
             <input type="checkbox" name="policy" value="webhook">
             Webhook — notify
