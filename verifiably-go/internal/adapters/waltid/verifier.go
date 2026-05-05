@@ -394,15 +394,21 @@ func buildVPPolicies() []any {
 // "webhook" option becomes an object policy with the operator's URL in
 // args. Unknown policy names are dropped.
 //
-// "status-list" expands into BOTH walt.id status policies because we
-// don't know up-front whether the presented credential is a W3C VC
-// (checked by `revoked-status-list` against credentialStatus) or an
-// SD-JWT (checked by `not-revoked-token-status-list` against
-// status.status_list). Walt.id ignores a policy whose target field
-// isn't in the credential, so listing both is safe — only the matching
-// one runs per credential. Without listing them at all walt.id never
-// fetches the published status list, and a revoked credential reads as
-// valid because no policy ever evaluated the bit.
+// "status-list" maps to walt.id's `credential-status` policy
+// (id/walt/policies/policies/StatusPolicy with @SerialName
+// "credential-status"). That single policy covers BOTH formats:
+// StatusPolicyImplementation.processListW3C handles credentialStatus
+// pointing at a W3C BitstringStatusListCredential, and processIETF
+// handles status.status_list pointing at an IETF Token Status List
+// JWT. Without it walt.id never fetches the published list, so a
+// revoked credential reads as valid.
+//
+// The legacy `revoked-status-list` (RevocationPolicy class) is also
+// present in v0.18.2 but only handles VCDM 1.0 RevocationList2020 — not
+// what we publish — so we deliberately don't send it. `not-revoked-
+// token-status-list` is NOT a registered policy in v0.18.2; sending it
+// returns 400 "No policy found by name" before any credential is
+// evaluated.
 func buildVCPolicies(selected []string, webhookURL string) []any {
 	out := []any{}
 	for _, p := range selected {
@@ -410,7 +416,7 @@ func buildVCPolicies(selected []string, webhookURL string) []any {
 		case "signature", "expired", "not-before":
 			out = append(out, p)
 		case "status-list":
-			out = append(out, "revoked-status-list", "not-revoked-token-status-list")
+			out = append(out, "credential-status")
 		case "webhook":
 			url := strings.TrimSpace(webhookURL)
 			if url == "" {
