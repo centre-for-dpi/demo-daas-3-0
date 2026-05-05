@@ -13,6 +13,8 @@ import (
 
 	"github.com/verifiably/verifiably-go/backend"
 	"github.com/verifiably/verifiably-go/internal/auth"
+	"github.com/verifiably/verifiably-go/internal/issuance"
+	"github.com/verifiably/verifiably-go/internal/statuslist"
 	"github.com/verifiably/verifiably-go/vctypes"
 )
 
@@ -30,6 +32,31 @@ type H struct {
 	AuthReg    *auth.Registry
 	Translator Translator
 	Debug      bool // DEBUG_SHOW_MOCK_MARKERS equivalent
+
+	// IssuanceLog is the audit log of every credential the operator has
+	// issued through the /issuer/issue flow. Powers /issuer/credentials
+	// (list page) and Revoke. Optional — when nil the list page returns 404
+	// and the issuance flow simply doesn't record (back-compat with tests
+	// + the mock adapter integration).
+	IssuanceLog *issuance.Log
+
+	// BitstringStore is the W3C Bitstring Status List 2023 the verifiably-go
+	// instance hosts for VCDM 2.0 credentials it issues. Optional; nil
+	// disables W3C revocation end-to-end.
+	BitstringStore *statuslist.Store
+
+	// TokenStore is the IETF Token Status List the instance hosts for
+	// SD-JWT VCs it issues. Optional; nil disables SD-JWT revocation.
+	TokenStore *statuslist.Store
+
+	// signingKeyOnce + signingKey lazily fetch the walt.id issuer JWK on
+	// the first /status-list/* request, then cache the parsed
+	// *statuslist.SigningKey for the lifetime of the process. Going through
+	// sync.Once means the first concurrent fetch waits for onboard +
+	// JWK parse, all later ones are lock-free.
+	signingKeyOnce sync.Once
+	signingKey     *statuslist.SigningKey
+	signingKeyErr  error
 }
 
 // isHTMX returns true if the request came from HTMX.
@@ -274,6 +301,7 @@ func titleFor(page string) string {
 		"issuer_schema_builder":  "Issuer · Build schema",
 		"issuer_mode":            "Issuer · Mode",
 		"issuer_issue":           "Issuer · Issue",
+		"issuer_credentials":     "Issuer · Issued credentials",
 		"holder_dpg":             "Holder · Wallet",
 		"holder_wallet":          "Wallet",
 		"holder_present":         "Present credential",
@@ -294,6 +322,7 @@ func crumbFor(page string) string {
 		"issuer_schema_builder": "issuer → schema → build",
 		"issuer_mode":           "issuer → mode",
 		"issuer_issue":          "issuer → issue",
+		"issuer_credentials":    "issuer → issued credentials",
 		"holder_dpg":            "holder → wallet",
 		"holder_wallet":         "holder → wallet",
 		"holder_present":        "holder → present",

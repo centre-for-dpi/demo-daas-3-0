@@ -1,0 +1,117 @@
+package handlers
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+
+	"github.com/verifiably/verifiably-go/internal/statuslist"
+)
+
+// signingKeyAdapter is the optional capability the walt.id adapter exposes
+// for status-list signing. Other adapters (mock, inji-certify, inji-web)
+// don't implement it; the handler falls back to a clear error in that case
+// rather than panicking.
+type signingKeyAdapter interface {
+	IssuerSigningKey(ctx context.Context) (raw []byte, did string, err error)
+}
+
+// resolveSigningKey lazily fetches and parses the walt.id issuer JWK,
+// caching the result for the lifetime of the process. We can't do this at
+// startup because walt.id's /onboard/issuer endpoint may be unreachable
+// for several seconds after compose-up — wiring this on demand keeps
+// startup clean and surfaces a useful error per-request when the upstream
+// is genuinely down.
+func (h *H) resolveSigningKey(ctx context.Context) (*statuslist.SigningKey, error) {
+	h.signingKeyOnce.Do(func() {
+		sa, ok := h.Adapter.(signingKeyAdapter)
+		if !ok {
+			h.signingKeyErr = fmt.Errorf("status-list: adapter %T doesn't expose IssuerSigningKey", h.Adapter)
+			return
+		}
+		raw, did, err := sa.IssuerSigningKey(ctx)
+		if err != nil {
+			h.signingKeyErr = fmt.Errorf("status-list: fetch issuer key: %w", err)
+			return
+		}
+		key, err := statuslist.ParseWaltidIssuerKey(raw, did)
+		if err != nil {
+			h.signingKeyErr = fmt.Errorf("status-list: parse issuer key: %w", err)
+			return
+		}
+		h.signingKey = key
+	})
+	if h.signingKeyErr != nil {
+		// We deliberately don't reset signingKeyOnce on error — if the first
+		// resolve fails (walt.id unreachable at boot) the process restarts
+		// often enough in the demo that retry behavior isn't worth the
+		// added complexity. Subsequent fetches return the cached error,
+		// which the handler turns into a 503.
+		return nil, h.signingKeyErr
+	}
+	return h.signingKey, nil
+}
+
+// PublishBitstringStatusList serves GET /status-list/bitstring/{id}. The
+// id segment must match the configured BitstringStore.ListID — we only
+// host one list at a time today, but pinning the ID in the URL lets us
+// add second-list support later without changing the route shape.
+func (h *H) PublishBitstringStatusList(w http.ResponseWriter, r *http.Request) {
+	if h.BitstringStore == nil {
+		http.Error(w, "bitstring status list not configured", http.StatusNotFound)
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" || id != h.BitstringStore.ListID {
+		http.Error(w, "unknown status list id", http.StatusNotFound)
+		return
+	}
+	key, err := h.resolveSigningKey(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	jwt, err := h.BitstringStore.PublishBitstringJWT(key)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// Per VCDM 2.0 + IANA media-type registry, JOSE-secured VCs use the
+	// `application/vc+jwt` media type. Verifiers that key off the
+	// Content-Type can dispatch to the JWT-VC parser without sniffing.
+	w.Header().Set("Content-Type", "application/vc+jwt")
+	// Status lists change rarely — let intermediaries cache for 60s. A
+	// freshly-revoked credential's status visibility lags by at most one
+	// minute, well inside what verifiers expect.
+	w.Header().Set("Cache-Control", "public, max-age=60")
+	_, _ = w.Write([]byte(jwt))
+}
+
+// PublishTokenStatusList serves GET /status-list/token/{id} for SD-JWT
+// VCs. Same shape as PublishBitstringStatusList but emits the IETF Token
+// Status List JWT (status_list claim) with media type
+// application/statuslist+jwt (draft-ietf-oauth-status-list §6).
+func (h *H) PublishTokenStatusList(w http.ResponseWriter, r *http.Request) {
+	if h.TokenStore == nil {
+		http.Error(w, "token status list not configured", http.StatusNotFound)
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" || id != h.TokenStore.ListID {
+		http.Error(w, "unknown status list id", http.StatusNotFound)
+		return
+	}
+	key, err := h.resolveSigningKey(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	jwt, err := h.TokenStore.PublishTokenStatusList(key)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/statuslist+jwt")
+	w.Header().Set("Cache-Control", "public, max-age=60")
+	_, _ = w.Write([]byte(jwt))
+}

@@ -26,8 +26,55 @@ import (
 	"github.com/verifiably/verifiably-go/internal/adapters/factory"
 	"github.com/verifiably/verifiably-go/internal/adapters/registry"
 	"github.com/verifiably/verifiably-go/internal/handlers"
+	"github.com/verifiably/verifiably-go/internal/issuance"
+	"github.com/verifiably/verifiably-go/internal/statuslist"
 	"github.com/verifiably/verifiably-go/vctypes"
 )
+
+// wireIssuanceAndStatusLists initializes the on-disk audit log + the two
+// status-list stores and binds them to the handler. Designed to be lossy:
+// any error here disables the feature surface but doesn't block startup,
+// because the rest of the demo (DPG picker, schema browser, holder/wallet
+// flows) still works fine without revocation.
+func wireIssuanceAndStatusLists(h *handlers.H) error {
+	stateDir := os.Getenv("VERIFIABLY_STATE_DIR")
+	if stateDir == "" {
+		stateDir = "state"
+	}
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		return fmt.Errorf("mkdir state dir: %w", err)
+	}
+	logPath := filepath.Join(stateDir, "issued-credentials.json")
+	logger, err := issuance.NewLog(logPath)
+	if err != nil {
+		return fmt.Errorf("open issuance log: %w", err)
+	}
+	h.IssuanceLog = logger
+
+	// Public URL the verifier dereferences. VERIFIABLY_PUBLIC_URL is set
+	// by deploy.sh to the browser-facing origin
+	// ("http://172.24.0.1:8080" / "https://vc.bootcamp.cdpi.dev"); we
+	// append the route shape exposed in mux.HandleFunc above.
+	publicURL := strings.TrimRight(os.Getenv("VERIFIABLY_PUBLIC_URL"), "/")
+	if publicURL == "" {
+		publicURL = "http://localhost:8080"
+	}
+	bs, err := statuslist.NewStore("bitstring", "v1",
+		filepath.Join(stateDir, "status-list-bitstring-v1.json"),
+		publicURL+"/status-list/bitstring/v1")
+	if err != nil {
+		return fmt.Errorf("open bitstring store: %w", err)
+	}
+	h.BitstringStore = bs
+	tk, err := statuslist.NewStore("token", "v1",
+		filepath.Join(stateDir, "status-list-token-v1.json"),
+		publicURL+"/status-list/token/v1")
+	if err != nil {
+		return fmt.Errorf("open token store: %w", err)
+	}
+	h.TokenStore = tk
+	return nil
+}
 
 func main() {
 	// Structured JSON logs to stdout when running in a container (auto-detected
@@ -67,6 +114,15 @@ func main() {
 		AuthReg:    authReg,
 		Translator: translator,
 		Debug:      debug,
+	}
+	// Issuance audit log + revocation status lists. Optional: when the
+	// state directory isn't writable we log and continue with the features
+	// disabled (the list page returns 404, the issuance flow doesn't
+	// allocate). VERIFIABLY_STATE_DIR defaults to ./state on bare metal
+	// and /app/state in the docker image (Dockerfile mounts a volume there
+	// so revocations survive container rebuilds).
+	if err := wireIssuanceAndStatusLists(h); err != nil {
+		log.Printf("status-list: feature disabled — %v", err)
 	}
 
 	// /docs browser reads markdown from VERIFIABLY_DOCS_ROOT (set by the
@@ -157,6 +213,17 @@ func main() {
 	mux.HandleFunc("POST /issuer/schema/build/save", h.SaveSchema)
 	mux.HandleFunc("GET /issuer/mode", h.ShowIssuanceMode)
 	mux.HandleFunc("POST /issuer/mode", h.SetIssuanceMode)
+	// Public status-list endpoints — verifiers GET these to check
+	// revocation. Must be unauthenticated and survive any session cookie
+	// gymnastics, hence registered before any auth middleware below.
+	mux.HandleFunc("GET /status-list/bitstring/{id}", h.PublishBitstringStatusList)
+	mux.HandleFunc("GET /status-list/token/{id}", h.PublishTokenStatusList)
+
+	// Issued-credentials list page + Revoke action.
+	mux.HandleFunc("GET /issuer/credentials", h.ShowIssuedCredentials)
+	mux.HandleFunc("GET /issuer/credentials/search", h.IssuedCredentialsSearch)
+	mux.HandleFunc("POST /issuer/credentials/{id}/revoke", h.RevokeIssuedCredential)
+
 	mux.HandleFunc("GET /issuer/issue", h.ShowIssue)
 	mux.HandleFunc("POST /issuer/issue", h.SubmitIssue)
 	mux.HandleFunc("POST /issuer/issue/source", h.SetSingleSource)
@@ -253,6 +320,10 @@ func funcMap() template.FuncMap {
 		"hasPrefix":         strings.HasPrefix,
 		"replaceUnderscore": func(s string) string { return strings.ReplaceAll(s, "_", " ") },
 		"trimPrefix":        strings.TrimPrefix,
+
+		// list builds an []any from the args so templates can range over
+		// inline literal sequences. Usage: {{range list "a" "b" "c"}}.
+		"list": func(args ...any) []any { return args },
 
 		// jsonRows marshals arbitrary data to a JSON literal the bulk-result
 		// fragment embeds into its <script> block so client-side handlers

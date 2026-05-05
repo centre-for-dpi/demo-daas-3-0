@@ -48,6 +48,14 @@ type Session struct {
 	SchemaQuery      string          // current search text
 	CustomSchemas    []vctypes.Schema   // in-session custom schemas
 
+	// Issued-credentials list page filter state. Persisted on the session
+	// so that a Revoke action's row-fragment re-render preserves whatever
+	// the user was viewing.
+	IssuedQuery  string
+	IssuedStd    string // "" or one of the stds; "all" maps to ""
+	IssuedFormat string
+	IssuedState  string // "", "active", "revoked"
+
 	// Wallet state
 	WalletCreds   []vctypes.Credential
 	WalletPending []vctypes.Credential

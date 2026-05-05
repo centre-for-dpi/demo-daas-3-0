@@ -197,11 +197,25 @@ func (h *H) SubmitIssue(w http.ResponseWriter, r *http.Request) {
 	req := backend.IssueRequest{IssuerDpg: sess.IssuerDpg, Schema: schema, SubjectData: subject}
 
 	if sess.Dest == "wallet" {
+		// Allocate a status-list index BEFORE the issuance call so the
+		// adapter can inject credentialStatus / status.status_list into
+		// the credential body. The Store persists nextFree on Allocate, so
+		// even if the issuance request fails the index is permanently
+		// burned — for now we accept the small drift; an Unallocate path
+		// would need transactional semantics across Store + walt.id which
+		// isn't worth the complexity for a demo.
+		binding, allocErr := h.allocateStatusListBinding(schema)
+		if allocErr != nil {
+			h.errorToast(w, r, allocErr.Error())
+			return
+		}
+		req.StatusList = binding
 		res, err := h.Adapter.IssueToWallet(r.Context(), req)
 		if err != nil {
 			h.errorToast(w, r, err.Error())
 			return
 		}
+		h.recordIssuance(schema, sess.IssuerDpg, subject, res.OfferURI, binding)
 		h.renderFragment(w, r, "fragment_issue_wallet_result", res)
 		return
 	}

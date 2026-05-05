@@ -645,6 +645,10 @@ func (a *Adapter) IssueToWallet(ctx context.Context, req backend.IssueRequest) (
 		// JsonConvertException. Namespace is derived from the doctype by
 		// stripping the last dot-segment (e.g. org.iso.18013.5.1.mDL →
 		// org.iso.18013.5.1).
+		// mdoc revocation flows through MSO/IACA, not bitstring/token status
+		// lists, so we don't inject a StatusListBinding here even when one is
+		// passed (the handler shouldn't allocate for mso_mdoc; this is a
+		// belt-and-braces no-op).
 		mdocData, err := buildMdocData(req.Schema, req.SubjectData)
 		if err != nil {
 			return backend.IssueToWalletResult{}, err
@@ -657,7 +661,7 @@ func (a *Adapter) IssueToWallet(ctx context.Context, req backend.IssueRequest) (
 		// which become disclosures; a VCDM-wrapped body only makes
 		// "credentialSubject" itself disclosable, leaving the individual
 		// claims baked into the JWT.
-		cd, err := buildSDJWTCredentialData(req.SubjectData)
+		cd, err := buildSDJWTCredentialData(req.SubjectData, req.StatusList)
 		if err != nil {
 			return backend.IssueToWalletResult{}, err
 		}
@@ -684,7 +688,7 @@ func (a *Adapter) IssueToWallet(ctx context.Context, req backend.IssueRequest) (
 		ir.CredentialData = cd
 		ir.SelectiveDisclosure = buildSelectiveDisclosureMap(req.SubjectData)
 	default:
-		cd, err := buildCredentialData(req.Schema, req.SubjectData)
+		cd, err := buildCredentialData(req.Schema, req.SubjectData, req.StatusList)
 		if err != nil {
 			return backend.IssueToWalletResult{}, err
 		}
@@ -899,10 +903,22 @@ func authenticationMethod(flow string) string {
 // nests under credentialSubject), SD-JWT VC puts each claim at the payload
 // root so walt.id's SDMap can mark individual claims as selectively
 // disclosable.
-func buildSDJWTCredentialData(subject map[string]string) (json.RawMessage, error) {
-	out := make(map[string]any, len(subject))
+func buildSDJWTCredentialData(subject map[string]string, sl *backend.StatusListBinding) (json.RawMessage, error) {
+	out := make(map[string]any, len(subject)+1)
 	for k, v := range subject {
 		out[k] = v
+	}
+	// IETF Token Status List binding: top-level `status.status_list.{idx,uri}`
+	// per draft-ietf-oauth-status-list. Walt.id passes the credentialData
+	// claims through into the SD-JWT verbatim, so the verifier sees the
+	// status binding without us touching walt.id's signing path.
+	if sl != nil && sl.Type == "token" {
+		out["status"] = map[string]any{
+			"status_list": map[string]any{
+				"idx": sl.Index,
+				"uri": sl.PublishURL,
+			},
+		}
 	}
 	return json.Marshal(out)
 }
@@ -959,7 +975,7 @@ func buildMdocData(schema vctypes.Schema, subject map[string]string) (json.RawMe
 // buildCredentialData constructs a VCDM 2.0-shaped JSON object from the
 // operator's subject input. Types come from the schema id prefix
 // (the canonical type before the `_format` suffix).
-func buildCredentialData(schema vctypes.Schema, subject map[string]string) (json.RawMessage, error) {
+func buildCredentialData(schema vctypes.Schema, subject map[string]string, sl *backend.StatusListBinding) (json.RawMessage, error) {
 	types := []string{"VerifiableCredential"}
 	if schema.Custom {
 		// Custom schemas may declare AdditionalTypes via the builder's
@@ -989,6 +1005,20 @@ func buildCredentialData(schema vctypes.Schema, subject map[string]string) (json
 		},
 		"type":              types,
 		"credentialSubject": credSubject,
+	}
+	// W3C Bitstring Status List 2023 entry. statusListIndex must be a
+	// STRING per the spec, even though it's numeric semantically — verifiers
+	// reject numeric forms with a "VC-BSL-VALIDATION" error. Walt.id signs
+	// whatever credentialStatus we put here verbatim, so this is the only
+	// touchpoint needed for VCDM 2.0 revocation.
+	if sl != nil && sl.Type == "bitstring" {
+		doc["credentialStatus"] = map[string]any{
+			"id":                   fmt.Sprintf("%s#%d", sl.PublishURL, sl.Index),
+			"type":                 "BitstringStatusListEntry",
+			"statusPurpose":        "revocation",
+			"statusListIndex":      fmt.Sprintf("%d", sl.Index),
+			"statusListCredential": sl.PublishURL,
+		}
 	}
 	b, err := json.Marshal(doc)
 	if err != nil {

@@ -56,6 +56,23 @@ type walletSession struct {
 	WalletID string
 }
 
+// IssuerSigningKey returns the cached walt.id issuer JWK (raw bytes from
+// /onboard/issuer) and its DID. Lazily onboards on first call, mirroring
+// what IssueToWallet does, so a status-list handler can demand-fetch the
+// signing key without coupling to the issuance request path. The returned
+// JWK envelope is what statuslist.ParseWaltidIssuerKey expects.
+func (a *Adapter) IssuerSigningKey(ctx context.Context) (json.RawMessage, string, error) {
+	if err := a.ensureIssuerKey(ctx); err != nil {
+		return nil, "", err
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	// Defensive copy — callers shouldn't be able to mutate our cache.
+	out := make(json.RawMessage, len(a.issuerKey))
+	copy(out, a.issuerKey)
+	return out, a.issuerDID, nil
+}
+
 // New constructs an Adapter from Config. Validates required URLs but defers
 // onboarding + wallet login until the first call that needs them — so startup
 // stays fast and a missing/unreachable backend surfaces as a per-request error

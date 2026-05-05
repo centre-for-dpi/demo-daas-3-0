@@ -154,6 +154,26 @@ type IssueRequest struct {
 	Schema      vctypes.Schema
 	SubjectData map[string]string
 	Flow        string // "pre_auth" or "auth_code"; empty = adapter default
+
+	// StatusList enrolls the credential in a verifiably-go-hosted revocation
+	// list. The handler allocates an index from the appropriate Store before
+	// calling the adapter; the adapter is responsible for embedding the
+	// binding into the credential body so verifiers can later GET the
+	// PublishURL and check Index. nil means "no status list" — the credential
+	// is unrevocable end-to-end and the issuance log marks the entry without
+	// a StatusListEntry pointer.
+	StatusList *StatusListBinding
+}
+
+// StatusListBinding is the (which list, which bit, where to fetch) pointer
+// the handler hands the adapter to inject into the VC. Type matches
+// internal/statuslist.Store.Kind: "bitstring" for W3C VCDM 2.0 (BSL 2023),
+// "token" for SD-JWT (IETF Token Status List).
+type StatusListBinding struct {
+	Type       string
+	ListID     string
+	Index      int
+	PublishURL string // absolute, browser-reachable URL the verifier dereferences
 }
 
 // IssueToWalletResult describes a generated credential offer.
