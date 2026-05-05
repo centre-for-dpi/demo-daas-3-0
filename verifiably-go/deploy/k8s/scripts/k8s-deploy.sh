@@ -36,7 +36,7 @@ usage() {
 Usage: k8s-deploy.sh <command> [args]
 
 Commands:
-  up <waltid> [--target=local|onprem|aws]   provision + deploy
+  up <waltid> [--target=local|onprem|aws|ec2]   provision + deploy
   run <waltid>                              rebuild verifiably-go image, restart pod
   down [<waltid>]                           destroy workloads (keep cluster)
   reset                                     destroy cluster + everything
@@ -63,7 +63,7 @@ parse_target() {
     esac
   done
   case "$TARGET" in
-    local|onprem|aws) ;;
+    local|onprem|aws|ec2) ;;
     *) red "unknown target: $TARGET"; exit 2;;
   esac
 }
@@ -73,6 +73,7 @@ bootstrap_dir() {
     local)  echo "$TF_DIR/bootstrap/local-kind" ;;
     onprem) echo "$TF_DIR/bootstrap/onprem-k3s" ;;
     aws)    echo "$TF_DIR/bootstrap/aws-eks" ;;
+    ec2)    echo "" ;; # k3s is pre-installed by user-data; no bootstrap stage.
   esac
 }
 
@@ -118,15 +119,23 @@ cmd_up() {
   sync_config
 
   # 1. Cluster.
-  local bd; bd="$(bootstrap_dir)"
-  bold "▶ [1/3] terraform apply $(basename "$bd")"
-  pushd "$bd" >/dev/null
-  terraform init -upgrade
-  terraform apply -auto-approve
-  popd >/dev/null
-
-  load_bootstrap_outputs
-  [[ -n "$KUBECONFIG_PATH" && -f "$KUBECONFIG_PATH" ]] || { red "no kubeconfig from bootstrap"; exit 1; }
+  if [[ "$TARGET" == "ec2" ]]; then
+    # k3s is pre-installed by deploy/cloud/ec2-bootstrap.sh (cloud-init).
+    # Skip the terraform bootstrap stage and reuse the installer's kubeconfig.
+    bold "▶ [1/3] k3s pre-installed by user-data — skipping bootstrap terraform"
+    KUBECONFIG_PATH=/etc/rancher/k3s/k3s.yaml
+    LB_MODE=metallb
+    [[ -f "$KUBECONFIG_PATH" ]] || { red "k3s kubeconfig missing at $KUBECONFIG_PATH — did the user-data script complete? check /var/lib/cloud/instance/k8s-bootstrap-complete"; exit 1; }
+  else
+    local bd; bd="$(bootstrap_dir)"
+    bold "▶ [1/3] terraform apply $(basename "$bd")"
+    pushd "$bd" >/dev/null
+    terraform init -upgrade
+    terraform apply -auto-approve
+    popd >/dev/null
+    load_bootstrap_outputs
+    [[ -n "$KUBECONFIG_PATH" && -f "$KUBECONFIG_PATH" ]] || { red "no kubeconfig from bootstrap"; exit 1; }
+  fi
   export KUBECONFIG="$KUBECONFIG_PATH"
   grn "  kubeconfig: $KUBECONFIG_PATH"
   grn "  lb_mode:    $LB_MODE"
