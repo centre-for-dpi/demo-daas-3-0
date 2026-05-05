@@ -26,6 +26,13 @@
   </div>
   {{end}}
 
+  {{/* Cross-flow shortcut to the audit + revoke page, mirroring the
+       button that lives on /issuer/dpg. Sits above the search bar so
+       it's visible without scrolling past the schema grid. */}}
+  <div class="btn-row" style="margin-top:1rem;margin-bottom:1rem">
+    <a href="/issuer/credentials" class="btn ghost">View issued credentials →</a>
+  </div>
+
   <div id="schema-browser">
     {{template "fragment_schema_browser_body" .Body}}
   </div>
