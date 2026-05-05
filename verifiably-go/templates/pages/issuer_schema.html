@@ -86,8 +86,12 @@
 <div class="schema-list" id="schema-list">
   {{if not .Schemas}}
     <div class="empty" style="grid-column: 1 / -1">
-      <div class="display">No matches.</div>
-      Try clearing the filter or building a custom schema.
+      {{if .HasAnyCustom}}
+        <div class="display">No matches.</div>
+        Try clearing the filter or building a custom schema.
+      {{else}}
+        <div class="display">No custom schemas yet — build one to start issuing.</div>
+      {{end}}
     </div>
   {{end}}
 

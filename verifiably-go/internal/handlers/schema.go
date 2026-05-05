@@ -92,6 +92,11 @@ type schemaBrowserData struct {
 	ExpandedID   string
 	SelectedID   string
 	ExpandedJSON string
+	// HasAnyCustom is true when the issuer has saved at least one custom
+	// schema, regardless of the active filter/query. Lets the template
+	// distinguish "no results because filter hides them" from "user has
+	// not built any custom schema yet" and pick the right empty-state copy.
+	HasAnyCustom bool
 	// Notice is a soft error banner the page renders inline, used when the
 	// vendor's catalog endpoint is briefly unreachable (e.g. walt.id is
 	// restarting after a custom-schema save). Custom schemas saved in the
@@ -118,6 +123,19 @@ func (h *H) schemaBrowserData(w http.ResponseWriter, r *http.Request, sess *Sess
 			schemas = []vctypes.Schema{}
 		}
 	}
+	// Show only user-built schemas in the issuance flow. The walt.id catalog
+	// returns its stock credential types alongside any user-saved ones; for
+	// the issuer UX we only want the latter. Doing this here (not at the
+	// adapter layer) keeps stock schemas reachable for code paths that need
+	// them (e.g. config dumps, debugging) without re-plumbing.
+	customOnly := schemas[:0]
+	for _, s := range schemas {
+		if s.Custom {
+			customOnly = append(customOnly, s)
+		}
+	}
+	schemas = customOnly
+	hasAnyCustom := len(schemas) > 0
 	// Build the std-chip list from EVERY variant's Std — after grouping a
 	// card may carry several variants, so filtering by Std needs to consider
 	// all of them.
@@ -180,6 +198,7 @@ func (h *H) schemaBrowserData(w http.ResponseWriter, r *http.Request, sess *Sess
 		SelectedID:   sess.SchemaID,
 		ExpandedJSON: expandedJSON,
 		Notice:       notice,
+		HasAnyCustom: hasAnyCustom,
 	}
 }
 
