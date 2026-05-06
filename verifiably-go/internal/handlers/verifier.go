@@ -19,7 +19,7 @@ func (h *H) ShowVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dpgs, _ := h.Adapter.ListVerifierDpgs(r.Context())
-	schemas, _ := h.Adapter.ListAllSchemas(issuerCtx(r, sess))
+	schemas, _ := h.Adapter.ListAllSchemas(r.Context())
 	if sess.VerifierSchemaFilter == "" {
 		sess.VerifierSchemaFilter = "all"
 	}
@@ -183,7 +183,7 @@ func (h *H) assembleCustomTemplate(r *http.Request, sess *Session) (vctypes.OID4
 	if schemaID == "" {
 		return vctypes.OID4VPTemplate{}, fmt.Errorf("pick a schema first")
 	}
-	schemas, err := h.Adapter.ListAllSchemas(issuerCtx(r, sess))
+	schemas, err := h.Adapter.ListAllSchemas(r.Context())
 	if err != nil {
 		return vctypes.OID4VPTemplate{}, fmt.Errorf("could not load schemas: %w", err)
 	}
@@ -290,7 +290,7 @@ func (h *H) BuildVerifierTemplate(w http.ResponseWriter, r *http.Request) {
 		h.errorToast(w, r, "Bad form: "+err.Error())
 		return
 	}
-	schemas, err := h.Adapter.ListAllSchemas(issuerCtx(r, sess))
+	schemas, err := h.Adapter.ListAllSchemas(r.Context())
 	if err != nil {
 		h.errorToast(w, r, "Could not load schemas: "+err.Error())
 		return
