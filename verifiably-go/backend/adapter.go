@@ -343,6 +343,29 @@ type PresentCredentialResult struct {
 	VerifierState string // echo of the verifier's state/correlation token, if any
 }
 
+// PolicyOutcome is one verifier policy's evaluation result. Passed=true
+// means the policy ran cleanly; Reason carries walt.id's diagnostic
+// string when a policy failed (verbatim — the UI surfaces it under
+// the policy name so operators can act on the specific failure).
+type PolicyOutcome struct {
+	Name   string
+	Passed bool
+	Reason string
+}
+
+// FailedPolicies returns the subset whose Passed flag is false. Helper
+// for templates that want to highlight just the failures without
+// recomputing.
+func (r VerificationResult) FailedPolicies() []PolicyOutcome {
+	out := make([]PolicyOutcome, 0, len(r.PolicyOutcomes))
+	for _, p := range r.PolicyOutcomes {
+		if !p.Passed {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // VerificationResult is the output of both FetchPresentationResult and VerifyDirect.
 //
 // Pending=true signals that no holder has submitted a presentation yet — the
@@ -365,6 +388,13 @@ type VerificationResult struct {
 	// result fragment to show "the VP was verified along with:" like walt.id's
 	// portal. Empty for direct-verify callers that don't expose policy info.
 	PoliciesApplied []string
+	// PolicyOutcomes is the per-policy success/failure detail. When Valid
+	// is false this is the source of the operator's actionable info — the
+	// result template renders the failed entries with their walt.id-supplied
+	// reason text (e.g. "Status validation failed: expected 0, got 1" for
+	// a revoked credential). Adapters that can't surface per-policy detail
+	// leave this nil and the template falls back to PoliciesApplied.
+	PolicyOutcomes []PolicyOutcome
 	// DisclosedFields holds the holder-disclosed claim values extracted from
 	// the VP token. The map key is the claim name, the value is the string
 	// rendering (scalars stringified, nested objects JSON-encoded). Used by

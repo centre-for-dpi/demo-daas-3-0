@@ -300,10 +300,56 @@ func (h *H) SubmitPresent(w http.ResponseWriter, r *http.Request) {
 		RequestURI:   reqURI,
 	})
 	if err != nil {
+		// A revocation rejection is the operator-visible failure mode we
+		// most need to humanize: walt.id returns 400 with a stack trace,
+		// but what the holder needs to know is "your credential was
+		// revoked, contact the issuer". Swap the consent card for a
+		// revocation card in the same DOM target instead of toasting the
+		// raw error.
+		if isRevocationError(err) {
+			title := credentialTitleFromSession(sess, credID)
+			h.renderFragment(w, r, "fragment_present_revoked", map[string]any{
+				"CredentialTitle": title,
+				"Detail":          err.Error(),
+			})
+			return
+		}
 		h.errorToast(w, r, err.Error())
 		return
 	}
 	h.renderFragment(w, r, "fragment_present_result", res)
+}
+
+// isRevocationError reports whether err originated from a status-list
+// policy failure raised by the verifier. We probe via type assertion on
+// the walt.id-specific sentinel rather than string-match here so the
+// handler stays adapter-neutral; any future adapter that wraps the same
+// failure pattern just has to expose a similar typed error.
+func isRevocationError(err error) bool {
+	type isRev interface{ Error() string }
+	// Use string-match on the typed adapter error's stable headline.
+	// We deliberately don't import the waltid package from handlers
+	// (handler is adapter-neutral), so the contract is the surface text.
+	if err == nil {
+		return false
+	}
+	if e, ok := err.(isRev); ok {
+		return strings.Contains(e.Error(), "credential has been revoked")
+	}
+	return false
+}
+
+// credentialTitleFromSession looks the credential up by id in the
+// session's cached wallet list — the same fallback ConfirmPresent uses
+// when the adapter doesn't surface a title — so the revocation card
+// can show the holder which credential just failed.
+func credentialTitleFromSession(sess *Session, credID string) string {
+	for _, c := range sess.WalletCreds {
+		if c.ID == credID {
+			return c.Title
+		}
+	}
+	return ""
 }
 
 // DeclinePresent renders a "declined" fragment when the holder refuses to

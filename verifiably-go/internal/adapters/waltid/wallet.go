@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -1158,9 +1159,44 @@ func truncateClaim(s string, n int) string {
 //   - "presentationDefinitionMatch" + "false" — no held credential
 //     satisfies the PD; the pre-flight in PresentCredential usually
 //     catches this first with a more specific message.
+// RevocationError is the sentinel error friendlyPresentError returns when
+// walt.id's wallet-api rejects the presentation because the credential's
+// status-list policy failed. Carrying it as a typed value lets the
+// handler swap to a revocation-specific fragment instead of toasting
+// the raw 400 body — the operator's view of "this credential was
+// revoked by the issuer" is much clearer than walt.id's stack trace.
+//
+// Detection is by substring on walt.id's error body. v0.18.2 surfaces
+// the policy name "credential-status" alongside the verifier-side
+// "Status validation failed: expected X, but got Y" message; either
+// signal is sufficient.
+type RevocationError struct {
+	// Detail is the underlying walt.id message, kept for logs / debug
+	// and shown in small print under the friendly headline so the
+	// operator can paste it into a support ticket.
+	Detail string
+}
+
+func (e *RevocationError) Error() string {
+	return "credential has been revoked by the issuer"
+}
+
+// IsRevocation reports whether err originated from a status-list policy
+// failure. Used by the present-credential handler to dispatch to the
+// revocation fragment.
+func IsRevocation(err error) bool {
+	if err == nil {
+		return false
+	}
+	var re *RevocationError
+	return errors.As(err, &re)
+}
+
 func friendlyPresentError(err error) error {
 	msg := err.Error()
 	switch {
+	case strings.Contains(msg, "credential-status") && strings.Contains(msg, "Status validation failed"):
+		return &RevocationError{Detail: msg}
 	case strings.Contains(msg, "JsonArray") && strings.Contains(msg, "JsonPrimitive"):
 		return fmt.Errorf(
 			"walt.id's wallet-api v0.18.2 can't build a verifiable presentation for this credential format — its VP submit path only handles compact-JWT formats (jwt_vc_json, vc+sd-jwt). For jwt_vc_json-ld and ldp_vc the vpToken is a JSON object and the wallet throws internally. Re-issue the credential in JWT · W3C (jwt_vc_json) or SD-JWT · VC (vc+sd-jwt) and retry")

@@ -357,6 +357,7 @@ func (a *Adapter) FetchPresentationResult(ctx context.Context, state, templateKe
 
 	fields, issuer, subject, issued, title := extractPresentedCredential(res.TokenResponse)
 	policies := extractAppliedPolicies(res.PolicyResults)
+	outcomes := extractPolicyOutcomes(res.PolicyResults)
 	if issuer == "" {
 		issuer = "(resolved on verification)"
 	}
@@ -376,6 +377,7 @@ func (a *Adapter) FetchPresentationResult(ctx context.Context, state, templateKe
 		Issued:            issued,
 		CheckedRevocation: true,
 		PoliciesApplied:   policies,
+		PolicyOutcomes:    outcomes,
 		DisclosedFields:   fields,
 		CredentialTitle:   title,
 	}, nil
@@ -511,6 +513,94 @@ func extractAppliedPolicies(raw json.RawMessage) []string {
 		}
 	}
 	walk(any1)
+	return out
+}
+
+// extractPolicyOutcomes walks walt.id's policyResults blob and returns
+// per-policy success+reason detail. Walt.id v0.18.2 emits each policy
+// outcome as an object containing `policy` (name) plus EITHER
+// `is_success` (boolean) and `error`/`message` (string when failed) OR
+// just an embedded exception. We detect failure by either the explicit
+// flag being false or the presence of a non-empty error/message string
+// alongside the policy name.
+//
+// Returns nil for empty / unparseable input so callers can fall back to
+// extractAppliedPolicies for the older "just names" surface.
+func extractPolicyOutcomes(raw json.RawMessage) []backend.PolicyOutcome {
+	if len(raw) == 0 {
+		return nil
+	}
+	var any1 any
+	if err := json.Unmarshal(raw, &any1); err != nil {
+		return nil
+	}
+	type slot struct {
+		passed bool
+		reason string
+	}
+	seen := map[string]slot{}
+	order := []string{}
+	var walk func(v any)
+	walk = func(v any) {
+		switch x := v.(type) {
+		case map[string]any:
+			name, hasName := x["policy"].(string)
+			if hasName && name != "" {
+				cur, exists := seen[name]
+				if !exists {
+					// Default to passed; flip to failed on signal below.
+					cur = slot{passed: true}
+					order = append(order, name)
+				}
+				// Walt.id surfaces failure as one of:
+				//   - is_success: false
+				//   - success:    false
+				//   - error/message: non-empty string
+				//   - exception (object) carrying message
+				if v, ok := x["is_success"].(bool); ok && !v {
+					cur.passed = false
+				}
+				if v, ok := x["success"].(bool); ok && !v {
+					cur.passed = false
+				}
+				for _, k := range []string{"error", "message", "errorMessage"} {
+					if s, ok := x[k].(string); ok && s != "" {
+						cur.passed = false
+						if cur.reason == "" {
+							cur.reason = s
+						}
+					}
+				}
+				if exc, ok := x["exception"].(map[string]any); ok {
+					cur.passed = false
+					if s, ok := exc["message"].(string); ok && cur.reason == "" {
+						cur.reason = s
+					}
+				}
+				seen[name] = cur
+			}
+			for _, v2 := range x {
+				walk(v2)
+			}
+		case []any:
+			for _, v2 := range x {
+				walk(v2)
+			}
+		}
+	}
+	walk(any1)
+	if len(order) == 0 {
+		return nil
+	}
+	out := make([]backend.PolicyOutcome, 0, len(order))
+	for _, name := range order {
+		s := seen[name]
+		out = append(out, backend.PolicyOutcome{
+			Name:   name,
+			Passed: s.passed,
+			Reason: s.reason,
+		})
+	}
 	return out
 }
 

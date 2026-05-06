@@ -148,6 +148,45 @@
 </div>
 {{end}}
 
+{{/* Rendered by SubmitPresent when walt.id rejected the presentation
+     because the credential's status-list policy failed (typically a
+     revocation flipped by the issuer). The card lands in the same
+     hx-target as fragment_present_consent, so the operator's view
+     transitions in place from "Review what's being shared" to a clear
+     revocation explanation, instead of a generic POST-error toast. */}}
+{{define "fragment_present_revoked"}}
+<div class="verify-result" style="border-left:3px solid var(--err);min-height:auto;padding:1.25rem 1.5rem">
+  <div class="verify-banner invalid">
+    <span class="icon">⊗</span>
+    <div>
+      <h3>This credential has been revoked</h3>
+      <p style="margin:0.35rem 0 0">
+        {{if .CredentialTitle}}
+          <strong>{{.CredentialTitle}}</strong> can no longer be presented.
+        {{else}}
+          The credential you tried to present can no longer be used.
+        {{end}}
+        The issuer has marked it invalid in their published status list, so
+        verifiers will reject it on every attempt.
+      </p>
+    </div>
+  </div>
+  <div style="margin-top:1rem;padding:0.85rem 1rem;background:var(--bg-soft);border-radius:6px;font-size:0.9rem;line-height:1.5">
+    <strong>What to do:</strong>
+    Contact the administrator who issued this credential. They can confirm
+    why it was revoked and re-issue a fresh credential if appropriate. Until
+    they do, no verifier will accept this one.
+  </div>
+  <details style="margin-top:0.85rem;font-size:0.78rem;color:var(--ink-mute)">
+    <summary style="cursor:pointer">Verifier-side detail (for support tickets)</summary>
+    <pre style="margin:0.5rem 0 0;padding:0.6rem 0.75rem;background:var(--bg);border:1px solid var(--line);border-radius:4px;white-space:pre-wrap;word-break:break-word">{{.Detail}}</pre>
+  </details>
+  <div class="btn-row" style="margin-top:1rem">
+    <a href="/holder/wallet" class="btn ghost">← Back to wallet</a>
+  </div>
+</div>
+{{end}}
+
 {{define "fragment_present_declined"}}
 <div class="verify-result" style="border-left:3px solid var(--warn)">
   <div class="verify-banner">
