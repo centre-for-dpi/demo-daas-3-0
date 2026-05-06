@@ -396,22 +396,47 @@ func buildVPPolicies() []any {
 //
 // "status-list" maps to walt.id's `credential-status` policy
 // (id/walt/policies/policies/StatusPolicy, @SerialName "credential-status").
-// That policy needs `args` shaped as a sealed StatusPolicyArgument with
-// a `discriminator` tag: "w3c" for VCDM 2.0 (BitstringStatusListEntry
-// against credentialStatus) or "ietf" for SD-JWT (IETF Token Status
-// List against status.status_list). Sending the policy as a bare string
-// returns "args required"; sending the wrong discriminator throws
-// during evaluation when the credential's actual status entry doesn't
-// match the configured shape.
+// The policy needs `args` shaped as a sealed StatusPolicyArgument with a
+// `discriminator` tag: "w3c" for VCDM 2.0 BSL 2023 or "ietf" for SD-JWT
+// IETF Token Status List. Sending the policy as a bare string returns
+// "args required"; sending the wrong discriminator throws during
+// evaluation when the credential's status entry doesn't match.
 //
-// We pick the discriminator from the requested wire format: SD-JWT
-// formats → "ietf", everything else → "w3c". value=0 is the expected
-// active state under both specs (1 means revoked).
+// Verified end-to-end against waltid-verification-policies-jvm-1.0.0-
+// SNAPSHOT.jar (decompiled bytecode) — full pipeline:
 //
-// `revoked-status-list` (RevocationPolicy) handles legacy VCDM 1.0
-// RevocationList2020 — not what we publish — so we don't send it.
-// `not-revoked-token-status-list` is NOT registered in v0.18.2;
-// sending it returns 400 "No policy found by name".
+//   W3C   data.vc.credentialStatus  →  W3CEntry (type, statusPurpose,
+//                                       statusListIndex, statusListCredential)
+//         GET statusListCredential  →  JWT
+//         payload.vc.credentialSubject  →  W3CStatusContent (type,
+//                                          statusPurpose, encodedList)
+//         args.type    == content.type     (W3CStatusValidator.customValidations)
+//         args.purpose == content.statusPurpose
+//         W3cStatusListExpansionAlgorithmFactory dispatches on
+//         content.type ∈ {"BitstringStatusList", "StatusList2021",
+//         "RevocationList2020"} — anything else IllegalArgumentException.
+//         BitstringStatusList branch requires multibase base64-url
+//         (encodedList prefixed with "u") then GZIP. BigEndianRepresentation
+//         (MSB-first) bit reader. Final check: bitValue == args.value.
+//
+//   IETF  data.status  →  IETFEntry { status_list: { idx, uri } }
+//         GET status_list.uri  →  JWT (typ ignored)
+//         payload.status_list  →  IETFStatusContent (bits, lst)
+//         No type/purpose validation. zlib + base64url decode (no multibase).
+//         LittleEndianRepresentation (LSB-first) bit reader.
+//         Final check: bitValue == args.value.
+//
+// Polymorphism gotcha that bit us: args.type is compared against the
+// LIST's credentialSubject.type (= "BitstringStatusList"), NOT the
+// credential's credentialStatus.type (= "BitstringStatusListEntry").
+// Per the W3C spec these are different strings; walt.id only ever
+// looks at the list side. value=0 means "expect not revoked".
+//
+// Other names we tried that didn't work in v0.18.2:
+//   - bare "credential-status"        → "args required"
+//   - "not-revoked-token-status-list" → 400 "No policy found by name"
+//   - "revoked-status-list"           → that's RevocationPolicy, only handles
+//                                       VCDM 1.0 RevocationList2020.
 func buildVCPolicies(selected []string, webhookURL, format string) []any {
 	out := []any{}
 	isIETF := format == "vc+sd-jwt" || format == "dc+sd-jwt"
@@ -425,13 +450,15 @@ func buildVCPolicies(selected []string, webhookURL, format string) []any {
 				args["discriminator"] = "ietf"
 			} else {
 				args["discriminator"] = "w3c"
-				// W3C BSL 2023 entry carries a `statusPurpose` and a `type`.
-				// Match what we put on the credential body in
-				// buildCredentialData (statusPurpose=revocation,
-				// type=BitstringStatusListEntry); walt.id rejects mismatched
-				// shapes during entry extraction.
 				args["purpose"] = "revocation"
-				args["type"] = "BitstringStatusListEntry"
+				// MUST match the list's vc.credentialSubject.type, NOT the
+				// credential's credentialStatus.type. Walt.id's
+				// W3CStatusValidator compares args.type to content.type
+				// (where content is the deserialized credentialSubject of
+				// the fetched list). Setting this to BitstringStatusListEntry
+				// fails with "Type validation failed: expected
+				// BitstringStatusListEntry, but got BitstringStatusList".
+				args["type"] = "BitstringStatusList"
 			}
 			out = append(out, map[string]any{
 				"policy": "credential-status",
