@@ -50,6 +50,15 @@ type IssuedCredential struct {
 	// out from operator B's view.
 	IssuerDpg string `json:"issuerDpg"`
 
+	// OwnerKey is the stable per-issuer identity key (typically the
+	// authenticated OIDC `provider|sub` pair) used to partition the log
+	// so issuer A doesn't see issuer B's credentials on /issuer/credentials.
+	// Empty for entries written before per-issuer scoping shipped or for
+	// unauthenticated demo-mode flows; List/MarkRevoked treat an empty
+	// filter key as "no scoping" so historical entries stay reachable for
+	// admins running an empty filter.
+	OwnerKey string `json:"ownerKey,omitempty"`
+
 	// HolderHint is a human-readable identifier picked from SubjectData
 	// (first non-empty of fullName / id / vehicleNumber / etc.) so the
 	// list page is searchable by name even though we don't track holder
@@ -109,6 +118,12 @@ type Filter struct {
 
 	// State is "all" (default), "active", or "revoked".
 	State string
+
+	// OwnerKey scopes the result to a single issuer's entries. Empty means
+	// "no owner filter" (admin / CLI use). Handlers MUST pass a non-empty
+	// value when serving authenticated user views, otherwise issuer A
+	// could see issuer B's credentials via the same browser tab.
+	OwnerKey string
 }
 
 // Log is the JSON-backed store. Methods serialize through mu so concurrent
@@ -211,12 +226,23 @@ func (l *Log) Get(id string) (IssuedCredential, bool) {
 // MarkRevoked stamps the entry's RevokedAt to now. Returns the updated
 // entry. No-op (still nil error) if already revoked — Revoke is naturally
 // idempotent.
-func (l *Log) MarkRevoked(id string) (IssuedCredential, error) {
+//
+// ownerKey, when non-empty, must match the entry's OwnerKey or the call
+// fails with a not-found error. This keeps a malicious POST to
+// /issuer/credentials/{id}/revoke from another issuer's session from
+// flipping someone else's bit just by guessing the id. Empty ownerKey
+// disables the check (admin/CLI path).
+func (l *Log) MarkRevoked(id, ownerKey string) (IssuedCredential, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	for i, c := range l.items {
 		if c.ID != id {
 			continue
+		}
+		if ownerKey != "" && c.OwnerKey != ownerKey {
+			// Surfaced as not-found rather than 403 so the caller can't
+			// confirm the id exists under a different owner.
+			return IssuedCredential{}, fmt.Errorf("issuance: mark revoked: id %q not found", id)
 		}
 		if c.RevokedAt != nil {
 			return c, nil
@@ -240,6 +266,13 @@ func (l *Log) List(f Filter) []IssuedCredential {
 	out := make([]IssuedCredential, 0, len(l.items))
 	q := strings.ToLower(strings.TrimSpace(f.Query))
 	for _, c := range l.items {
+		// Per-issuer scoping: if a key is set, only entries owned by that
+		// key are returned. Pre-scoping entries (OwnerKey == "") are
+		// invisible under any non-empty filter — they only surface to
+		// admins running an empty filter.
+		if f.OwnerKey != "" && c.OwnerKey != f.OwnerKey {
+			continue
+		}
 		if f.Std != "" && c.Std != f.Std {
 			continue
 		}

@@ -78,7 +78,7 @@ func TestRevoke(t *testing.T) {
 	if _, err := l.Append(IssuedCredential{ID: "a", IssuedAt: time.Now().UTC()}); err != nil {
 		t.Fatalf("append: %v", err)
 	}
-	got, err := l.MarkRevoked("a")
+	got, err := l.MarkRevoked("a", "")
 	if err != nil {
 		t.Fatalf("MarkRevoked: %v", err)
 	}
@@ -86,10 +86,10 @@ func TestRevoke(t *testing.T) {
 		t.Fatal("RevokedAt should be set")
 	}
 	// Revoking again is idempotent.
-	if _, err := l.MarkRevoked("a"); err != nil {
+	if _, err := l.MarkRevoked("a", ""); err != nil {
 		t.Fatalf("MarkRevoked again: %v", err)
 	}
-	if _, err := l.MarkRevoked("missing"); err == nil {
+	if _, err := l.MarkRevoked("missing", ""); err == nil {
 		t.Fatal("MarkRevoked on missing id should error")
 	}
 	// state filter
@@ -121,6 +121,70 @@ func TestPersistence(t *testing.T) {
 	}
 }
 
+// TestOwnerKeyScoping pins the per-issuer isolation contract on the log.
+// Two issuers share the same on-disk log (single verifiably-go instance)
+// and must each see only their own entries plus be unable to revoke each
+// other's credentials.
+func TestOwnerKeyScoping(t *testing.T) {
+	dir := t.TempDir()
+	l, err := NewLog(filepath.Join(dir, "log.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustAppend := func(c IssuedCredential) {
+		if _, err := l.Append(c); err != nil {
+			t.Fatalf("append %s: %v", c.ID, err)
+		}
+	}
+	mustAppend(IssuedCredential{ID: "alice-1", SchemaName: "License", OwnerKey: "alice"})
+	mustAppend(IssuedCredential{ID: "alice-2", SchemaName: "Cert", OwnerKey: "alice"})
+	mustAppend(IssuedCredential{ID: "bob-1", SchemaName: "Pass", OwnerKey: "bob"})
+	mustAppend(IssuedCredential{ID: "legacy", SchemaName: "Old"}) // pre-scoping
+
+	// Alice's view: just her two entries.
+	got := l.List(Filter{OwnerKey: "alice"})
+	if len(got) != 2 {
+		t.Fatalf("alice should see 2: got %d (%+v)", len(got), got)
+	}
+	for _, c := range got {
+		if c.OwnerKey != "alice" {
+			t.Fatalf("alice should never see entries owned by %q: %+v", c.OwnerKey, c)
+		}
+	}
+
+	// Bob's view: just his.
+	got = l.List(Filter{OwnerKey: "bob"})
+	if len(got) != 1 || got[0].ID != "bob-1" {
+		t.Fatalf("bob should see exactly bob-1: got %+v", got)
+	}
+
+	// Admin (no owner filter) sees everything including the legacy entry.
+	got = l.List(Filter{})
+	if len(got) != 4 {
+		t.Fatalf("admin should see all 4: got %d (%+v)", len(got), got)
+	}
+
+	// Bob can't revoke Alice's credential by guessing the id — surfaced as
+	// not-found so the existence of alice-1 isn't disclosed to bob.
+	if _, err := l.MarkRevoked("alice-1", "bob"); err == nil {
+		t.Fatal("bob should not be able to revoke alice's credential")
+	}
+	a, ok := l.Get("alice-1")
+	if !ok || a.RevokedAt != nil {
+		t.Fatalf("alice-1 must remain unrevoked after bob's attempt: %+v", a)
+	}
+
+	// Alice can revoke her own.
+	if _, err := l.MarkRevoked("alice-1", "alice"); err != nil {
+		t.Fatalf("alice should be able to revoke her own credential: %v", err)
+	}
+
+	// Admin (empty owner) keeps the bypass — needed for cli/migration use.
+	if _, err := l.MarkRevoked("legacy", ""); err != nil {
+		t.Fatalf("admin revoke on legacy entry should succeed: %v", err)
+	}
+}
+
 func TestSummary(t *testing.T) {
 	dir := t.TempDir()
 	l, err := NewLog(filepath.Join(dir, "log.json"))
@@ -135,7 +199,7 @@ func TestSummary(t *testing.T) {
 	mustAppend(IssuedCredential{ID: "1", Std: "w3c_vcdm_2", Format: "ldp_vc"})
 	mustAppend(IssuedCredential{ID: "2", Std: "w3c_vcdm_2", Format: "ldp_vc"})
 	mustAppend(IssuedCredential{ID: "3", Std: "sd_jwt_vc (IETF)", Format: "vc+sd-jwt"})
-	if _, err := l.MarkRevoked("3"); err != nil {
+	if _, err := l.MarkRevoked("3", ""); err != nil {
 		t.Fatal(err)
 	}
 	s := l.Summary()

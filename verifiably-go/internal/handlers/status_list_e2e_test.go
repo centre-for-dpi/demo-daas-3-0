@@ -10,7 +10,9 @@ import (
 	"html/template"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -187,8 +189,24 @@ func TestStatusListE2E(t *testing.T) {
 	mux.HandleFunc("GET /status-list/bitstring/{id}", h.PublishBitstringStatusList)
 	mux.HandleFunc("GET /status-list/token/{id}", h.PublishTokenStatusList)
 	mux.HandleFunc("POST /issuer/credentials/{id}/revoke", h.RevokeIssuedCredential)
+	// Test-only prime endpoint — the status-list publishers don't touch
+	// the session store, so we need a route that does to mint the
+	// session cookie the cookie jar carries into the revoke POST.
+	mux.HandleFunc("GET /test/prime", func(w http.ResponseWriter, r *http.Request) {
+		_ = h.Sessions.MustGet(w, r)
+		w.WriteHeader(http.StatusOK)
+	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
+
+	// Drive the test with a cookie jar so the issuer-scoped session
+	// stays stable across the GET → POST → GET calls below. Without it
+	// every request gets a fresh sess.ID and sessionOwnerKey returns a
+	// different "session-<id>" each time, so RevokeIssuedCredential's
+	// owner-check fails (the appended record's OwnerKey is bound to
+	// the first session, the revoke comes in under a different one).
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar}
 
 	// Pre-resolve the parsed signing key once so the assertions below can
 	// verify the JWT signatures.
@@ -209,12 +227,42 @@ func TestStatusListE2E(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			// 0. Prime the session cookie via the test-only /test/prime
+			//    route which runs Sessions.MustGet. The cookie jar
+			//    captures the verifiably_session cookie for later
+			//    POSTs, and we read its value out to compute the same
+			//    owner key the revoke handler will derive when our
+			//    cookie comes back in.
+			primeResp, err := client.Get(srv.URL + "/test/prime")
+			if err != nil {
+				t.Fatalf("prime session: %v", err)
+			}
+			_ = primeResp.Body.Close()
+			u, _ := url.Parse(srv.URL)
+			var sid string
+			for _, ck := range jar.Cookies(u) {
+				if ck.Name == "verifiably_session" {
+					sid = ck.Value
+					break
+				}
+			}
+			if sid == "" {
+				t.Fatalf("session cookie not minted on prime GET")
+			}
+			// Mirror sessionOwnerKey's fallback path: no AuthProvider/
+			// UserSubject/UserEmail in this test, so the owner key is
+			// "session-<sid>".
+			testOwner := "session-" + sid
+
 			// 1. Allocate (mimics what the issuance handler does inline).
 			idx, err := tc.store.Allocate()
 			if err != nil {
 				t.Fatalf("allocate: %v", err)
 			}
-			// 2. Record an issued credential pointing at that bit.
+			// 2. Record an issued credential pointing at that bit. Stamp
+			//    OwnerKey to match the session so the owner-scoped revoke
+			//    succeeds. Without this the new owner check rejects the
+			//    revoke as 404 not-found.
 			recID := "vc-test-" + tc.name
 			if _, err := logger.Append(issuance.IssuedCredential{
 				ID:         recID,
@@ -223,6 +271,7 @@ func TestStatusListE2E(t *testing.T) {
 				Std:        tc.std,
 				Format:     tc.name,
 				IssuerDpg:  "Walt Community Stack",
+				OwnerKey:   testOwner,
 				HolderHint: "Test Holder",
 				StatusList: &issuance.StatusListEntry{
 					Type:   tc.store.Kind,
@@ -240,13 +289,15 @@ func TestStatusListE2E(t *testing.T) {
 				t.Fatalf("[%s] before revoke: bit %d should be 0", tc.name, idx)
 			}
 
-			// 4. Operator action: POST the revoke route.
+			// 4. Operator action: POST the revoke route via the SAME
+			//    cookie jar so the session id (and hence owner key)
+			//    matches what we stamped on the appended record.
 			revokeURL := srv.URL + "/issuer/credentials/" + recID + "/revoke"
 			req, err := http.NewRequest(http.MethodPost, revokeURL, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
-			resp, err := http.DefaultClient.Do(req)
+			resp, err := client.Do(req)
 			if err != nil {
 				t.Fatalf("revoke: %v", err)
 			}

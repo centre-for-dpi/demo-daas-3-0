@@ -66,7 +66,7 @@ func (h *H) allocateStatusListBinding(schema vctypes.Schema) (*backend.StatusLis
 // names so the list page is searchable by holder without us guessing
 // per-schema. Subject fields are stored verbatim — they're already in the
 // session anyway.
-func (h *H) recordIssuance(schema vctypes.Schema, issuerDpg string, subject map[string]string, offerURI string, binding *backend.StatusListBinding) {
+func (h *H) recordIssuance(sess *Session, schema vctypes.Schema, issuerDpg string, subject map[string]string, offerURI string, binding *backend.StatusListBinding) {
 	if h.IssuanceLog == nil {
 		return
 	}
@@ -95,6 +95,10 @@ func (h *H) recordIssuance(schema vctypes.Schema, issuerDpg string, subject map[
 		Std:           schema.Std,
 		Format:        format,
 		IssuerDpg:     issuerDpg,
+		// OwnerKey scopes the entry to the issuing operator so the list
+		// page never surfaces this credential to a different OIDC
+		// subject. See sessionOwnerKey for the derivation.
+		OwnerKey:      sessionOwnerKey(sess),
 		HolderHint:    hint,
 		SubjectFields: subject,
 		OfferURI:      offerURI,
@@ -112,6 +116,26 @@ func (h *H) recordIssuance(schema vctypes.Schema, issuerDpg string, subject map[
 		// stays smooth.
 		fmt.Printf("issuance log: append %s: %v\n", id, err)
 	}
+}
+
+// sessionOwnerKey returns the stable per-issuer identity key used to
+// scope the issuance log + custom-schema visibility. Mirrors the
+// derivation in holderCtx (wallet.go): prefer AuthProvider+Subject (OIDC
+// `sub` is guaranteed for an authenticated session and stable across
+// devices), then email, then a session-scoped fallback so unauthenticated
+// demo flows still self-isolate per browser.
+//
+// Returning "" would disable per-issuer scoping (admin/CLI semantics).
+// We never want that for a request-bound handler — the fallback ensures
+// every caller has SOME owner key.
+func sessionOwnerKey(sess *Session) string {
+	if sess.AuthProvider != "" && sess.UserSubject != "" {
+		return sess.AuthProvider + "|" + sess.UserSubject
+	}
+	if sess.UserEmail != "" {
+		return sess.UserEmail
+	}
+	return "session-" + sess.ID
 }
 
 // newIssuanceID mints a stable identifier for the IssuanceLog entry. The
@@ -191,11 +215,19 @@ func (h *H) IssuedCredentialsSearch(w http.ResponseWriter, r *http.Request) {
 // RevokeIssuedCredential flips the bit on the credential's status list
 // entry, marks the log row revoked, and re-renders the row fragment so
 // HTMX can swap it in place.
+//
+// The action is scoped per-issuer: a Get followed by an OwnerKey check
+// + MarkRevoked-with-owner means a malicious POST against another
+// issuer's credential id (id-guessing or pasting from logs) returns
+// 404, never flips the bit, and never discloses that the id exists
+// under a different owner.
 func (h *H) RevokeIssuedCredential(w http.ResponseWriter, r *http.Request) {
 	if h.IssuanceLog == nil {
 		http.Error(w, "issuance log not configured", http.StatusNotFound)
 		return
 	}
+	sess := h.Sessions.MustGet(w, r)
+	owner := sessionOwnerKey(sess)
 	id := r.PathValue("id")
 	if id == "" {
 		id = r.FormValue("id")
@@ -205,7 +237,9 @@ func (h *H) RevokeIssuedCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rec, ok := h.IssuanceLog.Get(id)
-	if !ok {
+	// Pre-check: if the entry exists but isn't ours, treat it the same as
+	// "not found" so a guess doesn't leak ownership information.
+	if !ok || rec.OwnerKey != owner {
 		http.Error(w, "credential not found", http.StatusNotFound)
 		return
 	}
@@ -225,7 +259,7 @@ func (h *H) RevokeIssuedCredential(w http.ResponseWriter, r *http.Request) {
 		h.errorToast(w, r, "Revoke: "+err.Error())
 		return
 	}
-	if _, err := h.IssuanceLog.MarkRevoked(id); err != nil {
+	if _, err := h.IssuanceLog.MarkRevoked(id, owner); err != nil {
 		h.errorToast(w, r, "Mark revoked: "+err.Error())
 		return
 	}
@@ -252,14 +286,35 @@ func (h *H) storeForKind(kind string) interface {
 }
 
 func (h *H) issuedCredentialsBody(sess *Session, _ *http.Request) issuedCredentialsData {
+	owner := sessionOwnerKey(sess)
 	filter := issuance.Filter{
-		Query:  sess.IssuedQuery,
-		Std:    sess.IssuedStd,
-		Format: sess.IssuedFormat,
-		State:  sess.IssuedState,
+		Query:    sess.IssuedQuery,
+		Std:      sess.IssuedStd,
+		Format:   sess.IssuedFormat,
+		State:    sess.IssuedState,
+		OwnerKey: owner,
 	}
 	items := h.IssuanceLog.List(filter)
-	stats := h.IssuanceLog.Summary()
+	// Stats has to be derived from the owner-scoped slice — the global
+	// Summary() across the file would leak counts of other issuers'
+	// credentials onto this issuer's banner ("X total / Y revoked"
+	// across the entire instance). Rebuild from items instead.
+	stats := issuance.Stats{ByStd: map[string]int{}, ByFormat: map[string]int{}}
+	// To compute the chip-row Stds/Formats we need the unfiltered slice
+	// scoped to this owner (so the chips show what they could see if they
+	// dropped the std/format filter, not just what the current filter
+	// returns).
+	all := h.IssuanceLog.List(issuance.Filter{OwnerKey: owner})
+	for _, c := range all {
+		stats.Total++
+		if c.RevokedAt == nil {
+			stats.Active++
+		} else {
+			stats.Revoked++
+		}
+		stats.ByStd[c.Std]++
+		stats.ByFormat[c.Format]++
+	}
 	stds := []string{"all"}
 	for s := range stats.ByStd {
 		stds = append(stds, s)
