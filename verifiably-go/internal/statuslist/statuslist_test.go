@@ -238,7 +238,12 @@ func TestPublishBitstringJWT(t *testing.T) {
 	if encoded == "" {
 		t.Fatal("encodedList missing")
 	}
-	bs, err := DecodeGzipBase64URL(encoded, s.Size())
+	// W3C BSL 2023 §5.1: encodedList is multibase-encoded with a one-char
+	// alphabet identifier. "u" → base64url no padding. Strip before decode.
+	if !strings.HasPrefix(encoded, "u") {
+		t.Fatalf("encodedList missing multibase 'u' prefix: %q...", encoded[:min(8, len(encoded))])
+	}
+	bs, err := DecodeGzipBase64URL(encoded[1:], s.Size())
 	if err != nil {
 		t.Fatal(err)
 	}

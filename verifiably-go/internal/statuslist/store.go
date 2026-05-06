@@ -222,6 +222,15 @@ func (s *Store) PublishBitstringJWT(key *SigningKey) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// W3C BSL 2023 §5.1 says encodedList is multibase-encoded — the
+	// alphabet identifier is the first character of the value. base64url
+	// without padding maps to multibase prefix "u" (per the multibase
+	// table). walt.id's StatusPolicyImplementation rejects raw base64url
+	// with "Expecting multibase base64-url, got regular base64-url" so
+	// the prefix is non-optional. The IETF Token Status List path does
+	// NOT use multibase (its spec calls for plain base64url), so we
+	// only prepend here, not in PublishTokenStatusList.
+	encoded = "u" + encoded
 	now := time.Now().UTC()
 	vc := map[string]any{
 		"@context": []string{

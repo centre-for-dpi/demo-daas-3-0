@@ -99,7 +99,12 @@ func decodeBitstringJWT(t *testing.T, key *statuslist.SigningKey, jwt string, si
 	if encoded == "" {
 		t.Fatalf("bitstring JWT missing encodedList: %+v", p)
 	}
-	bs, err := statuslist.DecodeGzipBase64URL(encoded, size)
+	// W3C BSL 2023 §5.1: encodedList is multibase. Strip the 'u' prefix
+	// (base64url no padding alphabet identifier) before decoding.
+	if !strings.HasPrefix(encoded, "u") {
+		t.Fatalf("bitstring JWT encodedList missing multibase 'u' prefix")
+	}
+	bs, err := statuslist.DecodeGzipBase64URL(encoded[1:], size)
 	if err != nil {
 		t.Fatalf("decode bitstring: %v", err)
 	}
