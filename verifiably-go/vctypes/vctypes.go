@@ -61,6 +61,15 @@ type Schema struct {
 	Desc   string
 	Custom bool // true for user-built schemas
 
+	// OwnerKey is the stable per-issuer identity key (typically the
+	// authenticated OIDC `provider|sub` pair) of the operator who saved
+	// this custom schema. Empty for stock/vendor catalog entries (which
+	// every issuer can see) or for legacy custom schemas saved before
+	// owner-scoping shipped. Registry.ListSchemas filters its in-memory
+	// custom-schema slice by this key so issuer A's schema browser
+	// never surfaces schemas saved by issuer B.
+	OwnerKey string
+
 	// Custom-schema extras (empty for pre-configured schemas)
 	AdditionalTypes []string
 	FieldsSpec      []FieldSpec

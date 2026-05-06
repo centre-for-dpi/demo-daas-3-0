@@ -49,3 +49,32 @@ func HolderIdentityFromContext(ctx context.Context) string {
 	v, _ := ctx.Value(holderIdentityCtxKey{}).(string)
 	return v
 }
+
+// issuerIdentityCtxKey carries the same kind of stable per-user key as
+// holderIdentityCtxKey, but for the issuer side — used to scope the
+// custom-schema list and (downstream) the issued-credentials log so
+// issuer A's session never sees issuer B's catalog or audit log.
+//
+// Held separately from the holder key so a user playing both roles in
+// the demo can't accidentally have their issuer scope leak into the
+// holder wallet-account cache (or vice versa) — the values would be
+// the same string today, but coupling them risks a future divergence.
+type issuerIdentityCtxKey struct{}
+
+// WithIssuerIdentity attaches the issuer-side per-user key to ctx.
+// Mirrors WithHolderIdentity. Empty key is a no-op (admin/CLI paths
+// that operate on the global catalog without scoping).
+func WithIssuerIdentity(ctx context.Context, key string) context.Context {
+	if key == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, issuerIdentityCtxKey{}, key)
+}
+
+// IssuerIdentityFromContext reads the issuer key back. Registry uses
+// this to filter customSchemas so each issuer's schema browser shows
+// only the schemas they themselves saved.
+func IssuerIdentityFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(issuerIdentityCtxKey{}).(string)
+	return v
+}

@@ -48,6 +48,23 @@ func holderCtx(r *http.Request, sess *Session) context.Context {
 	return backend.WithHolderIdentity(ctx, sess.WalletUserKey)
 }
 
+// issuerCtx is the issuer-side mirror of holderCtx: it attaches the
+// per-operator identity key to ctx so the Registry can scope its
+// in-memory custom-schema slice (and subsequent owner-checked actions)
+// to the calling issuer's view. Same fallback chain as holderCtx —
+// AuthProvider+Subject when authenticated, then email, then a session-
+// scoped key for unauthenticated demo flows. Empty key never reaches
+// the Registry; the helpers there bypass scoping when the key is
+// unset (admin/CLI semantics).
+//
+// Callers: every handler that touches Adapter.ListSchemas /
+// ListAllSchemas / SaveCustomSchema / DeleteCustomSchema should pass
+// issuerCtx(r, sess) instead of r.Context() so the schema browser is
+// per-operator, not global.
+func issuerCtx(r *http.Request, sess *Session) context.Context {
+	return backend.WithIssuerIdentity(r.Context(), sessionOwnerKey(sess))
+}
+
 // ShowWallet renders the wallet home (receive + inbox + held credentials).
 // First visit lazy-loads held credentials from the adapter.
 func (h *H) ShowWallet(w http.ResponseWriter, r *http.Request) {

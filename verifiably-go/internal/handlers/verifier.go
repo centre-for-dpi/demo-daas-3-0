@@ -19,7 +19,7 @@ func (h *H) ShowVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dpgs, _ := h.Adapter.ListVerifierDpgs(r.Context())
-	schemas, _ := h.Adapter.ListAllSchemas(r.Context())
+	schemas, _ := h.Adapter.ListAllSchemas(issuerCtx(r, sess))
 	if sess.VerifierSchemaFilter == "" {
 		sess.VerifierSchemaFilter = "all"
 	}
@@ -141,7 +141,7 @@ func (h *H) GenerateRequest(w http.ResponseWriter, r *http.Request) {
 		h.errorToast(w, r, "Bad form: "+err.Error())
 		return
 	}
-	tpl, err := h.assembleCustomTemplate(r)
+	tpl, err := h.assembleCustomTemplate(r, sess)
 	if err != nil {
 		h.errorToast(w, r, err.Error())
 		return
@@ -178,12 +178,12 @@ func (h *H) GenerateRequest(w http.ResponseWriter, r *http.Request) {
 // form fields on r: schema_id picks the schema, field_key[] is the list of
 // fields to request (defaults to all schema fields if none are checked),
 // disclosure is "selective" or "full".
-func (h *H) assembleCustomTemplate(r *http.Request) (vctypes.OID4VPTemplate, error) {
+func (h *H) assembleCustomTemplate(r *http.Request, sess *Session) (vctypes.OID4VPTemplate, error) {
 	schemaID := r.FormValue("schema_id")
 	if schemaID == "" {
 		return vctypes.OID4VPTemplate{}, fmt.Errorf("pick a schema first")
 	}
-	schemas, err := h.Adapter.ListAllSchemas(r.Context())
+	schemas, err := h.Adapter.ListAllSchemas(issuerCtx(r, sess))
 	if err != nil {
 		return vctypes.OID4VPTemplate{}, fmt.Errorf("could not load schemas: %w", err)
 	}
@@ -290,7 +290,7 @@ func (h *H) BuildVerifierTemplate(w http.ResponseWriter, r *http.Request) {
 		h.errorToast(w, r, "Bad form: "+err.Error())
 		return
 	}
-	schemas, err := h.Adapter.ListAllSchemas(r.Context())
+	schemas, err := h.Adapter.ListAllSchemas(issuerCtx(r, sess))
 	if err != nil {
 		h.errorToast(w, r, "Could not load schemas: "+err.Error())
 		return

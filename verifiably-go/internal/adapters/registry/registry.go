@@ -192,9 +192,22 @@ func (r *Registry) ListSchemas(ctx context.Context, issuerDpg string) ([]vctypes
 	// renders whatever we return; on partial success it shows the custom
 	// schemas plus a transient-error banner instead of a blank page or, worse,
 	// an http.Error body bleeding into the rendered HTML.
+	//
+	// Per-issuer scoping: filter the in-memory slice by the caller's
+	// IssuerIdentity (set via backend.WithIssuerIdentity in the handler
+	// layer). When the caller has no identity attached (admin / CLI),
+	// every custom schema passes through. The vendor-side ListSchemas
+	// (walt.id's wellknown) is global — there's no per-issuer view at
+	// the walt.id container — so vendor schemas remain shared. That's
+	// intentional: stock catalog entries are common to all issuers; only
+	// user-saved schemas are private.
+	owner := backend.IssuerIdentityFromContext(ctx)
 	r.mu.RLock()
 	custom := make([]vctypes.Schema, 0, len(r.customSchemas))
 	for _, s := range r.customSchemas {
+		if owner != "" && s.OwnerKey != "" && s.OwnerKey != owner {
+			continue
+		}
 		for _, d := range s.DPGs {
 			if d == issuerDpg {
 				custom = append(custom, s)
@@ -210,16 +223,60 @@ func (r *Registry) ListSchemas(ctx context.Context, issuerDpg string) ([]vctypes
 		// strict callers can treat err != nil as a hard failure).
 		return custom, vendorErr
 	}
+	// The walt.id wellknown returns ALL configurationIds in the
+	// catalog, including custom-schema entries from other issuers
+	// (their type names leak via /.well-known/openid-credential-issuer
+	// — that's a walt.id property we can't fix in-process). Suppress
+	// vendor entries whose ID matches a custom schema we know belongs
+	// to another owner. Stock vendor entries (no matching custom row)
+	// pass through normally.
+	if owner != "" {
+		r.mu.RLock()
+		hideIDs := map[string]struct{}{}
+		for _, s := range r.customSchemas {
+			if s.OwnerKey != "" && s.OwnerKey != owner {
+				hideIDs[s.ID] = struct{}{}
+				for _, v := range s.Variants {
+					hideIDs[v.ID] = struct{}{}
+				}
+			}
+		}
+		r.mu.RUnlock()
+		if len(hideIDs) > 0 {
+			filtered := vendorSchemas[:0]
+			for _, s := range vendorSchemas {
+				if _, hide := hideIDs[s.ID]; hide {
+					continue
+				}
+				filtered = append(filtered, s)
+			}
+			vendorSchemas = filtered
+		}
+	}
 	return append(vendorSchemas, custom...), nil
 }
 
 func (r *Registry) ListAllSchemas(ctx context.Context) ([]vctypes.Schema, error) {
+	owner := backend.IssuerIdentityFromContext(ctx)
 	r.mu.RLock()
 	vendors := make([]string, 0, len(r.issuers))
 	for v := range r.issuers {
 		vendors = append(vendors, v)
 	}
-	custom := append([]vctypes.Schema(nil), r.customSchemas...)
+	custom := make([]vctypes.Schema, 0, len(r.customSchemas))
+	hideIDs := map[string]struct{}{}
+	for _, s := range r.customSchemas {
+		if owner != "" && s.OwnerKey != "" && s.OwnerKey != owner {
+			// Foreign custom schema — exclude it AND remember its ids to
+			// suppress when they show up via vendor wellknown below.
+			hideIDs[s.ID] = struct{}{}
+			for _, v := range s.Variants {
+				hideIDs[v.ID] = struct{}{}
+			}
+			continue
+		}
+		custom = append(custom, s)
+	}
 	r.mu.RUnlock()
 
 	seen := map[string]struct{}{}
@@ -241,6 +298,9 @@ func (r *Registry) ListAllSchemas(ctx context.Context) ([]vctypes.Schema, error)
 			if _, dup := seen[s.ID]; dup {
 				continue
 			}
+			if _, hide := hideIDs[s.ID]; hide {
+				continue
+			}
 			seen[s.ID] = struct{}{}
 			out = append(out, s)
 		}
@@ -252,6 +312,13 @@ func (r *Registry) ListAllSchemas(ctx context.Context) ([]vctypes.Schema, error)
 func (r *Registry) SaveCustomSchema(ctx context.Context, schema vctypes.Schema) error {
 	r.mu.Lock()
 	schema.Custom = true
+	// Stamp the saving issuer's identity onto the schema so subsequent
+	// ListSchemas calls only return it to the same issuer's session.
+	// Empty key (admin/CLI flow) leaves the schema globally visible so
+	// migration tooling and shared-demo modes still work.
+	if owner := backend.IssuerIdentityFromContext(ctx); owner != "" {
+		schema.OwnerKey = owner
+	}
 	r.customSchemas = append(r.customSchemas, schema)
 	// Snapshot the issuer adapters that own the schema's DPGs so we can
 	// hand them the save without holding r.mu (the adapter's own callback
@@ -282,6 +349,14 @@ func (r *Registry) DeleteCustomSchema(ctx context.Context, id string) error {
 		}
 	}
 	if idx == -1 {
+		r.mu.Unlock()
+		return fmt.Errorf("custom schema %q not found", id)
+	}
+	// Owner check: a non-owner can't delete via id-guess. Surfaced as
+	// not-found so the existence isn't disclosed. Empty owner key
+	// (admin) bypasses, mirroring SaveCustomSchema.
+	owner := backend.IssuerIdentityFromContext(ctx)
+	if owner != "" && r.customSchemas[idx].OwnerKey != "" && r.customSchemas[idx].OwnerKey != owner {
 		r.mu.Unlock()
 		return fmt.Errorf("custom schema %q not found", id)
 	}

@@ -109,7 +109,7 @@ type schemaBrowserData struct {
 }
 
 func (h *H) schemaBrowserData(w http.ResponseWriter, r *http.Request, sess *Session) schemaBrowserData {
-	ctx := r.Context()
+	ctx := issuerCtx(r, sess)
 	schemas, err := h.Adapter.ListSchemas(ctx, sess.IssuerDpg)
 	notice := ""
 	if err != nil {
@@ -341,7 +341,7 @@ func (h *H) SaveSchema(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	schema := currentBuilderSchema(sess, data)
-	if err := h.Adapter.SaveCustomSchema(r.Context(), schema); err != nil {
+	if err := h.Adapter.SaveCustomSchema(issuerCtx(r, sess), schema); err != nil {
 		h.errorToast(w, r, err.Error())
 		return
 	}
@@ -358,7 +358,7 @@ func (h *H) SaveSchema(w http.ResponseWriter, r *http.Request) {
 func (h *H) DeleteSchema(w http.ResponseWriter, r *http.Request) {
 	sess := h.Sessions.MustGet(w, r)
 	id := r.FormValue("id")
-	_ = h.Adapter.DeleteCustomSchema(r.Context(), id)
+	_ = h.Adapter.DeleteCustomSchema(issuerCtx(r, sess), id)
 	if sess.SchemaID == id {
 		sess.SchemaID = ""
 	}
