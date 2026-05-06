@@ -61,14 +61,21 @@ type walletSession struct {
 // what IssueToWallet does, so a status-list handler can demand-fetch the
 // signing key without coupling to the issuance request path. The returned
 // JWK envelope is what statuslist.ParseWaltidIssuerKey expects.
-func (a *Adapter) IssuerSigningKey(ctx context.Context) (json.RawMessage, string, error) {
+//
+// Returns []byte (not json.RawMessage) so the result type matches the
+// signingKeyAdapter interface declared in internal/handlers verbatim.
+// Go's interface satisfaction is invariant on named types: a method
+// returning json.RawMessage does NOT satisfy an interface that declares
+// []byte even though they share the same underlying type, so a Registry
+// type-asserting on the interface would silently miss this adapter.
+func (a *Adapter) IssuerSigningKey(ctx context.Context) ([]byte, string, error) {
 	if err := a.ensureIssuerKey(ctx); err != nil {
 		return nil, "", err
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	// Defensive copy — callers shouldn't be able to mutate our cache.
-	out := make(json.RawMessage, len(a.issuerKey))
+	out := make([]byte, len(a.issuerKey))
 	copy(out, a.issuerKey)
 	return out, a.issuerDID, nil
 }
