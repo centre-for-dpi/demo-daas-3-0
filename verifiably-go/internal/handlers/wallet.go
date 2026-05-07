@@ -79,9 +79,37 @@ func (h *H) ShowWallet(w http.ResponseWriter, r *http.Request) {
 			h.errorToast(w, r, err.Error())
 			return
 		}
+		h.attachIssuerDisplayToCreds(r.Context(), creds)
 		sess.WalletCreds = creds
 	}
 	h.render(w, r, "holder_wallet", h.pageData(sess, nil))
+}
+
+// attachIssuerDisplayToCreds populates Credential.IssuerDisplay by looking
+// up each credential's Title against Schema.Name in the Registry's merged
+// schema list — the only place that knows IssuerDisplayName, since walt.id
+// 0.18.2 has no wellknown field that would let it round-trip back through
+// adapter.ListSchemas. Best-effort: silent on lookup failure so the wallet
+// still renders (with the bare DID as fallback).
+func (h *H) attachIssuerDisplayToCreds(ctx context.Context, creds []vctypes.Credential) {
+	if len(creds) == 0 {
+		return
+	}
+	schemas, err := h.Adapter.ListAllSchemas(ctx)
+	if err != nil {
+		return
+	}
+	byTitle := make(map[string]string, len(schemas))
+	for _, s := range schemas {
+		if iss := strings.TrimSpace(s.IssuerDisplayName); iss != "" {
+			byTitle[strings.ToLower(strings.TrimSpace(s.Name))] = iss
+		}
+	}
+	for i := range creds {
+		if iss, ok := byTitle[strings.ToLower(strings.TrimSpace(creds[i].Title))]; ok {
+			creds[i].IssuerDisplay = iss
+		}
+	}
 }
 
 // ScanOffer simulates scanning a QR — cycles through example offers from the adapter.
@@ -238,6 +266,7 @@ func (h *H) ShowPresent(w http.ResponseWriter, r *http.Request) {
 	creds := sess.WalletCreds
 	if len(creds) == 0 {
 		if c, err := h.Adapter.ListWalletCredentials(holderCtx(r, sess)); err == nil {
+			h.attachIssuerDisplayToCreds(r.Context(), c)
 			creds = c
 		}
 	}
@@ -405,6 +434,7 @@ func (h *H) DeleteCredential(w http.ResponseWriter, r *http.Request) {
 	sess.WalletCreds = filtered
 	// Re-list to get the fresh picture + swap the whole body fragment.
 	creds, _ := h.Adapter.ListWalletCredentials(holderCtx(r, sess))
+	h.attachIssuerDisplayToCreds(r.Context(), creds)
 	sess.WalletCreds = creds
 	h.renderFragment(w, r, "fragment_wallet_body", sess)
 }
