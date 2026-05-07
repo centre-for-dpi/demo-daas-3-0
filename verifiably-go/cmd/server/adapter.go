@@ -34,6 +34,23 @@ func selectAdapter() backend.Adapter {
 			log.Fatalf("adapter: load backends config: %v", err)
 		}
 		reg := registry.New()
+		// Mirror Registry.customSchemas to a JSON file so per-schema
+		// metadata (Custom flag, OwnerKey, IssuerDisplayName, DPGs)
+		// survives container restarts. Walt.id's HOCON catalog already
+		// persists the type definitions; this store is the layer above
+		// that records the verifiably-go-specific bits walt.id can't
+		// round-trip. Same single-file bind-mount pattern as the auth
+		// UserStore.
+		schemaStorePath := os.Getenv("VERIFIABLY_CUSTOM_SCHEMAS_FILE")
+		if schemaStorePath == "" {
+			schemaStorePath = "config/custom-schemas.user.json"
+		}
+		schemaStore := registry.NewSchemaStore(schemaStorePath)
+		if err := reg.AttachSchemaStore(schemaStore); err != nil {
+			log.Printf("adapter: schema store load skipped — %v (custom schema metadata won't survive restart)", err)
+		} else {
+			log.Printf("adapter: schema store wired at %s", schemaStorePath)
+		}
 		for _, b := range cfg.Backends {
 			ad, err := factory.Build(b)
 			if err != nil {

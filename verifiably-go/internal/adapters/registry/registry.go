@@ -24,9 +24,15 @@ type Registry struct {
 	holderDPGs   map[string]vctypes.DPG
 	verifierDPGs map[string]vctypes.DPG
 
-	// schema persistence is registry-wide — custom schemas don't belong to a
-	// specific vendor. M1 wires an in-memory slice; M8 swaps in a disk store.
+	// schema persistence is registry-wide — custom schemas don't belong
+	// to a specific vendor. The slice is the in-memory authoritative
+	// view; SchemaStore is the durable mirror written on every save /
+	// delete and replayed on startup. Optional: when SchemaStore is nil
+	// the Registry falls back to the original M1 behaviour (in-memory
+	// only, wiped on restart) — kept that way so unit tests can build a
+	// Registry without disk wiring.
 	customSchemas []vctypes.Schema
+	schemaStore   *SchemaStore
 }
 
 // New constructs an empty Registry. Call Register for each configured DPG.
@@ -39,6 +45,38 @@ func New() *Registry {
 		holderDPGs:   map[string]vctypes.DPG{},
 		verifierDPGs: map[string]vctypes.DPG{},
 	}
+}
+
+// AttachSchemaStore plugs in a SchemaStore for durable customSchemas
+// persistence. Replays the file's contents into the in-memory slice
+// immediately so a fresh Registry on the new build picks up where the
+// previous container left off. Call once during startup, before any
+// adapter is registered (so SaveCustomSchema callbacks fired during
+// adapter registration would persist correctly — but those don't fire
+// today; this is forward-compatible).
+//
+// Load errors are logged and treated as empty (caller's responsibility
+// to decide loudness). Schemas with the Custom flag explicitly set to
+// false are dropped — the file is meant to mirror user-built entries
+// only, never stock walt.id types.
+func (r *Registry) AttachSchemaStore(store *SchemaStore) error {
+	if store == nil {
+		return nil
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		return fmt.Errorf("schema store load: %w", err)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.schemaStore = store
+	for _, s := range loaded {
+		if !s.Custom {
+			continue
+		}
+		r.customSchemas = append(r.customSchemas, s)
+	}
+	return nil
 }
 
 // IssuerSigningKey delegates to the first registered issuer adapter that
@@ -320,6 +358,7 @@ func (r *Registry) SaveCustomSchema(ctx context.Context, schema vctypes.Schema) 
 		schema.OwnerKey = owner
 	}
 	r.customSchemas = append(r.customSchemas, schema)
+	store := r.schemaStore
 	// Snapshot the issuer adapters that own the schema's DPGs so we can
 	// hand them the save without holding r.mu (the adapter's own callback
 	// may take seconds — restartContainer waits for the issuer-api to
@@ -331,6 +370,15 @@ func (r *Registry) SaveCustomSchema(ctx context.Context, schema vctypes.Schema) 
 		}
 	}
 	r.mu.Unlock()
+	// Persist BEFORE the adapter callback. The adapter's callback may
+	// take seconds (restartContainer waits for issuer-api to come back
+	// up) — pinning the on-disk state first means a crash mid-callback
+	// still leaves the schema recoverable on next boot.
+	if store != nil {
+		if _, err := store.Upsert(schema); err != nil {
+			return fmt.Errorf("persist schema: %w", err)
+		}
+	}
 	for _, ad := range dispatch {
 		if err := ad.SaveCustomSchema(ctx, schema); err != nil {
 			return err
@@ -362,6 +410,7 @@ func (r *Registry) DeleteCustomSchema(ctx context.Context, id string) error {
 	}
 	removed := r.customSchemas[idx]
 	r.customSchemas = append(r.customSchemas[:idx], r.customSchemas[idx+1:]...)
+	store := r.schemaStore
 	dispatch := make([]backend.Adapter, 0, len(removed.DPGs))
 	for _, vendor := range removed.DPGs {
 		if ad, ok := r.issuers[vendor]; ok {
@@ -369,6 +418,15 @@ func (r *Registry) DeleteCustomSchema(ctx context.Context, id string) error {
 		}
 	}
 	r.mu.Unlock()
+	// Persist the removal BEFORE the adapter callback for the same
+	// reason we persist the save before its callback: a crash during
+	// the slow walt.id restart loop should leave on-disk state already
+	// reflecting what the operator asked for.
+	if store != nil {
+		if _, _, err := store.Remove(id); err != nil {
+			return fmt.Errorf("persist schema removal: %w", err)
+		}
+	}
 	for _, ad := range dispatch {
 		if err := ad.DeleteCustomSchema(ctx, id); err != nil {
 			return err

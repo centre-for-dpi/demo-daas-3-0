@@ -1085,6 +1085,18 @@ start_container() {
     green "  created empty $user_providers_path (admin UI will populate)"
   fi
   chmod 0666 "$user_providers_path" 2>/dev/null || true
+
+  # Same treatment for the custom-schemas mirror file (Registry's
+  # in-memory customSchemas slice durable across rebuilds). Without
+  # this, IssuerDisplayName / OwnerKey / Custom flag would be wiped on
+  # every container restart even though walt.id's HOCON catalog
+  # itself persists.
+  local custom_schemas_path="$SCRIPT_DIR/config/custom-schemas.user.json"
+  if [[ ! -f "$custom_schemas_path" ]]; then
+    printf '[]\n' > "$custom_schemas_path"
+    green "  created empty $custom_schemas_path (registry will mirror customSchemas here)"
+  fi
+  chmod 0666 "$custom_schemas_path" 2>/dev/null || true
   # Pick the system-providers file we feed the container. Prefer the new
   # Docker-rewritten variant; fall back to the legacy filename if a
   # half-upgraded host hasn't run the rewriter yet.
@@ -1101,6 +1113,7 @@ start_container() {
     -v "$SCRIPT_DIR/config/backends.docker.json:/app/config/backends.json:ro" \
     -v "$system_providers_mount:/app/config/auth-providers.system.json:ro" \
     -v "$user_providers_path:/app/config/auth-providers.user.json" \
+    -v "$custom_schemas_path:/app/config/custom-schemas.user.json" \
     -v "$SCRIPT_DIR/deploy/k8s/config/issuer:/app/issuer-api-config" \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v "${VERIFIABLY_CONTAINER}-locales:/app/locales" \

@@ -182,6 +182,16 @@ survive `./deploy.sh run all`. A fresh install with no providers
 configured anywhere bypasses the `off`/`ro` lockdown for the bootstrap
 form on `/auth` so you can't accidentally lock yourself out.
 
+Custom credential schemas built via the issuer schema-builder persist
+similarly: walt.id's HOCON catalog (`credential-issuer-metadata.conf`)
+keeps the type definitions, and a sibling `config/custom-schemas.user.json`
+mirror keeps the verifiably-go-specific metadata (issuer attribution,
+per-OIDC-subject scoping, the Custom flag) that walt.id's wellknown
+can't carry. Both are bind-mounted into the container; both survive
+`./deploy.sh run all`. Holders' wallets persist on the Postgres named
+volume `wallet-db` and the `wallet-api-data` named volume — those only
+go away on `./deploy.sh reset`.
+
 OIDC discovery is required — your server must serve
 `/.well-known/openid-configuration`. Plain OAuth2, SAML, and LDAP need
 a different integration.
