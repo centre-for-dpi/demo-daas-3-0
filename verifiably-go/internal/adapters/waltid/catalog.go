@@ -319,6 +319,12 @@ func buildMDocEntry(configID, typeName string, schema vctypes.Schema) string {
 // schema, falling back to the type name when fields are blank or the
 // builder's "—" placeholder. Centralised so each format builder gets
 // the same fallback behaviour without copy-paste.
+//
+// When Schema.IssuerDisplayName is populated, it's appended to the
+// description as " · Issued by <name>" — walt.id 0.18.2's per-credential
+// display block has no dedicated issuer field, so composition into
+// description is the only surface that propagates across all formats.
+// Wallets render description as a subtitle on the credential card.
 func displayPair(typeName string, schema vctypes.Schema) (display, desc string) {
 	display = strings.TrimSpace(schema.Name)
 	if display == "" {
@@ -327,6 +333,9 @@ func displayPair(typeName string, schema vctypes.Schema) (display, desc string) 
 	desc = strings.TrimSpace(schema.Desc)
 	if desc == "" || desc == "—" {
 		desc = display
+	}
+	if iss := strings.TrimSpace(schema.IssuerDisplayName); iss != "" {
+		desc = desc + " · Issued by " + iss
 	}
 	return display, desc
 }

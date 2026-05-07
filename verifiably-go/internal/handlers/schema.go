@@ -282,12 +282,13 @@ func (h *H) ShowSchemaBuilder(w http.ResponseWriter, r *http.Request) {
 }
 
 type builderData struct {
-	Name        string
-	Desc        string
-	ExtraType   string
-	Std         string
-	Fields      []vctypes.FieldSpec
-	PreviewJSON string
+	Name              string
+	Desc              string
+	IssuerDisplayName string
+	ExtraType         string
+	Std               string
+	Fields            []vctypes.FieldSpec
+	PreviewJSON       string
 }
 
 // SchemaPreview is called on every keystroke in the builder — returns the updated JSON preview
@@ -387,10 +388,11 @@ func canonicalStd(raw string) string {
 
 func extractBuilderData(r *http.Request) builderData {
 	d := builderData{
-		Name:      r.FormValue("name"),
-		Desc:      r.FormValue("desc"),
-		ExtraType: r.FormValue("extra_type"),
-		Std:       canonicalStd(r.FormValue("std")),
+		Name:              r.FormValue("name"),
+		Desc:              r.FormValue("desc"),
+		IssuerDisplayName: r.FormValue("issuer_display_name"),
+		ExtraType:         r.FormValue("extra_type"),
+		Std:               canonicalStd(r.FormValue("std")),
 	}
 	if d.Std == "" {
 		d.Std = "w3c_vcdm_2"
@@ -427,13 +429,14 @@ func currentBuilderSchema(sess *Session, d builderData) vctypes.Schema {
 		desc = "—"
 	}
 	s := vctypes.Schema{
-		ID:              "custom-" + strconv.FormatInt(time.Now().UnixNano(), 36),
-		Name:            name,
-		Desc:            desc,
-		Std:             d.Std,
-		DPGs:            []string{sess.IssuerDpg},
-		Custom:          true,
-		AdditionalTypes: []string{},
+		ID:                "custom-" + strconv.FormatInt(time.Now().UnixNano(), 36),
+		Name:              name,
+		Desc:              desc,
+		IssuerDisplayName: strings.TrimSpace(d.IssuerDisplayName),
+		Std:               d.Std,
+		DPGs:              []string{sess.IssuerDpg},
+		Custom:            true,
+		AdditionalTypes:   []string{},
 	}
 	if strings.TrimSpace(d.ExtraType) != "" {
 		s.AdditionalTypes = []string{strings.TrimSpace(d.ExtraType)}

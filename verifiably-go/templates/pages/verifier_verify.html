@@ -294,7 +294,10 @@
       <dl class="cred-rows">
         <dt>method</dt>  <dd>{{.Method}}</dd>
         <dt>format</dt>  <dd><span class="mono">{{.Format}}</span></dd>
-        <dt>issuer</dt>  <dd><span class="mono">{{.Issuer}}</span></dd>
+        <dt>issuer</dt>  <dd>
+          {{if .IssuerDisplay}}<strong>{{.IssuerDisplay}}</strong><br>{{end}}
+          <span class="mono">{{.Issuer}}</span>
+        </dd>
         <dt>subject</dt> <dd><span class="mono">{{.Subject}}</span></dd>
         <dt>issued</dt>  <dd>{{.Issued}}</dd>
         {{if .PoliciesApplied}}
@@ -429,6 +432,11 @@
     <div class="schema-card {{if $cardSelected}}selected{{end}}"
          data-name="{{.Name}}" data-std="{{.Std}}">
       <h4 style="margin:0 0 0.25rem">{{.Name}}</h4>
+      {{if .IssuerDisplayName}}
+        <div style="font-size:0.75rem;color:var(--ink-soft);margin-bottom:0.25rem">
+          Issued by <strong>{{.IssuerDisplayName}}</strong>
+        </div>
+      {{end}}
       <div class="desc" style="font-size:0.78rem;margin-bottom:0.4rem">
         {{len .FieldsSpec}} field{{if ne (len .FieldsSpec) 1}}s{{end}} ·
         served in {{if .Variants}}{{len .Variants}} format{{if ne (len .Variants) 1}}s{{end}}{{else}}{{.Std}}{{end}}

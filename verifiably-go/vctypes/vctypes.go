@@ -70,6 +70,23 @@ type Schema struct {
 	// never surfaces schemas saved by issuer B.
 	OwnerKey string
 
+	// IssuerDisplayName is the human-readable issuer attribution for
+	// credentials of this schema (e.g. "Ministry of Health"). Surfaces
+	// in two places:
+	//   - walt.id catalog `display.description` (composed alongside
+	//     Schema.Desc) so external wallets fetching the wellknown see
+	//     "<Desc> · Issued by <IssuerDisplayName>" on the credential
+	//     card. Walt.id 0.18.2 has no per-credential issuer field in
+	//     the wellknown; composition into description is the only
+	//     surface that propagates across formats.
+	//   - verifier UI's result panel — when verifying a presented
+	//     credential, we look up the matching schema by name in our
+	//     own store and render this value alongside the bare DID
+	//     walt.id put in the VC body. Visible to verifiers running on
+	//     the same verifiably-go instance; external verifiers without
+	//     access to our schema metadata fall back to the DID.
+	IssuerDisplayName string
+
 	// Custom-schema extras (empty for pre-configured schemas)
 	AdditionalTypes []string
 	FieldsSpec      []FieldSpec
@@ -260,7 +277,14 @@ type Credential struct {
 	ID     string
 	Title  string
 	Issuer string
-	Type   string
+	// IssuerDisplay is the human-readable attribution sourced from the
+	// matching Schema.IssuerDisplayName (e.g. "Ministry of Health"). The
+	// wallet card renders this in place of the bare DID when populated;
+	// raw `Issuer` (a DID or URL) remains the fallback so creds minted by
+	// other deployments still surface something. Empty when no matching
+	// schema is in the local store.
+	IssuerDisplay string
+	Type          string
 	// Format is the wire format the backend stored this credential in,
 	// e.g. "jwt_vc_json" or "vc+sd-jwt". Used in UI pickers so the user
 	// can distinguish multiple credentials of the same name that differ

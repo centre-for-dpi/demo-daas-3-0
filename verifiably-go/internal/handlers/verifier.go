@@ -406,6 +406,7 @@ func (h *H) SimulateResponse(w http.ResponseWriter, r *http.Request) {
 			res.CredentialTitle = tpl.Title
 		}
 	}
+	h.attachIssuerDisplay(r, &res)
 	// Terminal state → also emit the OOB button swap so the HTMX poller
 	// on #verify-poll-btn stops firing every 3s. Pending stays as a
 	// single-fragment response so polling continues.
@@ -457,5 +458,32 @@ func (h *H) VerifyDirect(w http.ResponseWriter, r *http.Request) {
 		h.errorToast(w, r, err.Error())
 		return
 	}
+	h.attachIssuerDisplay(r, &res)
 	h.renderFragment(w, r, "fragment_verify_result", res)
+}
+
+// attachIssuerDisplay populates VerificationResult.IssuerDisplay by looking
+// up the schema whose Name matches the credential's title in the local
+// store and copying its IssuerDisplayName. Best-effort: silent on lookup
+// failure so transient catalog issues never block the verify result.
+func (h *H) attachIssuerDisplay(r *http.Request, res *backend.VerificationResult) {
+	if res == nil || res.IssuerDisplay != "" {
+		return
+	}
+	title := strings.TrimSpace(res.CredentialTitle)
+	if title == "" {
+		return
+	}
+	schemas, err := h.Adapter.ListAllSchemas(r.Context())
+	if err != nil {
+		return
+	}
+	for _, s := range schemas {
+		if strings.EqualFold(strings.TrimSpace(s.Name), title) {
+			if iss := strings.TrimSpace(s.IssuerDisplayName); iss != "" {
+				res.IssuerDisplay = iss
+			}
+			return
+		}
+	}
 }

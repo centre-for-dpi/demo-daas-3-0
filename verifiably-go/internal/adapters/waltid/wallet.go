@@ -210,6 +210,24 @@ func (a *Adapter) ListWalletCredentials(ctx context.Context) ([]vctypes.Credenti
 		}
 		out = append(out, cred)
 	}
+	// Best-effort: map each credential to a Schema.IssuerDisplayName by
+	// title. The local store is the only place that knows the operator-
+	// chosen attribution string — walt.id 0.18.2 has no surface to embed
+	// it in the issued credential body. Lookup failures stay silent;
+	// IssuerDisplay just stays empty and the wallet falls back to the DID.
+	if schemas, schemaErr := a.ListSchemas(ctx, a.Vendor); schemaErr == nil {
+		byTitle := make(map[string]string, len(schemas))
+		for _, s := range schemas {
+			if iss := strings.TrimSpace(s.IssuerDisplayName); iss != "" {
+				byTitle[strings.ToLower(strings.TrimSpace(s.Name))] = iss
+			}
+		}
+		for i := range out {
+			if iss, ok := byTitle[strings.ToLower(strings.TrimSpace(out[i].Title))]; ok {
+				out[i].IssuerDisplay = iss
+			}
+		}
+	}
 	return out, nil
 }
 
@@ -1257,6 +1275,17 @@ func walletCredentialToVctype(raw map[string]json.RawMessage) vctypes.Credential
 	if parsed != nil {
 		if issuer := parsed["issuer"]; issuer != nil {
 			cred.Issuer = issuerString(issuer)
+		}
+		// SD-JWT VCs carry the issuer DID/URL on the JWT body's `iss`
+		// claim, NOT in `issuer`. Without this branch the wallet card
+		// would render "Unknown issuer" for every SD-JWT credential.
+		if cred.Issuer == "" {
+			if issRaw := parsed["iss"]; issRaw != nil {
+				var iss string
+				if err := json.Unmarshal(issRaw, &iss); err == nil && iss != "" {
+					cred.Issuer = iss
+				}
+			}
 		}
 		var types []string
 		if err := json.Unmarshal(parsed["type"], &types); err == nil && len(types) > 1 {

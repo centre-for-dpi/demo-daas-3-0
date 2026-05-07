@@ -215,6 +215,31 @@ func TestAppendCredentialType_displayBlocksAllFormats(t *testing.T) {
 	}
 }
 
+// TestAppendCredentialType_issuerDisplayNameAppended confirms that a
+// non-empty Schema.IssuerDisplayName composes into the catalog's
+// description as " · Issued by <name>". walt.id 0.18.2's per-credential
+// display block has no dedicated issuer field, so this composition is
+// the only way an external wallet learns who stands behind the
+// credential — a load-bearing behavior worth pinning.
+func TestAppendCredentialType_issuerDisplayNameAppended(t *testing.T) {
+	path := writeSeed(t)
+	if _, _, _, err := appendCredentialType(path, vctypes.Schema{
+		ID:                "custom-iss",
+		Name:              "Pharma Credential",
+		Desc:              "Authorisation to dispense controlled medicines",
+		IssuerDisplayName: "Ministry of Health",
+		Std:               "sd_jwt_vc (IETF)",
+		Custom:            true,
+	}); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	got, _ := os.ReadFile(path)
+	want := `description = "Authorisation to dispense controlled medicines · Issued by Ministry of Health"`
+	if !strings.Contains(string(got), want) {
+		t.Errorf("missing composed description %q\n%s", want, got)
+	}
+}
+
 func TestAppendCredentialType_idempotent(t *testing.T) {
 	path := writeSeed(t)
 	schema := vctypes.Schema{

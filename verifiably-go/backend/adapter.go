@@ -404,4 +404,13 @@ type VerificationResult struct {
 	// CredentialTitle is the human-readable name of the presented credential
 	// type (e.g. "Bank Id") — rendered as a heading on the flipped result.
 	CredentialTitle string
+	// IssuerDisplay is the human-readable issuer attribution recorded by
+	// the issuing portal on the matching Schema (e.g. "Ministry of Health").
+	// Surfaces next to the bare Issuer DID so verifier operators see who
+	// stands behind a credential, not just an opaque key identifier.
+	// Populated by the verifier handler on a best-effort basis: looks up
+	// the schema by CredentialTitle in the local store, copies its
+	// IssuerDisplayName. Empty when no matching schema exists (e.g.
+	// credentials minted by a different deployment).
+	IssuerDisplay string
 }
