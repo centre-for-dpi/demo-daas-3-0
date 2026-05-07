@@ -137,6 +137,84 @@ func TestAppendCredentialType_mDoc(t *testing.T) {
 	}
 }
 
+// TestAppendCredentialType_displayBlocksAllFormats pins the display
+// block onto every format's catalog entry. Earlier buildSDJWTEntry and
+// buildMDocEntry skipped display entirely, so wallets rendered SD-JWT
+// and mdoc cards with no title/description even when the schema-builder
+// captured both. Empirically verified against waltid/issuer-api:0.18.2:
+// the display block on a vc+sd-jwt entry round-trips into the
+// /draft13/.well-known/openid-credential-issuer response unchanged.
+func TestAppendCredentialType_displayBlocksAllFormats(t *testing.T) {
+	cases := []struct {
+		name         string
+		schema       vctypes.Schema
+		wantConfigID string
+		wantName     string
+		wantDesc     string
+	}{
+		{
+			name: "W3C VCDM ldp_vc",
+			schema: vctypes.Schema{
+				ID: "custom-w3c", Name: "Pharma Credential",
+				Desc: "Issued by Ministry of Health", Std: "w3c_vcdm_2", Custom: true,
+			},
+			wantConfigID: "PharmaCredential_jwt_vc_json",
+			wantName:     "Pharma Credential",
+			wantDesc:     "Issued by Ministry of Health",
+		},
+		{
+			name: "SD-JWT (vc+sd-jwt)",
+			schema: vctypes.Schema{
+				ID: "custom-sd", Name: "Pharma Credential",
+				Desc: "Issued by Ministry of Health", Std: "sd_jwt_vc (IETF)", Custom: true,
+			},
+			wantConfigID: "PharmaCredential_vc+sd-jwt",
+			wantName:     "Pharma Credential",
+			wantDesc:     "Issued by Ministry of Health",
+		},
+		{
+			name: "mdoc (mso_mdoc)",
+			schema: vctypes.Schema{
+				ID: "custom-md", Name: "Drivers License",
+				Desc: "Issued by Department of Transport", Std: "mso_mdoc", Custom: true,
+				AdditionalTypes: []string{"org.example.dl"},
+			},
+			wantConfigID: "org.example.dl_mso_mdoc",
+			// displayPair prefers schema.Name verbatim (with space)
+			// over the sanitized typeName for human-friendly rendering.
+			wantName: "Drivers License",
+			wantDesc: "Issued by Department of Transport",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeSeed(t)
+			if _, _, changed, err := appendCredentialType(path, tc.schema); err != nil || !changed {
+				t.Fatalf("append: changed=%v err=%v", changed, err)
+			}
+			got, _ := os.ReadFile(path)
+			gs := string(got)
+			if !strings.Contains(gs, `"`+tc.wantConfigID+`"`) {
+				t.Fatalf("missing entry %q in catalog", tc.wantConfigID)
+			}
+			// Each test case uses a unique schema name + description, so
+			// fragment matches against the whole file are safe — they
+			// can't collide with siblings the same writer added in other
+			// formats. (W3C path writes three entries for one schema;
+			// they share the same display block, so any of them
+			// matching is sufficient.)
+			for _, frag := range []string{
+				`name = "` + tc.wantName + `"`,
+				`description = "` + tc.wantDesc + `"`,
+			} {
+				if !strings.Contains(gs, frag) {
+					t.Errorf("[%s] missing %q in catalog file", tc.name, frag)
+				}
+			}
+		})
+	}
+}
+
 func TestAppendCredentialType_idempotent(t *testing.T) {
 	path := writeSeed(t)
 	schema := vctypes.Schema{

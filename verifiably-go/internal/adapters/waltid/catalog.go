@@ -249,13 +249,30 @@ func buildLinkedDataEntry(configID, typeName, wireFormat string, schema vctypes.
 //   - The pre-Phase-2 mismatch (catalog vct = URL, issued vct = Schema.ID,
 //     verifier vct = Schema.ID) was the root cause of "your wallet has no
 //     credential matching this request" reported on 2026-04-29.
-func buildSDJWTEntry(configID, typeName, wireFormat string, _ vctypes.Schema) string {
+func buildSDJWTEntry(configID, typeName, wireFormat string, schema vctypes.Schema) string {
+	display, desc := displayPair(typeName, schema)
+	// walt.id 0.18.2's CredentialSupported deserializer accepts `display`
+	// regardless of format — verified empirically (catalog round-trip
+	// against waltid/issuer-api:0.18.2): adding a display block to a
+	// vc+sd-jwt entry surfaces it verbatim in the published wellknown.
+	// Earlier this builder dropped the schema arg; consequence was that
+	// every SD-JWT credential's wallet card rendered with a blank title +
+	// no description, even though the schema-builder UI captured both.
 	return fmt.Sprintf(`    "%s" = {
         format = "%s"
         cryptographic_binding_methods_supported = ["jwk"]
         credential_signing_alg_values_supported = ["ES256"]
         vct = "%s"
-    }`, configID, wireFormat, typeName)
+        display = [
+            {
+                name = "%s"
+                description = "%s"
+                locale = "en-US"
+                background_color = "#FFFFFF"
+                text_color = "#000000"
+            }
+        ]
+    }`, configID, wireFormat, typeName, hoconEscape(display), hoconEscape(desc))
 }
 
 // buildMDocEntry covers mso_mdoc — the ISO 18013-5 mobile document format.
@@ -265,8 +282,12 @@ func buildSDJWTEntry(configID, typeName, wireFormat string, _ vctypes.Schema) st
 // pinned an AdditionalType we use that verbatim, else we fall back to the
 // sanitized type name so the doctype is at least stable across restarts.
 //
-// Mdoc credentials don't carry display metadata in walt.id's catalog format,
-// so we don't emit a display block here even though the schema has Name/Desc.
+// `display` is emitted alongside the format-specific fields for the same
+// reason as buildSDJWTEntry: walt.id's CredentialSupported deserializer
+// accepts it for every format. The earlier comment that "Mdoc credentials
+// don't carry display metadata in walt.id's catalog format" was wrong —
+// walt.id v0.18.2's wellknown serializer round-trips display verbatim
+// regardless of format.
 func buildMDocEntry(configID, typeName string, schema vctypes.Schema) string {
 	doctype := strings.TrimSpace(schema.Vct)
 	if doctype == "" && len(schema.AdditionalTypes) > 0 {
@@ -275,13 +296,23 @@ func buildMDocEntry(configID, typeName string, schema vctypes.Schema) string {
 	if doctype == "" {
 		doctype = typeName
 	}
+	display, desc := displayPair(typeName, schema)
 	return fmt.Sprintf(`    "%s" = {
         format = "mso_mdoc"
         cryptographic_binding_methods_supported = ["cose_key"]
         credential_signing_alg_values_supported = ["ES256"]
         proof_types_supported = { cwt = { proof_signing_alg_values_supported = ["ES256"] } }
         doctype = "%s"
-    }`, configID, hoconEscape(doctype))
+        display = [
+            {
+                name = "%s"
+                description = "%s"
+                locale = "en-US"
+                background_color = "#FFFFFF"
+                text_color = "#000000"
+            }
+        ]
+    }`, configID, hoconEscape(doctype), hoconEscape(display), hoconEscape(desc))
 }
 
 // displayPair derives the human-readable name + description from the
