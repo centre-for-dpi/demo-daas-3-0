@@ -138,7 +138,7 @@ That's how you "edit" a demo provider — re-add it via the UI with the
 same id and your version takes over.
 
 **To skip the demo IdPs entirely on a fresh install**, set
-`VERIFIABLY_NO_DEFAULT_IDPS=1` before running `deploy.sh`. The system
+`VERIFIABLY_NO_DEFAULT_IDPS=1` before running `deploy.sh` as illustrated below. The system
 file ends up empty, so the next visit to `/auth` shows a one-time setup
 form where you can register your own provider before signing in:
 
@@ -156,9 +156,16 @@ self-registration — defaults to `admin` / `admin`, override with
 the container. From the admin page you can delete any registered
 provider. New providers are added from the regular sign-in page (the
 form below the provider tiles), not from the admin page — so the
-admin role is purely curation. Demo defaults deleted from the admin UI
+admin role is purely curation.
+
+Demo defaults deleted from the admin UI
 come back on the next `./deploy.sh run all`; use
-`VERIFIABLY_NO_DEFAULT_IDPS=1` to retire them properly.
+`VERIFIABLY_NO_DEFAULT_IDPS=1` to ensure they remain retired properly.
+
+```bash
+VERIFIABLY_NO_DEFAULT_IDPS=1 ./deploy.sh run all
+# only your custom providers will remain
+```
 
 **To control the surface**, set `VERIFIABLY_AUTH_ADMIN` before
 starting the container:
@@ -181,6 +188,12 @@ form (rw + first-run only) persist to `auth-providers.user.json` and
 survive `./deploy.sh run all`. A fresh install with no providers
 configured anywhere bypasses the `off`/`ro` lockdown for the bootstrap
 form on `/auth` so you can't accidentally lock yourself out.
+
+```bash
+VERIFIABLY_NO_DEFAULT_IDPS=1 ./deploy.sh run all
+# run this after setting the VERIFIABLY_AUTH_ADMIN variable in .env
+# and then refresh your browser for updated UI
+```
 
 Custom credential schemas built via the issuer schema-builder persist
 similarly: walt.id's HOCON catalog (`credential-issuer-metadata.conf`)
