@@ -90,6 +90,143 @@ Then `./deploy.sh up all && ./deploy.sh run all` stands the stack up at
 proxy notes in
 [`verifiably-go/docs/deploy.md`](verifiably-go/docs/deploy.md).
 
+### Deploying with your own domain (TLS subdomains)
+
+When you want real URLs instead of `<ip>:<port>` — e.g. so external
+wallets can hit a public OIDC discovery endpoint, or so you can hand
+out tidy links to demo participants — switch the stack into subdomain
+mode. Caddy fronts every container on its own subdomain, terminates
+TLS via Let's Encrypt, and reverse-proxies to the docker-internal
+upstream. The setup runs in seven steps.
+
+**1. Pick a domain you control.** A bare apex like `vc.example.com`.
+You don't need a separate domain per service — every service is a
+subdomain underneath this one. Examples below use `example.com` as
+the RFC-2606-reserved placeholder; replace it with your own domain
+everywhere it appears.
+
+**2. Point DNS at the host.** At your domain registrar (Cloudflare,
+Route 53, Namecheap, GoDaddy, Squarespace …), add an **A record** — the standard
+DNS row that maps a hostname to an IPv4 address. Each row has three
+fields:
+
+| Field | What it means | What to put |
+| --- | --- | --- |
+| Type / Record | DNS record kind | `A` |
+| Name / Host | The subdomain (registrar appends the apex) | `walt-issuer` (or `*` for a wildcard) |
+| Value / IP | The IPv4 address it resolves to | Your host's public IP (`curl ifconfig.me` on the host) |
+
+Either a single wildcard (simplest — one row, matches every
+subdomain):
+
+```
+*.example.com    A    <public IP>
+```
+
+Or one row per subdomain you'll route (better with locked-down DNS
+providers, or when you want explicit control over which names
+resolve):
+
+```
+walt-issuer.example.com   A   <IP>
+walt-wallet.example.com   A   <IP>
+walt-verifier.example.com A   <IP>
+inji-certify.example.com  A   <IP>
+…
+```
+
+DNS propagation takes a minute or two. Verify before continuing:
+
+```bash
+dig +short walt-issuer.example.com
+# expected: <your public IP>
+```
+
+If `dig` returns nothing, propagation hasn't finished yet — Caddy's
+Let's Encrypt cert request in step 6 will fail with a "no DNS
+resolution" error until it does.
+
+**3. Open ports 80 and 443 on the host's firewall / cloud security
+group.** Let's Encrypt's HTTP-01 challenge needs port 80 to issue
+certs; production HTTPS uses 443. The legacy per-service ports
+(7001-7003, 8180, 9443, 3001, 3004, …) can stay closed — nothing
+external talks to them when subdomains are in play.
+
+**4. Set three vars in `verifiably-go/.env`:**
+
+```ini
+VERIFIABLY_PUBLIC_DOMAIN=example.com
+VERIFIABLY_HOSTS_PATTERN=https://%s.example.com
+VERIFIABLY_LE_EMAIL=you@example.com
+```
+
+The `%s` is a `printf` placeholder — `deploy.sh` substitutes each
+service's slug into it. `LE_EMAIL` is what Let's Encrypt uses for
+cert-expiry notices.
+
+**5. (Optional) Customise the subdomain labels.** Defaults are listed
+below. Override any of them by setting `VERIFIABLY_SLUG_<NAME>` in
+`.env`. Set the value to empty to skip a service entirely (no Caddy
+block, not exposed):
+
+| Default subdomain | What's behind it | Override env var |
+| --- | --- | --- |
+| `verifiably.<domain>` | The verifiably-go UI itself | `VERIFIABLY_SLUG_VERIFIABLY` |
+| `walt-issuer.<domain>` | walt.id `issuer-api` (OID4VCI wellknown) | `VERIFIABLY_SLUG_WALT_ISSUER` |
+| `walt-wallet.<domain>` | walt.id `wallet-api` | `VERIFIABLY_SLUG_WALT_WALLET` |
+| `walt-verifier.<domain>` | walt.id `verifier-api` (OID4VP) | `VERIFIABLY_SLUG_WALT_VERIFIER` |
+| `keycloak.<domain>` | Keycloak demo IdP | `VERIFIABLY_SLUG_KEYCLOAK` |
+| `wso2.<domain>` | WSO2 IS demo IdP | `VERIFIABLY_SLUG_WSO2` |
+| `inji-certify.<domain>` | Inji Certify (auth-code flow) | `VERIFIABLY_SLUG_INJI_CERTIFY` |
+| `inji-certify-preauth.<domain>` | Inji Certify (pre-auth flow) | `VERIFIABLY_SLUG_INJI_CERTIFY_PREAUTH` |
+| `inji-verify.<domain>` | Inji Verify backend | `VERIFIABLY_SLUG_INJI_VERIFY` |
+| `inji-verify-ui.<domain>` | Inji Verify UI | `VERIFIABLY_SLUG_INJI_VERIFY_UI` |
+| `inji-web.<domain>` | Inji Web SPA | `VERIFIABLY_SLUG_INJI_WEB` |
+| `mimoto.<domain>` | Mimoto wallet BFF | `VERIFIABLY_SLUG_MIMOTO` |
+| `esignet.<domain>` | eSignet OIDC UI | `VERIFIABLY_SLUG_ESIGNET` |
+
+**6. Deploy:**
+
+```bash
+./deploy.sh up all
+./deploy.sh run all
+```
+
+First run, expect ~30 seconds of extra startup while Caddy negotiates
+TLS with Let's Encrypt for each subdomain in `Caddyfile.public`. Certs
+land in the `caddy-public-data` named volume — they survive restarts
+and renew automatically. Browse to `https://verifiably.<your-domain>`.
+
+**7. Verify it's actually subdomain-routing:**
+
+```bash
+curl -sI https://walt-issuer.<your-domain>/draft13/.well-known/openid-credential-issuer | head -2
+# HTTP/2 200
+# server: Caddy
+```
+
+If you get a cert error or `502 Bad Gateway`, the usual culprits are:
+
+- DNS hasn't propagated yet (give it 1-2 minutes for fresh records).
+- Port 80 isn't open → LE challenge fails → cert never issues. Fix the
+  firewall and `docker restart caddy-public`.
+- `VERIFIABLY_HOSTS_PATTERN` was unset on `./deploy.sh run all` (only
+  `up` had it) → walt.id's `SERVICE_HOST` advertises the wrong URL
+  inside the wellknown. Fix by putting both subdomain vars in `.env`
+  so every invocation sees them.
+
+To switch **back** to legacy `<host>:<port>` mode, comment out
+`VERIFIABLY_HOSTS_PATTERN` and `VERIFIABLY_PUBLIC_DOMAIN` and re-run
+`./deploy.sh up all`. The `caddy-public` container won't start
+(its `subdomain` compose profile is gated on the env var), and every
+URL falls back to the `http://<host>:<port>` form served by the
+always-on internal Caddy on 7001/7002/7003.
+
+```bash
+# if necessary to your use case, remember to run deploy script as 
+`VERIFIABLY_NO_DEFAULT_IDPS=1 ./deploy.sh run all` 
+```
+
 ### Scenarios
 
 `deploy.sh` supports three scenarios so you don't have to boot
