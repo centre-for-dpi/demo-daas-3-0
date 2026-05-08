@@ -215,8 +215,33 @@ a different integration.
 ./deploy.sh down all
 ```
 
+### Clearing persistent data after Stopping
+
+```bash
+./deploy.sh reset
+# follow the instructions that will show up as-is for case sensitivity
+```
+This will help clear persistent volumes e.g.,:
+
+```bash
+# terminal output after running the reset script
+
+ Volume waltid_injiweb-minio  Removed
+ Volume waltid_vc-adapter-cache  Removed
+ Volume waltid_citizens-data  Removed
+ Volume waltid_inji-verify-db  Removed
+ Volume waltid_injiweb-mockid-keystore  Removed
+ Volume waltid_certify-pkcs12  Removed
+ Volume waltid_wallet-db  Removed
+ Volume waltid_injiweb-db  Removed
+ Volume waltid_injiweb-esignet-keystore  Removed
+ Volume waltid_certify-preauth-pkcs12  Removed
+```
+
 Persistent docker volumes (eSignet DB, Inji Certify keystore, walt.id
-wallet DB) are preserved between runs. To start from a fully clean
+wallet DB) are preserved between runs and may persist after running the reset script. 
+
+To start from a fully clean
 slate, remove the project volumes with `docker volume rm waltid_<name>` —
 see [verifiably-go/docs/deploy.md](verifiably-go/docs/deploy.md#full-reset)
 for the exact list.
